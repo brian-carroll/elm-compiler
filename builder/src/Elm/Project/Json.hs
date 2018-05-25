@@ -123,7 +123,7 @@ isPlatformPackage project =
         (Pkg.Name user _) =
           _pkg_name info
       in
-        user == "elm-lang" || user == "elm-explorations"
+      user == "elm" || user == "elm-explorations"
 
 
 get :: (AppInfo -> a) -> (PkgInfo -> a) -> Project -> a
@@ -238,8 +238,9 @@ read path =
         Left err ->
           throwBadJson (E.BadJson err)
 
-        Right project@(Pkg (PkgInfo _ _ _ _ _ deps tests _)) ->
+        Right project@(Pkg (PkgInfo name _ _ _ _ deps tests _)) ->
           do  checkOverlap "dependencies" "test-dependencies" deps tests
+              pkgHasCore name deps
               return project
 
         Right project@(App (AppInfo _ srcDirs deps tests trans)) ->
@@ -247,6 +248,7 @@ read path =
               checkOverlap "dependencies" "transitive-dependencies" deps trans
               checkOverlap "test-dependencies" "transitive-dependencies" tests trans
               mapM_ doesDirectoryExist srcDirs
+              appHasCoreAndJson (Map.union deps trans)
               return project
 
 
@@ -271,6 +273,25 @@ doesDirectoryExist dir =
       if exists
         then return ()
         else throwBadJson (E.BadSrcDir dir)
+
+
+appHasCoreAndJson :: Map Name a -> Task.Task ()
+appHasCoreAndJson pkgs =
+  if Map.member Pkg.core pkgs then
+
+    if Map.member Pkg.json pkgs
+      then return ()
+      else throwBadJson E.NoAppJson
+
+  else
+    throwBadJson E.NoAppCore
+
+
+pkgHasCore :: Name -> Map Name a -> Task.Task ()
+pkgHasCore name pkgs =
+  if name == Pkg.core || Map.member Pkg.core pkgs
+    then return ()
+    else throwBadJson E.NoPkgCore
 
 
 

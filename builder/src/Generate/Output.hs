@@ -61,7 +61,7 @@ generate
   -> Crawl.Result
   -> Map.Map Module.Raw Compiler.Artifacts
   -> Task.Task ()
-generate mode target maybeOutput summary graph@(Crawl.Graph args _ _ _ _) artifacts =
+generate mode target maybeOutput summary graph@(Crawl.Graph args locals _ _ _) artifacts =
   case args of
     Args.Pkg _ ->
       return ()
@@ -72,7 +72,8 @@ generate mode target maybeOutput summary graph@(Crawl.Graph args _ _ _ _) artifa
           realMode <-
             case mode of
               Debug ->
-                return $ Mode.debug target (getInterfaces summary artifacts)
+                do  interfaces <- getInterfaces summary locals artifacts
+                    return $ Mode.debug target interfaces
 
               Dev ->
                 return $ Mode.dev target
@@ -84,14 +85,29 @@ generate mode target maybeOutput summary graph@(Crawl.Graph args _ _ _ _) artifa
           generateMonolith realMode maybeOutput summary objectGraph (name:names)
 
 
-getInterfaces :: Summary.Summary -> Map.Map Module.Raw Compiler.Artifacts -> I.Interfaces
-getInterfaces (Summary.Summary _ project _ interfaces _) artifacts =
+getInterfaces
+  :: Summary.Summary
+  -> Map.Map Module.Raw a
+  -> Map.Map Module.Raw Compiler.Artifacts
+  -> Task.Task I.Interfaces
+getInterfaces (Summary.Summary root project _ interfaces _) locals artifacts =
   let
-    pkg = Project.getName project
+    pkg =
+      Project.getName project
+
     addArtifact home (Compiler.Artifacts elmi _ _) ifaces =
-      Map.insert (ModuleName.Canonical pkg home) elmi ifaces
+      (ModuleName.Canonical pkg home, elmi) : ifaces
+
+    addInterface home iface ifaces =
+      (ModuleName.Canonical pkg home, iface) : ifaces
+
+    readInterface home _ =
+      IO.readBinary (Paths.elmi root home)
   in
-  Map.foldrWithKey addArtifact interfaces artifacts
+  do  cached <- Map.traverseWithKey readInterface (Map.difference locals artifacts)
+      return $
+        Map.union interfaces $ Map.fromList $
+          Map.foldrWithKey addInterface (Map.foldrWithKey addArtifact [] artifacts) cached
 
 
 
@@ -121,7 +137,7 @@ generateMonolith mode maybeOutput (Summary.Summary _ project _ _ _) graph rootNa
           liftIO $
           case maybeOutput of
             Nothing ->
-              IO.writeBuilder "elm.js" monolith
+              IO.writeBuilder "index.html" (Html.sandwich name monolith)
 
             Just output_ ->
               case output_ of

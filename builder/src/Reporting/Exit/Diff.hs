@@ -19,6 +19,7 @@ import qualified Reporting.Exit.Help as Help
 
 data Exit
   = Application
+  | Unpublished
   | UnknownPackage Pkg.Name [Pkg.Name]
   | UnknownVersion Pkg.Name Pkg.Version [Pkg.Version]
 
@@ -34,8 +35,13 @@ toReport exit =
       Help.report "CANNOT DIFF APPLICATIONS" Nothing
         "I cannot perform diffs on applications, only packages! If you are\
         \ just curious to see a diff, try running this command:"
-        [ D.indent 4 $ D.green $ "elm diff elm-lang/html 5.1.1 6.0.0"
+        [ D.indent 4 $ D.green $ "elm diff elm/html 5.1.1 6.0.0"
         ]
+
+    Unpublished ->
+      Help.report "UNPUBLISHED" Nothing
+        "This package is not published yet. There is nothing to diff against!"
+        []
 
     UnknownPackage pkg suggestions ->
       Help.report "UNKNOWN PACKAGE" Nothing

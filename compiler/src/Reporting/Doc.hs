@@ -5,7 +5,7 @@ module Reporting.Doc
   , (P.<+>), (<>)
   , P.align, P.cat, P.empty, P.fill, P.fillSep, P.hang
   , P.hcat, P.hsep, P.indent, P.sep, P.vcat
-  , P.red, P.magenta, P.green, P.blue, P.black
+  , P.red, P.cyan, P.magenta, P.green, P.blue, P.black
   , P.dullred, P.dullcyan, P.dullyellow
 
   , fromString, fromText, fromName, fromInt
@@ -14,7 +14,7 @@ module Reporting.Doc
 
   , stack, reflow, commaSep
   , toSimpleNote, toSimpleHint, toFancyHint
-  , link, fancyLink, reflowLink, makeLink
+  , link, fancyLink, reflowLink, makeLink, makeNakedLink
   , args, moreArgs
   , ordinal, intToOrdinal
   , cycle
@@ -154,6 +154,11 @@ fancyLink word before fileName after =
 makeLink :: String -> String
 makeLink fileName =
   "<https://elm-lang.org/" <> Pkg.versionToString Compiler.version <> "/" <> fileName <> ">"
+
+
+makeNakedLink :: String -> String
+makeNakedLink fileName =
+  "https://elm-lang.org/" <> Pkg.versionToString Compiler.version <> "/" <> fileName
 
 
 reflowLink :: String -> String -> String -> P.Doc

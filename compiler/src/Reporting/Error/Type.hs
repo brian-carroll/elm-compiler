@@ -875,7 +875,7 @@ toExprReport source localizer exprRegion category tipe expected =
                   , "But this update needs it to be compatable with:"
                   , [ D.reflow
                         "Do you mind creating an <http://sscce.org/> that produces this error message and\
-                        \ sharing it at <https://github.com/elm-lang/error-message-catalog/issues> so we\
+                        \ sharing it at <https://github.com/elm/error-message-catalog/issues> so we\
                         \ can try to give better advice here?"
                     ]
                   )
@@ -1079,7 +1079,7 @@ opRightToDocs localizer category op tipe expected =
       EmphRight
         ( D.reflow $ "I cannot send this through the (<|) pipe:"
         , typeComparison localizer tipe expected
-            (addCategory "You are providing" category)
+            "The argument is:"
             "But (<|) is piping it a function that expects:"
             []
         )
@@ -1090,7 +1090,7 @@ opRightToDocs localizer category op tipe expected =
           EmphRight
             ( D.reflow $ "This function cannot handle the argument sent through the (|>) pipe:"
             , typeComparison localizer argType expectedArgType
-                (addCategory "The argument is" category)
+                "The argument is:"
                 "But (|>) is piping it a function that expects:"
                 []
             )

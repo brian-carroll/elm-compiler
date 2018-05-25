@@ -90,29 +90,6 @@ loopHelp chan progress state@(State total good bad) =
   case progress of
 
 
-    -- ELM.JSON
-
-    ElmJsonApproved ->
-      do  putStrLn ""
-          Help.toStdout $ D.fillSep $
-            [ "Done!","And","check","out"
-            ,D.green "<https://guide.elm-lang.org>"
-            ,"to","learn","what","to","do","next!"
-            ]
-          putStrLn "\n"
-          Help.toStdout $ D.black $ D.vcat $
-            [ "--------------------------------------------------------------------------------"
-            , "-------------------- Now back to what you were doing before --------------------"
-            , "--------------------------------------------------------------------------------"
-            ]
-          putStrLn "\n"
-          loop chan state
-
-    ElmJsonRejected ->
-      do  putStrLn "\nOkay, I did not create anything.\n"
-          loop chan state
-
-
     -- DOWNLOADS
 
     DownloadSkip ->

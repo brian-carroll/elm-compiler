@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Elm.Compiler
   ( version
-  , Context(..)
   , Compile.DocsFlag(..)
   , Compile.Artifacts(..)
   , compile
@@ -44,17 +43,14 @@ version =
 -- COMPILE
 
 
-data Context =
-  Context
-    { _package :: Pkg.Name
-    , _docsFlag :: Compile.DocsFlag
-    , _imports :: Map.Map M.Raw M.Canonical
-    , _interfaces :: M.Interfaces
-    }
-
-
-compile :: Context -> BS.ByteString -> ([Warning.Warning], Either [Error.Error] Compile.Artifacts)
-compile (Context pkg docsFlag importDict interfaces) source =
+compile
+  :: Compile.DocsFlag
+  -> Pkg.Name
+  -> Map.Map M.Raw M.Canonical
+  -> M.Interfaces
+  -> BS.ByteString
+  -> ( [Warning.Warning], Either [Error.Error] Compile.Artifacts )
+compile docsFlag pkg importDict interfaces source =
   Result.run $ Compile.compile docsFlag pkg importDict interfaces source
 
 
