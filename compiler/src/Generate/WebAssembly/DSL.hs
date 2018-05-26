@@ -15,70 +15,102 @@ module Generate.WebAssembly.DSL where
       https://webassembly.github.io/spec/core/appendix/index-instructions.html
   -}
 
-  data I32 = I32
-  data I64 = I64
-  data F32 = F32
-  data F64 = F64
+  data I32 = I32  deriving (Show)
+  data I64 = I64  deriving (Show)
+  data F32 = F32  deriving (Show)
+  data F64 = F64  deriving (Show)
 
-  -- The state of the code generator, not the Wasm runtime!
-  data State a =
-    State
-      { valueType :: a
-      , wast :: String
-      }
+  data StackValue
+    = StackI32
+    | StackI64
+    | StackF32
+    | StackF64
+    deriving (Show)
 
+  class Show a => Stackable a where
+    push :: a -> [StackValue] -> [StackValue]
 
-  load :: t -> String -> Int -> State I32 -> State t
-  load t name offset (State _ wast) =
-    State
-      { valueType = t
-      , wast = "( " ++ name ++ " offset=" ++ show offset ++ " " ++ wast ++ " )"
-      }
+  instance Stackable I32 where
+    push I32 stack = StackI32 : stack
 
-  i32_load = load I32 "i32.load"
-  i64_load = load I64 "i64.load"
-  f32_load = load F32 "f32.load"
-  f64_load = load F64 "f64.load"
-  i32_load8_s = load I32 "i32.load8_s"
-  i32_load8_u = load I32 "i32.load8_u"
-  i32_load16_s = load I32 "i32.load16_s"
-  i32_load16_u = load I32 "i32.load16_u"
-  i64_load8_s = load I64 "i64.load8_s"
-  i64_load8_u = load I64 "i64.load8_u"
-  i64_load16_s = load I64 "i64.load16_s"
-  i64_load16_u = load I64 "i64.load16_u"
-  i64_load32_s = load I64 "i64.load32_s"
-  i64_load32_u = load I64 "i64.load32_u"
+  instance Stackable I64 where
+    push I64 stack = StackI64 : stack
+
+  instance Stackable F32 where
+    push F32 stack = StackF32 : stack
+
+  instance Stackable F64 where
+    push F64 stack = StackF64 : stack
 
 
-  store :: t -> String -> Int -> State I32 -> State t
-  store t name offset (State _ wast) =
-    State
-      { valueType = t
-      , wast = "( " ++ name ++ " offset=" ++ show offset ++ " " ++ wast ++ " )"
-      }
 
-    {-
-    
-      TODO
-        Figure out how to deal with instructions that don't return anything
-        Side-effect only!
-        They can only exist as part of a vector of instructions
-          function bodies
-          data segments
-        Function body is a list, but a list of what?
-          Do I need some ADT that includes a Nothing?
-        Competing constraints
-          I want instructions to return different types so I can type-check stack ops
-          I want instructions to all return the same type so I can make a list of them
-        
-        Thought:
-          Can I do a pipeline instead of a List?
-          This could be a Monad I think
-          Maybe the side-effect instructions consume some stack values
-          Then I can write in either nested or stack-based form. Um... yay, I suppose
-          Instead of concatenating strings, I end up composing functions?
-    -}
+  data State a
+    = ValidState
+        { stack :: [StackValue]
+        , wat :: String
+        }
+    | ErrorState String
+    deriving (Show)
+
+  {-
+    unop :: State a -> State b
+    binop :: 
+
+    Monad instance requires
+      return :: a -> State a  (const)
+      bind :: State a -> (a -> State b) -> State b
+
+    The problem with this
+      Need to model a *sequence* of instructions
+      But a sequence can "return" more than one value (on the stack)
+      In order to typecheck a sequence, I need to use tuples.
+      BUT that doesn't really model it.
+        What if the next instruction just uses one value off the top?
+          I don't know in advance what size tuple I need to get it out of
+        Counter-arguments
+          OK so use an adaptor function of some sort. (a, _, _) -> instruction a
+          Maybe this weird scenario doesn't need to be representable in my DSL
+
+    Sequences
+      Would be nice to only be able to represent valid sequences
+      Sequence can be represented by function composition
+
+      S-expression can be represented as a function of N args, producing a *list* of outputs!!!
+        Something something List Monad
+      An S-expression that needs 2 args
+        We can use apply
+      
+    Phantom mofos
+      arithmetic instructions return a thing with a phantom type
+      at value-level we track the stack only
+      Conversion functions to change the phantom type and put them together in a function body
+        Typed identity functions
+      Badass as fuck
+
+  -}
+
+
+  -- load :: t -> String -> Int -> State I32 -> State t
+  -- load t name offset (State _ wat) =
+  --   State
+  --     { valueType = t
+  --     , wat = "( " ++ name ++ " offset=" ++ show offset ++ " " ++ wat ++ " )"
+  --     }
+
+  -- i32_load = load I32 "i32.load"
+  -- i64_load = load I64 "i64.load"
+  -- f32_load = load F32 "f32.load"
+  -- f64_load = load F64 "f64.load"
+  -- i32_load8_s = load I32 "i32.load8_s"
+  -- i32_load8_u = load I32 "i32.load8_u"
+  -- i32_load16_s = load I32 "i32.load16_s"
+  -- i32_load16_u = load I32 "i32.load16_u"
+  -- i64_load8_s = load I64 "i64.load8_s"
+  -- i64_load8_u = load I64 "i64.load8_u"
+  -- i64_load16_s = load I64 "i64.load16_s"
+  -- i64_load16_u = load I64 "i64.load16_u"
+  -- i64_load32_s = load I64 "i64.load32_s"
+  -- i64_load32_u = load I64 "i64.load32_u"
 
   -- i32_store memarg -- [i32 i32] -> []
   -- i64_store memarg -- [i32 i64] -> []
@@ -94,50 +126,77 @@ module Generate.WebAssembly.DSL where
 
   i32_const :: Int -> State I32
   i32_const x =
-    State
-      { valueType = I32
-      , wast = "(i32.const " ++ (show x) ++ " )"
+    ValidState
+      { stack = [StackI32]
+      , wat = "(i32.const " ++ (show x) ++ " )"
       }
 
   i64_const :: Integer -> State I64
   i64_const x =
-    State
-      { valueType = I64
-      , wast = "(i64.const " ++ (show x) ++ " )"
+    ValidState
+      { stack = [StackI64]
+      , wat = "(i64.const " ++ (show x) ++ " )"
       }
 
   f32_const :: Float -> State F32
   f32_const x =
-    State
-      { valueType = F32
-      , wast = "(f32.const " ++ (show x) ++ " )"
+    ValidState
+      { stack = [StackF32]
+      , wat = "(f32.const " ++ (show x) ++ " )"
       }
 
   f64_const :: Double -> State F64
   f64_const x =
-    State
-      { valueType = F64
-      , wast = "(f64.const " ++ (show x) ++ " )"
+    ValidState
+      { stack = [StackF64]
+      , wat = "(f64.const " ++ (show x) ++ " )"
       }
 
-  unop :: ti -> to -> String -> State ti -> State to
-  unop ti to name (State _ a) =
-    State
-      { valueType = to
-      , wast = "(" ++ name ++ " " ++ a ++ " )"
-      }
+  unop :: (Stackable tpop, Stackable tpush) => tpop -> tpush -> String -> State tpop -> State tpush
+  unop vpop vpush name state =
+    case state of
+      ErrorState err ->
+        ErrorState err
 
-  binop :: ti -> to -> String -> State ti -> State ti -> State to
-  binop ti to name (State _ a) (State _ b) =
-    State
-      { valueType = to
-      , wast = "(" ++ name ++ " " ++ a ++ " " ++ b ++ " )"
-      }
+      ValidState (vpop : rest) wat ->
+        ValidState
+          { stack = push vpush rest
+          , wat = "(" ++ name ++ " " ++ wat ++ " )"
+          }
+
+      ValidState stack wat ->
+        ErrorState (name ++ " expected " ++ (show vpop) ++ " but stack is:\n" ++ show stack ++ "\n" ++ show wat )
+
+
+  binop :: (Stackable tpop, Stackable tpush) => tpop -> tpush -> String -> State tpop -> State tpop -> State tpush
+  binop vpop vpush name stateA stateB =
+    case (stateA, stateB) of
+      (ErrorState err, _) ->
+        ErrorState err
+
+      (_, ErrorState err) ->
+        ErrorState err
+  
+      (ValidState (vpop : restA) watA, ValidState (headB : restB) watB) ->
+        case headB of
+          vpop ->
+            ValidState
+              { stack = push vpush restB
+              , wat = "(" ++ name ++ " " ++ watA ++ " " ++ watB ++ " )"
+              }
+          _ ->
+            ErrorState errMsg
+
+      _ ->
+        ErrorState errMsg
+    where
+      errMsg =
+        (name ++ " expected " ++ (show vpop) ++ " but input state are:\n" ++ show stateA ++ "\n" ++ show stateB )
+
 
   i32_eqz = unop I32 I32 "i32.eqz"
   i32_eq = binop I32 I32 "i32.eq"
   i32_ne = binop I32 I32 "i32.ne"
-
   i32_lt_s = binop I32 I32 "i32.lt_s"
   i32_lt_u = binop I32 I32 "i32.lt_u"
   i32_gt_s = binop I32 I32 "i32.gt_s"
@@ -147,7 +206,10 @@ module Generate.WebAssembly.DSL where
   i32_ge_s = binop I32 I32 "i32.ge_s"
   i32_ge_u = binop I32 I32 "i32.ge_u"
   
-  i64_eqz = unop I64 I32	"i64.eqz"
+  i64_eqz :: State I64 -> State I32
+  i64_eqz = unop I64 I32 "i64.eqz"
+
+  i64_eq :: State I64 -> State I64 -> State I32
   i64_eq = binop I64 I32 "i64.eq"
   i64_ne = binop I64 I32 "i64.ne"
   i64_lt_s = binop I64 I32 "i64.lt_s"
