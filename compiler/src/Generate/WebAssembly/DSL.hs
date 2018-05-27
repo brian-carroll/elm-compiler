@@ -16,6 +16,8 @@ module Generate.WebAssembly.DSL where
       https://webassembly.github.io/spec/core/appendix/index-instructions.html
   -}
 
+  -- func = Func
+
   unreachable = Unreachable
   nop = Nop
   block = Block
@@ -25,6 +27,9 @@ module Generate.WebAssembly.DSL where
   br_if = BrIf
   br_table = BrTable
   return_ = Return
+
+  call = Call
+  call_indirect = CallIndirect
 
   drop = Drop
   select = Select
@@ -39,8 +44,8 @@ module Generate.WebAssembly.DSL where
   load t opCode offset subExpr =
     MemOp
       { opCode = opCode
-      , operandTypes = [I32, t]
-      , returnType = Nothing
+      -- , operandTypes = [I32, t]
+      -- , returnType = Nothing
       , subExprs = [subExpr]
       , memarg = MemArg { memOffset = offset, align = Natural }
       }
@@ -64,8 +69,8 @@ module Generate.WebAssembly.DSL where
   store t opCode offset addrExpr valExpr =
     MemOp
       { opCode = opCode
-      , operandTypes = [I32, t]
-      , returnType = Nothing
+      -- , operandTypes = [I32, t]
+      -- , returnType = Nothing
       , subExprs = [addrExpr, valExpr]
       , memarg = MemArg { memOffset = offset, align = Natural }
       }
@@ -84,8 +89,8 @@ module Generate.WebAssembly.DSL where
   memory_size =
     Op
       { opCode = "memory.size"
-      , operandTypes = []
-      , returnType = Just I32
+      -- , operandTypes = []
+      -- , returnType = Just I32
       , subExprs = []
       }
 
@@ -93,8 +98,8 @@ module Generate.WebAssembly.DSL where
   memory_grow subExpr =
     Op
       { opCode = "memory.grow"
-      , operandTypes = [I32]
-      , returnType = Just I32
+      -- , operandTypes = [I32]
+      -- , returnType = Just I32
       , subExprs = [subExpr]
       }
     
@@ -130,8 +135,8 @@ module Generate.WebAssembly.DSL where
   unop ti to opCode subExpr =
     Op
       { opCode = opCode
-      , operandTypes = [ti]
-      , returnType = Just to
+      -- , operandTypes = [ti]
+      -- , returnType = Just to
       , subExprs = [subExpr]
       }
 
@@ -139,8 +144,8 @@ module Generate.WebAssembly.DSL where
   binop ti to opCode subExpr1 subExpr2 =
     Op
       { opCode = opCode
-      , operandTypes = [ti, ti]
-      , returnType = Just to
+      -- , operandTypes = [ti, ti]
+      -- , returnType = Just to
       , subExprs = [subExpr1, subExpr2]
       }
 

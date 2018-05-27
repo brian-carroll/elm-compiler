@@ -1,4 +1,8 @@
-module Generate.WebAssembly.GC (..) where
+module Generate.WebAssembly.GC where
+
+  import Generate.WebAssembly.DSL
+  import Generate.WebAssembly.Ast
+
   {-
   
   Allocate
@@ -36,3 +40,90 @@ module Generate.WebAssembly.GC (..) where
       Shrink Wasm “memory”
       Update “main” pointer
   -}
+
+
+  deepCopy =
+    let
+      old = LocalName "$old"
+      new = LocalName "$new"
+      copy = FuncName "$copy"
+
+      copyAtOffset n =
+        i32_store n
+          (get_local new)
+          (call copy
+            [i32_load n
+              (get_local new)
+            ]
+          )
+    in
+      Func
+        { name = "$deepCopy"
+        , params = [(old, I32)]
+        , locals = [(new, I32)]
+        , returnType = Just I32
+        , body =
+          [ set_local new $
+              call copy $
+                [get_local old]
+          , br_table
+              (i32_load8_u 0 (get_local new))
+              [(LabelName "$int",
+                  [ get_local new
+                  , return_
+                  ])
+              , (LabelName "$list"
+                , map copyAtOffset [1, 2]
+                )
+              ]
+              ( LabelName "$default"
+              , [unreachable]
+              )
+          ]
+        }
+
+    {-
+
+        (i32.store, offset=2
+          (get_local $new)
+          (call $copy
+            (i32.load offset=2
+              (get_local $new)
+            )
+          )
+        )
+
+        (i32.store, offset=2
+          (get_local $new)
+          (call $copy
+            (i32.load offset=2
+              (get_local $new)
+            )
+          )
+        )
+
+    -}
+-- get_local $old
+-- call $copy
+-- tee_local $new
+-- get_local $old
+-- load offset 0
+-- br_table
+-- $int
+-- $list
+
+-- label $int
+-- return
+
+-- label $list
+-- get_local $new
+-- get_local $new
+-- load offset 1
+-- call $copy
+-- store, offset 1
+-- get_local $new
+-- get_local $new
+-- load, offset 2
+-- call $copy
+-- store, offset 2
+-- return

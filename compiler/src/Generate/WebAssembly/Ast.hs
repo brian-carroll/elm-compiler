@@ -23,8 +23,9 @@ data GlobalType = GlobalType Mutability ValType
 data Func =
   Func
   { name :: String
-  , type_ :: FuncType 
-  , locals :: [ValType]
+  , params :: [(LocalId, ValType)]
+  , locals :: [(LocalId, ValType)]
+  , returnType :: Maybe ValType
   , body :: Expr
   }
 
@@ -79,14 +80,14 @@ data Instr
       }
   | Op
       { opCode :: String
-      , operandTypes :: [ValType] -- not currently used
-      , returnType :: Maybe ValType -- not currently used
+      -- , operandTypes :: [ValType] -- not currently used
+      -- , returnType :: Maybe ValType -- not currently used
       , subExprs :: [Instr]
       }
   | MemOp
       { opCode :: String
-      , operandTypes :: [ValType] -- not currently used
-      , returnType :: Maybe ValType -- not currently used
+      -- , operandTypes :: [ValType] -- not currently used
+      -- , returnType :: Maybe ValType -- not currently used
       , subExprs :: [Instr]
       , memarg :: MemArg
       }
