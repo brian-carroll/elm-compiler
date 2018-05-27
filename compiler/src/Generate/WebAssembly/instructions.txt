@@ -4,7 +4,6 @@ block [t?] | [] -> [t*]
 loop [t?] | [] -> [t*]
 if [t?] | [] -> [t*]
 else | 
-
 end | [t1* t?] -> [t2*]
 br l | [t? i32] -> [t?]
 br_if l | [t1* t? i32] -> [t2*]
@@ -13,7 +12,7 @@ return | [t1*] -> [t2*]
 call x | [t1* i32] -> [t2*]
 call_indirect x | 
 
-drop | [t] -> [] [t] -> []
+drop | [t] -> []
 select | [t t i32] -> [t]
 
 get_local x | [] -> [t]
