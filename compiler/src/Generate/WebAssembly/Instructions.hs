@@ -1,20 +1,18 @@
-module Generate.WebAssembly.DSL where
-
-  import Generate.WebAssembly.Ast
+module Generate.WebAssembly.Instructions where
 
   {-
-    Domain Specific Language for generating WebAssembly Text format
-
-    Takes advantage of the fact that Wasm text format supports *nested* expressions,
-    instead of stack order. This makes composition a lot easier.
-
-    Composition of instructions is type checked
-    However semantics are not checked, so it is possible to generate bad Wasm programs
-    using this DSL. (Accessing memory address that doesn't exist, etc.)
+    Domain Specific Language for WebAssembly instructions
 
     Reference:
       https://webassembly.github.io/spec/core/appendix/index-instructions.html
   -}
+
+  import Generate.WebAssembly.AST
+    ( Instr(..)
+    , ValType(..)
+    , MemArg(..)
+    , MemAlign(..)
+    )
 
   -- func = Func
 

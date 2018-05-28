@@ -1,7 +1,14 @@
 module Generate.WebAssembly.GC where
 
-  import Generate.WebAssembly.DSL
-  import Generate.WebAssembly.Ast
+  import Generate.WebAssembly.Instructions
+  import Generate.WebAssembly.AST
+    ( Function(..)
+    , Instr
+    , LabelId(..)
+    , LocalId(..)
+    , FunctionId(..)
+    , ValType(..)
+    )
 
   {-
   
@@ -42,43 +49,50 @@ module Generate.WebAssembly.GC where
   -}
 
 
+
+
+
+
+  loadElmType :: Instr -> Instr
+  loadElmType pointer =
+    i32_load8_u 0 pointer
+
+  deepCopy :: Function
   deepCopy =
     let
       old = LocalName "$old"
       new = LocalName "$new"
-      copy = FuncName "$copy"
+      functionId = FunctionName "$deepCopy"
 
-      copyAtOffset n =
+      deepCopyChildAt n =
         i32_store n
           (get_local new)
-          (call copy
+          (call functionId
             [i32_load n
               (get_local new)
             ]
           )
+
+      returnNewPointer =
+        [ get_local new
+        , return_
+        ]
     in
-      Func
-        { name = "$deepCopy"
+      Function
+        { functionId = functionId
         , params = [(old, I32)]
         , locals = [(new, I32)]
         , returnType = Just I32
         , body =
           [ set_local new $
-              call copy $
+              call (FunctionName "$shallowCopy") $
                 [get_local old]
           , br_table
-              (i32_load8_u 0 (get_local new))
-              [(LabelName "$int",
-                  [ get_local new
-                  , return_
-                  ])
-              , (LabelName "$list"
-                , map copyAtOffset [1, 2]
-                )
+              (loadElmType (get_local new))
+              [ ( LabelName "$int", returnNewPointer )
+              , ( LabelName "$list", (map deepCopyChildAt [1, 2]) ++ returnNewPointer )
               ]
-              ( LabelName "$default"
-              , [unreachable]
-              )
+              ( LabelName "$default", [unreachable] )
           ]
         }
 

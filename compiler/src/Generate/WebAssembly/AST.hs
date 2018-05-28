@@ -1,10 +1,9 @@
-module Generate.WebAssembly.Ast where
-
+module Generate.WebAssembly.AST where
 
 data TypeId = TypeIdx Int
-data FuncId = FuncIdx Int | FuncName String
+data FunctionId = FunctionIdx Int | FunctionName String
 data TableId = TableIdx Int
-data MemId = MemIdx -- numeric index must be 0, only one data segment allowed
+data MemId = MemIdxZero -- index must be 0 in Wasm MVP
 data GlobalId = GlobalIdx Int | GlobalName String
 data LocalId = LocalIdx Int | LocalName String
 data LabelId = LabelIdx Int | LabelName String
@@ -20,14 +19,14 @@ data TableType = TableType Limits ElemType
 data ElemType = AnyFunc
 data GlobalType = GlobalType Mutability ValType 
 
-data Func =
-  Func
-  { name :: String
-  , params :: [(LocalId, ValType)]
-  , locals :: [(LocalId, ValType)]
-  , returnType :: Maybe ValType
-  , body :: Expr
-  }
+data Function =
+  Function
+    { functionId :: FunctionId
+    , params :: [(LocalId, ValType)]
+    , locals :: [(LocalId, ValType)]
+    , returnType :: Maybe ValType
+    , body :: Expr
+    }
 
 data DataSegment =
   DataSegment
@@ -43,7 +42,7 @@ data Export =
   Export String ImportExportDesc
 
 data ImportExportDesc
-  = ImpExpFunc FuncId
+  = ImpExpFunc FunctionId
   | ImpExpTable TableId
   | ImpExpMem MemId
   | ImpExpGlobal GlobalId
@@ -65,8 +64,8 @@ data Instr
   | BrIf LabelId Instr
   | BrTable Instr [(LabelId, [Instr])] (LabelId, [Instr])
   | Return
-  | Call FuncId [Instr]
-  | CallIndirect FuncId [Instr]
+  | Call FunctionId [Instr]
+  | CallIndirect FunctionId [Instr]
   | GetLocal LocalId
   | SetLocal LocalId Instr
   | TeeLocal LocalId Instr
@@ -111,13 +110,13 @@ instance Show MemAlign where
 data Module
   = Module
   { types :: [FuncType]
-  , funcs :: [Func]
+  , funcs :: [Function]
   , tables :: [TableType]
   , mems :: [MemType]
   , globals :: [GlobalType]
   , elem :: [ElemType]
   , data_ :: [DataSegment]
-  , start :: Maybe FuncId
+  , start :: Maybe FunctionId
   , imports :: [Import]
   , exports :: [Export]
   }
