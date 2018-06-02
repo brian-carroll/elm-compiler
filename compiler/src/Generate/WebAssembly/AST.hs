@@ -79,14 +79,10 @@ data Instr
       }
   | Op
       { opCode :: String
-      -- , operandTypes :: [ValType] -- not currently used
-      -- , returnType :: Maybe ValType -- not currently used
       , subExprs :: [Instr]
       }
   | MemOp
       { opCode :: String
-      -- , operandTypes :: [ValType] -- not currently used
-      -- , returnType :: Maybe ValType -- not currently used
       , subExprs :: [Instr]
       , memarg :: MemArg
       }
@@ -99,13 +95,14 @@ data MemAlign
   | Align16
   | Align32
   | Align64
-  | Natural
+  | AlignNatural
 
 instance Show MemAlign where
   show Align8 = "3"
   show Align16 = "4"
   show Align32 = "5"
   show Align64 = "6"
+  show AlignNatural = ""
 
 data Module
   = Module
@@ -120,4 +117,34 @@ data Module
   , imports :: [Import]
   , exports :: [Export]
   }
-    
+
+
+load :: ValType -> String -> Int -> Instr -> Instr
+load t opCode offset subExpr =
+  MemOp
+    { opCode = opCode
+    , subExprs = [subExpr]
+    , memarg = MemArg { memOffset = offset, align = AlignNatural }
+    }
+
+store :: ValType -> String -> Int -> Instr -> Instr -> Instr
+store t opCode offset addrExpr valExpr =
+  MemOp
+    { opCode = opCode
+    , subExprs = [addrExpr, valExpr]
+    , memarg = MemArg { memOffset = offset, align = AlignNatural }
+    }
+
+unop :: ValType -> ValType -> String -> Instr -> Instr
+unop ti to opCode subExpr =
+  Op
+    { opCode = opCode
+    , subExprs = [subExpr]
+    }
+
+binop :: ValType -> ValType -> String -> Instr -> Instr -> Instr
+binop ti to opCode subExpr1 subExpr2 =
+  Op
+    { opCode = opCode
+    , subExprs = [subExpr1, subExpr2]
+    }
