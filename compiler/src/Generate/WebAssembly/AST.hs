@@ -119,31 +119,33 @@ data Module
   }
 
 
-load :: ValType -> String -> Int -> Instr -> Instr
-load t opCode offset subExpr =
+-- Helper functions for Instructions DSL
+
+load :: String -> Int -> Instr -> Instr
+load opCode offset subExpr =
   MemOp
     { opCode = opCode
     , subExprs = [subExpr]
     , memarg = MemArg { memOffset = offset, align = AlignNatural }
     }
 
-store :: ValType -> String -> Int -> Instr -> Instr -> Instr
-store t opCode offset addrExpr valExpr =
+store :: String -> Int -> Instr -> Instr -> Instr
+store opCode offset addrExpr valExpr =
   MemOp
     { opCode = opCode
     , subExprs = [addrExpr, valExpr]
     , memarg = MemArg { memOffset = offset, align = AlignNatural }
     }
 
-unop :: ValType -> ValType -> String -> Instr -> Instr
-unop ti to opCode subExpr =
+unop :: String -> Instr -> Instr
+unop opCode subExpr =
   Op
     { opCode = opCode
     , subExprs = [subExpr]
     }
 
-binop :: ValType -> ValType -> String -> Instr -> Instr -> Instr
-binop ti to opCode subExpr1 subExpr2 =
+binop :: String -> Instr -> Instr -> Instr
+binop opCode subExpr1 subExpr2 =
   Op
     { opCode = opCode
     , subExprs = [subExpr1, subExpr2]
