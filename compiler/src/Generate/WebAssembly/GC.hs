@@ -57,44 +57,120 @@ module Generate.WebAssembly.GC where
   loadElmType pointer =
     i32_load8_u 0 pointer
 
+    {-
+    
+    Need special functions for variable-length thingies
+    Anything that has a list in it
+      String    [Word32]
+      Call      [NameDeref]
+      TailCall  [NameDeref]
+      If        [(Pointer, Pointer)]
+      Destruct  [Word32]
+      Update    [(RecordFieldIdx, Pointer)]
+      Record    [(RecordFieldIdx, Pointer)]
+      Env       [Pointer]
+
+    -}
+
+  deepCopyEnv :: Function
+  deepCopyEnv =
+    let
+      old = LocalName "$old"
+      new = LocalName "$new"
+    in
+      Function
+        { functionId = FunctionName "$gcDeepCopyEnv"
+        , params = [(old, I32)]
+        , locals = [(new, I32)]
+        , returnType = Just I32
+        , body = [] -- TODO
+        }
+
+
+  deepCopyFields :: Function
+  deepCopyFields =
+    let
+      old = LocalName "$old"
+      new = LocalName "$new"
+    in
+      Function
+        { functionId = FunctionName "$gcDeepCopyFields"
+        , params = [(old, I32)]
+        , locals = [(new, I32)]
+        , returnType = Just I32
+        , body = [] -- TODO
+        }
+      
+
   deepCopy :: Function
   deepCopy =
     let
       old = LocalName "$old"
       new = LocalName "$new"
-      functionId = FunctionName "$deepCopy"
+      fid = FunctionName "$gcDeepCopy"
 
-      deepCopyChildAt n =
-        i32_store n
-          (get_local new)
-          (call functionId
-            [i32_load n
+      deepCopyChildren :: [Int] -> [Instr]
+      deepCopyChildren childOffsets =
+        (map
+          (\offset ->
+            i32_store offset
               (get_local new)
-            ]
+              (call fid
+                [i32_load offset (get_local new)]
+              )
           )
-
-      returnNewPointer =
-        [ get_local new
-        , return_
-        ]
+          childOffsets
+        )
+        ++ [ get_local new
+           , return_
+           ]
     in
       Function
-        { functionId = functionId
+        { functionId = fid
         , params = [(old, I32)]
         , locals = [(new, I32)]
         , returnType = Just I32
         , body =
           [ set_local new $
-              call (FunctionName "$shallowCopy") $
+              call (FunctionName "$gcShallowCopy") $ -- TODO
                 [get_local old]
           , br_table
               (loadElmType (get_local new))
-              [ ( LabelName "$int", returnNewPointer )
-              , ( LabelName "$list", (map deepCopyChildAt [1, 2]) ++ returnNewPointer )
-              ]
+              (map (\(str, instr) -> ( LabelName ("$gcDeepCopy" ++ str) , instr ))
+                [ ( "Bool", deepCopyChildren [] )
+                , ( "Chr", deepCopyChildren [] )
+                , ( "Str", deepCopyChildren [] )
+                , ( "Int", deepCopyChildren [] )
+                , ( "Float", deepCopyChildren [] )
+                , ( "VarLocal", deepCopyChildren [] )
+                , ( "VarGlobal", deepCopyChildren [1] )
+                , ( "VarEnum", deepCopyChildren [] )
+                , ( "VarBox", deepCopyChildren [1] )
+                , ( "VarCycle", deepCopyChildren [1] )
+                , ( "VarDebug", deepCopyChildren [] )
+                , ( "VarKernel", deepCopyChildren [1] )
+                , ( "List", deepCopyChildren [1, 2] )
+                , ( "Function", (call (functionId deepCopyEnv) [get_local new])
+                                  : deepCopyChildren [7]
+                  )
+                , ( "Call", deepCopyChildren [] )
+                , ( "TailCall", deepCopyChildren [] )
+                , ( "If", deepCopyChildren [] )
+                , ( "Let", deepCopyChildren [] )
+                , ( "Destruct", deepCopyChildren [] )
+                , ( "Accessor", deepCopyChildren [] )
+                , ( "Access", deepCopyChildren [] )
+                , ( "Update", deepCopyChildren [] )
+                , ( "Record", deepCopyChildren [] )
+                , ( "Unit", deepCopyChildren [] )
+                , ( "Tuple", deepCopyChildren [] )
+                , ( "Shader", deepCopyChildren [] )
+                ]
+              )
               ( LabelName "$default", [unreachable] )
           ]
         }
+
 
     {-
 
