@@ -34,6 +34,7 @@ import qualified Json.Encode as Encode
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.Region as R
 
+import Data.Monoid ((<>))
 
 
 -- EXPRESSIONS
@@ -48,11 +49,14 @@ generate :: Mode.Mode -> Opt.Expr -> Code
 generate mode expression =
   case expression of
     Opt.Bool bool ->
-      JsExpr $ JS.Bool bool
+      JsExpr $
+        JS.CommentedExpr "Bool" $
+        JS.Bool bool
 
     Opt.Chr char ->
       JsExpr $
-        case mode of
+      JS.CommentedExpr "Chr" $
+      case mode of
           Mode.Dev _ _ ->
             JS.Call toChar [ JS.String (Text.encodeUtf8Builder char) ]
 
@@ -60,50 +64,75 @@ generate mode expression =
             JS.String (Text.encodeUtf8Builder char)
 
     Opt.Str string ->
-      JsExpr $ JS.String (Text.encodeUtf8Builder string)
+      JsExpr $
+      JS.CommentedExpr "Str" $
+      JS.String (Text.encodeUtf8Builder string)
 
     Opt.Int int ->
-      JsExpr $ JS.Int int
+      JsExpr $
+      JS.CommentedExpr "Int" $
+      JS.Int int
 
     Opt.Float float ->
-      JsExpr $ JS.Float float
+      JsExpr $
+      JS.CommentedExpr "Float" $
+      JS.Float float
 
     Opt.VarLocal name ->
-      JsExpr $ JS.Ref (Name.fromLocal name)
+      JsExpr $
+      JS.CommentedExpr "VarLocal" $
+      JS.Ref (Name.fromLocal name)
 
     Opt.VarGlobal (Opt.Global home name) ->
-      JsExpr $ JS.Ref (Name.fromGlobal home name)
+      JsExpr $
+      JS.CommentedExpr "VarGlobal" $
+      JS.Ref (Name.fromGlobal home name)
 
     Opt.VarEnum (Opt.Global home name) index ->
       case mode of
         Mode.Dev _ _ ->
-          JsExpr $ JS.Ref (Name.fromGlobal home name)
+          JsExpr $
+          JS.CommentedExpr "VarEnum" $
+          JS.Ref (Name.fromGlobal home name)
 
         Mode.Prod _ _ ->
-          JsExpr $ JS.Int (Index.toMachine index)
+          JsExpr $
+          JS.CommentedExpr "VarEnum" $
+          JS.Int (Index.toMachine index)
 
     Opt.VarBox (Opt.Global home name) ->
-      JsExpr $ JS.Ref $
+      JsExpr $
+      JS.CommentedExpr "VarBox" $
+      JS.Ref $
         case mode of
           Mode.Dev _ _ -> Name.fromGlobal home name
           Mode.Prod _ _ -> Name.fromGlobal ModuleName.basics N.identity
 
     Opt.VarCycle home name ->
-      JsExpr $ JS.Call (JS.Ref (Name.fromCycle home name)) []
+      JsExpr $
+      JS.CommentedExpr "VarCycle" $
+       JS.Call (JS.Ref (Name.fromCycle home name)) []
 
     Opt.VarDebug name home region unhandledValueName ->
-      JsExpr $ generateDebug name home region unhandledValueName
+      JsExpr $
+      JS.CommentedExpr "VarDebug" $
+       generateDebug name home region unhandledValueName
 
     Opt.VarKernel home name ->
-      JsExpr $ JS.Ref (Name.fromKernel home name)
+      JsExpr $
+      JS.CommentedExpr "VarKernel" $
+       JS.Ref (Name.fromKernel home name)
 
     Opt.List entries ->
       case entries of
         [] ->
-          JsExpr $ JS.Ref (Name.fromKernel N.list "Nil")
+          JsExpr $
+          JS.CommentedExpr "List" $
+          JS.Ref (Name.fromKernel N.list "Nil")
 
         _ ->
           JsExpr $
+          JS.CommentedExpr "List" $    
             JS.Call
               (JS.Ref (Name.fromKernel N.list "fromArray"))
               [ JS.Array $ map (generateJsExpr mode) entries
@@ -113,16 +142,21 @@ generate mode expression =
       generateFunction (map Name.fromLocal args) (generate mode body)
 
     Opt.Call func args ->
-      JsExpr $ generateCall mode func args
+      JsExpr $
+      JS.CommentedExpr "Call" $
+       generateCall mode func args
 
     Opt.TailCall name args ->
-      JsBlock $ generateTailCall mode name args
+      JsBlock $ 
+      JS.CommentStmt ("TailCall " <> N.toBuilder name) :
+      generateTailCall mode name args
 
     Opt.If branches final ->
       generateIf mode branches final
 
     Opt.Let def body ->
       JsBlock $
+        JS.CommentStmt "Let" :
         generateDef mode def : codeToStmtList (generate mode body)
 
     Opt.Destruct (Opt.Destructor name path) body ->
@@ -130,40 +164,56 @@ generate mode expression =
         pathExpr = generatePath mode path
         pathDef = JS.Var [ (Name.fromLocal name, Just pathExpr) ]
       in
-      JsBlock $ pathDef : codeToStmtList (generate mode body)
+        JsBlock $ 
+        JS.CommentStmt "Destruct" :
+        pathDef : codeToStmtList (generate mode body)
 
     Opt.Case label root decider jumps ->
-      JsBlock $ generateCase mode label root decider jumps
+      JsBlock $ 
+      JS.CommentStmt "Case" : 
+      generateCase mode label root decider jumps
 
     Opt.Accessor field ->
-      JsExpr $ JS.Function Nothing [Name.dollar]
+      JsExpr $
+      JS.CommentedExpr "Accessor" $    
+      JS.Function Nothing [Name.dollar]
         [ JS.Return $ Just $
             JS.Access (JS.Ref Name.dollar) (generateField mode field)
         ]
 
     Opt.Access record field ->
-      JsExpr $ JS.Access (generateJsExpr mode record) (generateField mode field)
+      JsExpr $
+      JS.CommentedExpr "Access" $    
+      JS.Access (generateJsExpr mode record) (generateField mode field)
 
     Opt.Update record fields ->
       JsExpr $
+        JS.CommentedExpr "Update" $
         JS.Call (JS.Ref (Name.fromKernel N.utils "update"))
           [ generateJsExpr mode record
           , generateRecord mode fields
           ]
 
     Opt.Record fields ->
-      JsExpr $ generateRecord mode fields
+      JsExpr $
+      JS.CommentedExpr "Record" $    
+      generateRecord mode fields
 
     Opt.Unit ->
       case mode of
         Mode.Dev _ _ ->
-          JsExpr $ JS.Ref (Name.fromKernel N.utils "Tuple0")
+          JsExpr $
+          JS.CommentedExpr "Unit" $    
+          JS.Ref (Name.fromKernel N.utils "Tuple0")
 
         Mode.Prod _ _ ->
-          JsExpr $ JS.Int 0
+          JsExpr $
+          JS.CommentedExpr "Unit" $    
+          JS.Int 0
 
     Opt.Tuple a b maybeC ->
       JsExpr $
+        JS.CommentedExpr "Tuple" $    
         case maybeC of
           Nothing ->
             JS.Call (JS.Ref (Name.fromKernel N.utils "Tuple2"))
@@ -180,7 +230,9 @@ generate mode expression =
 
     Opt.Shader src ->
       let string = JS.String (Text.encodeUtf8Builder src) in
-      JsExpr $ JS.Object [ ( Name.fromLocal "src", string ) ]
+      JsExpr $
+      JS.CommentedExpr "Shader" $    
+      JS.Object [ ( Name.fromLocal "src", string ) ]
 
 
 
@@ -344,6 +396,7 @@ generateFunction args body =
   case IntMap.lookup (length args) funcHelpers of
     Just helper ->
       JsExpr $
+        JS.CommentedExpr "Function" $
         JS.Call helper
           [ JS.Function Nothing args $
               codeToStmtList body
@@ -352,7 +405,9 @@ generateFunction args body =
     Nothing ->
       let
         addArg arg code =
-          JsExpr $ JS.Function Nothing [arg] $
+          JsExpr $
+          JS.CommentedExpr "Function" $
+          JS.Function Nothing [arg] $
             codeToStmtList code
       in
       foldr addArg body args
@@ -784,9 +839,13 @@ generateIf mode givenBranches givenFinal =
     finalCode = generate mode final
   in
   if isBlock finalCode || any (isBlock . snd) branchExprs then
-    JsBlock [ foldr addStmtIf (codeToStmt finalCode) branchExprs ]
+    JsBlock $
+    JS.CommentStmt "If" :
+    [ foldr addStmtIf (codeToStmt finalCode) branchExprs ]
   else
-    JsExpr $ foldr addExprIf (codeToExpr finalCode) branchExprs
+    JsExpr $
+    JS.CommentedExpr "If" $
+    foldr addExprIf (codeToExpr finalCode) branchExprs
 
 
 addExprIf :: (JS.Expr, Code) -> JS.Expr -> JS.Expr

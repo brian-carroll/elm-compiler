@@ -45,6 +45,7 @@ data Expr
   | Assign LValue Expr
   | Call Expr [Expr] -- ^ @f(x,y,z)@, spec 11.2.3
   | Function (Maybe Name) [Name] [Stmt]
+  | CommentedExpr Builder Expr
 
 
 data LValue
@@ -72,6 +73,7 @@ data Stmt
   | Return (Maybe Expr) -- return expr;
   | Var [(Name, Maybe Expr)] -- var x, y=42;
   | FunctionStmt Name [Name] [Stmt] -- function f(x, y, z) {...}
+  | CommentStmt Builder
 
 
 data Case
@@ -162,6 +164,9 @@ fromStmtBlock indent stmts =
 fromStmt :: Builder -> Stmt -> Builder
 fromStmt indent statement =
   case statement of
+    CommentStmt comment ->
+      "/* " <> comment <> " */\n"
+
     Block stmts ->
       fromStmtBlock indent stmts
 
@@ -313,6 +318,13 @@ parensFor grouping builder =
 fromExpr :: Builder -> Grouping -> Expr -> (Lines, Builder)
 fromExpr indent grouping expression =
   case expression of
+    CommentedExpr comment expr ->
+      let
+        (lines, exprBuilder) = fromExpr indent grouping expr
+      in
+      (,) lines $
+        "/* " <> comment <> " */" <> exprBuilder
+
     String string ->
       (One, "'" <> string <> "'")
 

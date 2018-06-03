@@ -158,6 +158,13 @@ addGlobal mode graph state@(State revKernels builders seen) global =
       State revKernels builders (Set.insert global seen)
 
 
+prefixCommentStmt text stmt =
+  JS.Block
+    [ JS.CommentStmt text
+    , stmt
+    ]
+
+
 addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph global state =
   let
@@ -167,30 +174,46 @@ addGlobalHelp mode graph global state =
   case graph ! global of
     Opt.Define expr deps ->
       addStmt (addDeps deps state) (
+        prefixCommentStmt "Define" $
         var global (Expr.generate mode expr)
       )
 
     Opt.DefineTailFunc argNames body deps ->
       addStmt (addDeps deps state) (
         let (Opt.Global _ name) = global in
-        var global (Expr.generateTailDef mode name argNames body)
+          prefixCommentStmt "DefineTailFunc" $
+          var global (Expr.generateTailDef mode name argNames body)
       )
 
     Opt.Ctor index arity ->
       addStmt state (
+        prefixCommentStmt "Ctor" $
         var global (Expr.generateCtor mode global index arity)
       )
 
-    Opt.Link linkedGlobal ->
-      addGlobal mode graph state linkedGlobal
+    Opt.Link (Opt.Global moduleName name) ->
+      addGlobal mode graph
+        -- original version doesn't change the code-gen 'state', therefore doesn't write anything
+        -- => Something to do with module system
+        (addStmt state $ JS.CommentStmt
+          ("Link " <> N.toBuilder name )
+        )
+        (Opt.Global moduleName name)
 
     Opt.Cycle names values functions deps ->
       addStmt (addDeps deps state) (
+        prefixCommentStmt
+          (foldl
+            (\acc n -> acc <> N.toBuilder n)
+            "Cycle "
+            names
+          ) $
         generateCycle mode global names values functions
       )
 
     Opt.Manager effectsType ->
-      generateManager mode graph global effectsType state
+      generateManager mode graph global effectsType $
+      (addStmt state $ JS.CommentStmt "Manager")
 
     Opt.Kernel (Opt.KContent clientChunks clientDeps) maybeServer ->
       if isDebugger global && not (Mode.isDebug mode) then
@@ -198,28 +221,38 @@ addGlobalHelp mode graph global state =
       else
         case maybeServer of
           Just (Opt.KContent serverChunks serverDeps) | Mode.isServer mode ->
-            addKernel (addDeps serverDeps state) (generateKernel mode serverChunks)
+            addKernel (addDeps serverDeps state) (
+              "/* Kernel */" <>
+              generateKernel mode serverChunks
+            )
 
           _ ->
-            addKernel (addDeps clientDeps state) (generateKernel mode clientChunks)
+            addKernel (addDeps clientDeps state) (
+              "/* Kernel */" <>
+              generateKernel mode clientChunks
+              )
 
     Opt.Enum index ->
       addStmt state (
+        prefixCommentStmt "Enum" $
         generateEnum mode global index
       )
 
     Opt.Box ->
       addStmt state (
+        prefixCommentStmt "Box" $
         generateBox mode global
       )
 
     Opt.PortIncoming decoder deps ->
       addStmt (addDeps deps state) (
+        prefixCommentStmt "PortIncoming" $
         generatePort mode global "incomingPort" decoder
       )
 
     Opt.PortOutgoing encoder deps ->
       addStmt (addDeps deps state) (
+        prefixCommentStmt "PortOutgoing" $
         generatePort mode global "outgoingPort" encoder
       )
 
