@@ -158,10 +158,11 @@ addGlobal mode graph state@(State revKernels builders seen) global =
       State revKernels builders (Set.insert global seen)
 
 
-prefixCommentStmt text stmt =
+wrapInComments text stmt =
   JS.Block
     [ JS.CommentStmt text
     , stmt
+    , JS.CommentStmt ("end " <> text)
     ]
 
 
@@ -174,20 +175,20 @@ addGlobalHelp mode graph global state =
   case graph ! global of
     Opt.Define expr deps ->
       addStmt (addDeps deps state) (
-        prefixCommentStmt "Define" $
+        wrapInComments "Define" $
         var global (Expr.generate mode expr)
       )
 
     Opt.DefineTailFunc argNames body deps ->
       addStmt (addDeps deps state) (
         let (Opt.Global _ name) = global in
-          prefixCommentStmt "DefineTailFunc" $
+          wrapInComments "DefineTailFunc" $
           var global (Expr.generateTailDef mode name argNames body)
       )
 
     Opt.Ctor index arity ->
       addStmt state (
-        prefixCommentStmt "Ctor" $
+        wrapInComments "Ctor" $
         var global (Expr.generateCtor mode global index arity)
       )
 
@@ -202,7 +203,7 @@ addGlobalHelp mode graph global state =
 
     Opt.Cycle names values functions deps ->
       addStmt (addDeps deps state) (
-        prefixCommentStmt
+        wrapInComments
           (foldl
             (\acc n -> acc <> N.toBuilder n)
             "Cycle "
@@ -234,25 +235,25 @@ addGlobalHelp mode graph global state =
 
     Opt.Enum index ->
       addStmt state (
-        prefixCommentStmt "Enum" $
+        wrapInComments "Enum" $
         generateEnum mode global index
       )
 
     Opt.Box ->
       addStmt state (
-        prefixCommentStmt "Box" $
+        wrapInComments "Box" $
         generateBox mode global
       )
 
     Opt.PortIncoming decoder deps ->
       addStmt (addDeps deps state) (
-        prefixCommentStmt "PortIncoming" $
+        wrapInComments "PortIncoming" $
         generatePort mode global "incomingPort" decoder
       )
 
     Opt.PortOutgoing encoder deps ->
       addStmt (addDeps deps state) (
-        prefixCommentStmt "PortOutgoing" $
+        wrapInComments "PortOutgoing" $
         generatePort mode global "outgoingPort" encoder
       )
 
@@ -314,14 +315,17 @@ generateCycleFunc :: Mode.Mode -> ModuleName.Canonical -> Opt.Def -> JS.Stmt
 generateCycleFunc mode home def =
   case def of
     Opt.Def name expr ->
+      wrapInComments "generateCycleFunc Def" $
       JS.Var [ (Name.fromGlobal home name, Just (Expr.codeToExpr (Expr.generate mode expr))) ]
 
     Opt.TailDef name args expr ->
+      wrapInComments "generateCycleFunc TailDef" $
       JS.Var [ (Name.fromGlobal home name, Just (Expr.codeToExpr (Expr.generateTailDef mode name args expr))) ]
 
 
 generateSafeCycle :: Mode.Mode -> ModuleName.Canonical -> (N.Name, Opt.Expr) -> JS.Stmt
 generateSafeCycle mode home (name, expr) =
+  wrapInComments "generateSafeCycle" $
   JS.FunctionStmt (Name.fromCycle home name) [] $
     Expr.codeToStmtList (Expr.generate mode expr)
 
@@ -333,7 +337,8 @@ generateRealCycle home (name, _) =
     realName = Name.fromGlobal home name
   in
   JS.Block
-    [ JS.Var [ ( realName, Just (JS.Call (JS.Ref safeName) []) ) ]
+    [ JS.CommentStmt "generateRealCycle"
+    , JS.Var [ ( realName, Just (JS.Call (JS.Ref safeName) []) ) ]
     , JS.ExprStmt $ JS.Assign (JS.LRef safeName) $
         JS.Function Nothing [] [ JS.Return (Just (JS.Ref realName)) ]
     ]

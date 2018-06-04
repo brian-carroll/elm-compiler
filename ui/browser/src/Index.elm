@@ -1,5 +1,6 @@
 module Index exposing (main)
 
+import BrianPlayground
 import Browser
 import Dict
 import Elm.License as License
@@ -18,12 +19,12 @@ import Json.Decode as D
 -- MAIN
 
 
-main : Program D.Value Model Never
+main : Program D.Value Model ()
 main =
     Browser.embed
         { init = \flags -> ( D.decodeValue decoder flags, Cmd.none )
-        , update = \_ model -> ( model, Cmd.none )
-        , subscriptions = \_ -> Sub.none
+        , update = \_ model -> ( model, BrianPlayground.elmToJs "hi" )
+        , subscriptions = \_ -> BrianPlayground.jsToElm (\_ -> ())
         , view = view
         }
 
@@ -108,74 +109,8 @@ view model =
                         ]
                     , div [ style "clear" "both" ] []
                     ]
-                , viewBrianTests
+                , BrianPlayground.view
                 ]
-
-
-type TestBox
-    = MyBox Int
-
-
-viewBrianTests =
-    div []
-        [ ul [] <|
-            List.map
-                (\(MyBox n) -> li [] [ text <| String.fromInt n ])
-                [ MyBox 1
-                , MyBox 2
-                , MyBox 3
-                , MyBox 4
-                , MyBox 5
-                ]
-        , mutualRecursionTest1 0
-        , viewTestEnums
-        ]
-
-
-type TestEnum
-    = Banana
-    | Orange Int
-    | Apple
-
-
-viewTestEnums =
-    div [] <|
-        List.map viewTestEnum [ Banana, Orange 5, Apple ]
-
-
-viewTestEnum : TestEnum -> Html msg
-viewTestEnum thing =
-    case thing of
-        Banana ->
-            text "Banana"
-
-        Orange x ->
-            text ("Orange" ++ String.fromInt x)
-
-        Apple ->
-            text "Apple"
-
-
-
---  Tail calls are not emitted for mutual recursion
-
-
-mutualRecursionTest1 : Int -> Html msg
-mutualRecursionTest1 x =
-    if x < 10 then
-        mutualRecursionTest2 (x + 1)
-
-    else
-        text "That's it"
-
-
-mutualRecursionTest2 : Int -> Html msg
-mutualRecursionTest2 x =
-    if x < 10 then
-        mutualRecursionTest1 (x + 1)
-
-    else
-        text "That's it"
 
 
 
