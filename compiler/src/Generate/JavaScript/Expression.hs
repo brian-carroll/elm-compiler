@@ -28,7 +28,7 @@ import qualified Elm.Name as N
 import qualified Elm.Package as Pkg
 import qualified Elm.Compiler.Version as Version
 import qualified Generate.JavaScript.Builder as JS
-import qualified Generate.JavaScript.Mode as Mode
+import qualified Generate.Mode as Mode
 import qualified Generate.JavaScript.Name as Name
 import qualified Json.Encode as Encode
 import qualified Optimize.DecisionTree as DT

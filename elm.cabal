@@ -167,10 +167,12 @@ Executable elm
         Elm.Compiler.Type.Extract
         Elm.Compiler.Version
         Elm.Interface
+        Generate
+        Generate.Mode
+        Generate.Output
         Generate.JavaScript
         Generate.JavaScript.Builder
         Generate.JavaScript.Expression
-        Generate.JavaScript.Mode
         Generate.JavaScript.Name
         Json.Decode.Error
         Json.Decode.Internals

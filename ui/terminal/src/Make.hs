@@ -39,18 +39,21 @@ run :: [FilePath] -> Flags -> IO ()
 run paths (Flags debug optimize output report docs) =
   do  reporter <- toReporter report
       Task.run reporter $
-        do  mode <- toMode debug optimize
+        do  mode <- toMode debug optimize output
             summary <- Project.getRoot
             Project.compile mode Output.Client output docs summary paths
 
 
-toMode :: Bool -> Bool -> Task.Task Output.Mode
-toMode debug optimize =
-  case (debug, optimize) of
-    (True , True ) -> Task.throw $ Exit.Make E.CannotOptimizeAndDebug
-    (False, True ) -> return Output.Prod
-    (False, False) -> return Output.Dev
-    (True , False) -> return Output.Debug
+toMode :: Bool -> Bool -> Maybe Output.Output -> Task.Task Output.Mode
+toMode debug optimize maybeOutput =
+  case maybeOutput of
+    Just (Output.WebAssembly _ _) -> return Output.Wast
+    _ ->
+      case (debug, optimize) of
+        (True , True ) -> Task.throw $ Exit.Make E.CannotOptimizeAndDebug
+        (False, True ) -> return Output.Prod
+        (False, False) -> return Output.Dev
+        (True , False) -> return Output.Debug
 
 
 toReporter :: Maybe ReportType -> IO Progress.Reporter

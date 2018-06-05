@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.JavaScript
-  ( Output(..)
-  , generate
+  ( generateJs
   , generateForRepl
   )
   where
@@ -26,37 +25,23 @@ import qualified Elm.Name as N
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Name as Name
-import qualified Generate.JavaScript.Mode as Mode
+import qualified Generate.Mode as Mode
 import qualified Reporting.Doc as D
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
+import Generate.Out (Output(..))
 
 
 
 -- GENERATE MAINS
 
 
-data Output
-  = None
-  | Some N.Name [N.Name] B.Builder
-
-
-generate :: Mode.Mode -> Opt.Graph -> [ModuleName.Canonical] -> Output
-generate mode (Opt.Graph mains graph _fields) roots =
+generateJs :: Mode.Mode -> Map.Map Opt.Global Opt.Node -> Map.Map ModuleName.Canonical Opt.Main -> B.Builder
+generateJs mode graph rootMap =
   let
-    rootSet = Set.fromList roots
-    rootMap = Map.restrictKeys mains rootSet
+    state = Map.foldrWithKey (addMain mode graph) emptyState rootMap
   in
-  case map ModuleName._module (Map.keys rootMap) of
-    [] ->
-      None
-
-    name:names ->
-      let
-        state = Map.foldrWithKey (addMain mode graph) emptyState rootMap
-        builder = perfNote mode <> stateToBuilder state <> toMainExports mode rootMap
-      in
-      Some name names builder
+    perfNote mode <> stateToBuilder state <> toMainExports mode rootMap
 
 
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> main -> State -> State

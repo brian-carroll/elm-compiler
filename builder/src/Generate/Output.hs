@@ -37,7 +37,7 @@ import qualified File.IO as IO
 import qualified Generate.Functions as Functions
 import qualified Generate.Html as Html
 import qualified Generate.Nitpick as Nitpick
-import qualified Generate.JavaScript.Mode as Mode
+import qualified Generate.Mode as Mode
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Exit.Make as E
 import qualified Reporting.Render.Type.Localizer as L
@@ -50,7 +50,7 @@ import Terminal.Args (Parser(..))
 -- GENERATE
 
 
-data Mode = Debug | Dev | Prod
+data Mode = Debug | Dev | Prod | Wast
 
 
 generate
@@ -81,6 +81,10 @@ generate mode target maybeOutput summary graph@(Crawl.Graph args locals _ _ _) a
               Prod ->
                 do  noDebugUses summary objectGraph
                     return $ Mode.prod target objectGraph
+
+              Wast ->
+                do  noDebugUses summary objectGraph
+                    return $ Mode.wast objectGraph
 
           generateMonolith realMode maybeOutput summary objectGraph (name:names)
 
@@ -131,8 +135,11 @@ generateMonolith mode maybeOutput (Summary.Summary _ project _ _ _) graph rootNa
         Obj.Some name _names builder ->
           let
             monolith =
-              "(function(scope){\n'use strict';"
-              <> Functions.functions <> builder <> "}(this));"
+              if Mode.isWasm mode then
+                builder
+              else
+                "(function(scope){\n'use strict';"
+                <> Functions.functions <> builder <> "}(this));"
           in
           liftIO $
           case maybeOutput of
@@ -148,6 +155,10 @@ generateMonolith mode maybeOutput (Summary.Summary _ project _ _ _) graph rootNa
                   do  path <- toWritablePath maybeDir fileName
                       IO.writeBuilder path monolith
 
+                WebAssembly maybeDir fileName ->
+                  do  path <- toWritablePath maybeDir fileName
+                      IO.writeBuilder path monolith
+          
                 HtmlBuilder mvar ->
                   putMVar mvar (Html.sandwich name monolith)
 
@@ -235,6 +246,7 @@ data Output
   = None
   | Html (Maybe FilePath) FilePath
   | JavaScript (Maybe FilePath) FilePath
+  | WebAssembly (Maybe FilePath) FilePath
   | HtmlBuilder (MVar B.Builder)
 
 
@@ -275,6 +287,9 @@ parseOutput string =
     else if FP.takeExtension string == ".js" && length string > 3 then
       splitOutput JavaScript string
 
+    else if FP.takeExtension string == ".wast" && length string > 5 then
+      splitOutput WebAssembly string
+      
     else
       Nothing
 

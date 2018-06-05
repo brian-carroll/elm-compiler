@@ -1,8 +1,8 @@
 {-# OPTIONS_GHC -Wall #-}
 module Elm.Compiler.Objects
-  ( JS.Output(..)
-  , JS.generate
-  , JS.generateForRepl
+  ( Gen.Output(..)
+  , Gen.generate
+  , Gen.generateForRepl
   , Opt.Graph
   , empty
   , union
@@ -20,7 +20,7 @@ import qualified AST.Optimized as Opt
 import qualified AST.Module.Name as ModuleName
 import qualified Elm.Name as N
 import qualified Elm.Package as Pkg
-import qualified Generate.JavaScript as JS
+import qualified Generate as Gen
 
 
 
