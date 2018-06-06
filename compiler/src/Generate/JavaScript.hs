@@ -29,7 +29,6 @@ import qualified Generate.Mode as Mode
 import qualified Reporting.Doc as D
 import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
-import Generate.Out (Output(..))
 
 
 

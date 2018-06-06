@@ -7,14 +7,20 @@ module Generate
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.ByteString.Builder as B
 
 import qualified Generate.Mode as Mode
 import qualified AST.Optimized as Opt
 import qualified AST.Module.Name as ModuleName
+import qualified Elm.Name as N
 
 import qualified Generate.JavaScript as JS
 import qualified Generate.WebAssembly as WA
-import Generate.Out (Output(..))
+
+
+data Output
+  = None
+  | Some N.Name [N.Name] B.Builder
 
 
 generate :: Mode.Mode -> Opt.Graph -> [ModuleName.Canonical] -> Output

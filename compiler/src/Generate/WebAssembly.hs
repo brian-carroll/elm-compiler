@@ -8,7 +8,6 @@ import qualified Data.Set as Set
 import qualified AST.Optimized as Opt
 import qualified AST.Module.Name as ModuleName
 import qualified Generate.Mode as Mode
-import Generate.Out (Output(..))
 
 
 generateWast :: Mode.Mode -> Map.Map Opt.Global Opt.Node -> Map.Map ModuleName.Canonical Opt.Main -> B.Builder
