@@ -43,30 +43,17 @@ simple details example args_ flags_ callback =
           do  hPutStrLn stdout (Pkg.versionToString Compiler.version)
               Exit.exitSuccess
 
-        "autocomplete" : n : chunks ->
-          case Read.readMaybe n of
-            Nothing ->
-              Exit.exitFailure
-
-            Just index ->
-              do  suggestions <- fst $ Chomp.chomp (Just index) chunks args_ flags_
-                  hPutStr stdout (unlines suggestions)
-                  Exit.exitFailure
-
         chunks ->
           if elem "--help" chunks then
             Error.exitWithHelp Nothing details example args_ flags_
 
           else
-            do  maybeAutoComplete chunks $ \index cs ->
-                  fst $ Chomp.chomp (Just index) cs args_ flags_
+            case snd $ Chomp.chomp Nothing chunks args_ flags_ of
+              Right (argsValue, flagValue) ->
+                callback argsValue flagValue
 
-                case snd $ Chomp.chomp Nothing chunks args_ flags_ of
-                  Right (argsValue, flagValue) ->
-                    callback argsValue flagValue
-
-                  Left err ->
-                    Error.exitWithError err
+              Left err ->
+                Error.exitWithError err
 
 
 complex :: P.Doc -> P.Doc -> [Interface] -> IO ()
@@ -83,19 +70,8 @@ complex intro outro interfaces =
           do  hPutStrLn stdout (Pkg.versionToString Compiler.version)
               Exit.exitSuccess
 
-        "autocomplete" : n : chunks ->
-          case Read.readMaybe n of
-            Nothing ->
-              Exit.exitFailure
-
-            Just index ->
-              do  suggestions <- complexSuggest interfaces index chunks
-                  hPutStr stdout (unlines suggestions)
-                  Exit.exitFailure
-
         command : chunks ->
-          do  maybeAutoComplete argStrings (complexSuggest interfaces)
-              case List.find (\iface -> toName iface == command) interfaces of
+          do  case List.find (\iface -> toName iface == command) interfaces of
                 Nothing ->
                   Error.exitWithUnknown command (map toName interfaces)
 
@@ -116,8 +92,8 @@ complex intro outro interfaces =
 -- AUTO-COMPLETE
 
 
-maybeAutoComplete :: [String] -> (Int -> [String] -> IO [String]) -> IO ()
-maybeAutoComplete argStrings getSuggestions =
+_maybeAutoComplete :: [String] -> (Int -> [String] -> IO [String]) -> IO ()
+_maybeAutoComplete argStrings getSuggestions =
   if length argStrings /= 3 then
     return ()
   else
@@ -181,8 +157,8 @@ findIndex index point chunks =
         findIndex (index + 1) point cs
 
 
-complexSuggest :: [Interface] -> Int -> [String] -> IO [String]
-complexSuggest interfaces index strings =
+_complexSuggest :: [Interface] -> Int -> [String] -> IO [String]
+_complexSuggest interfaces index strings =
   case strings of
     [] ->
       return (map toName interfaces)

@@ -189,10 +189,11 @@ toReport source err =
           Report.toCodeSnippet source region Nothing
             (
               D.reflow $
-                "The `" <> N.toString name <> "` " <> thing <> " was given " <> D.args actual <> ":"
+                "The `" <> N.toString name <> "` " <> thing <> " needs "
+                <> D.args expected <> ", but I see " <> show actual <> " instead:"
             ,
               D.reflow $
-                "But it needs " <> D.args expected <> ". What is missing? Are some parentheses misplaced?"
+                "What is missing? Are some parentheses misplaced?"
             )
 
       else
@@ -453,7 +454,7 @@ toReport source err =
                 [ D.reflow "Switch to (/=) instead."
                 , D.toSimpleNote $
                     "Our (/=) operator is supposed to look like a real “not equal” sign (≠). I hope that history will remember ("
-                    ++ N.toString op ++ ") as a werid and temporary choice."
+                    ++ N.toString op ++ ") as a weird and temporary choice."
                 ]
             )
 

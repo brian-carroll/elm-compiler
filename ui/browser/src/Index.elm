@@ -15,7 +15,6 @@ import Index.Skeleton as Skeleton
 import Json.Decode as D
 
 
-
 -- MAIN
 
 
@@ -146,7 +145,6 @@ viewDir : String -> Maybe (List (Html msg))
 viewDir dir =
     if String.startsWith "." dir || dir == "elm-stuff" then
         Nothing
-
     else
         Just [ a [ href dir ] [ Icon.folder, text dir ] ]
 
@@ -155,7 +153,6 @@ viewFile : File -> Maybe (List (Html msg))
 viewFile { name } =
     if String.startsWith "." name then
         Nothing
-
     else
         Just [ a [ href name ] [ Icon.lookup name, text name ] ]
 
@@ -201,16 +198,16 @@ viewDeps exactDeps project =
         dependencies =
             case project of
                 Project.Application info ->
-                    List.map (viewDependency exactDeps) info.deps
+                    List.map (viewDependency exactDeps) info.depsDirect
 
                 Project.Package info ->
                     List.map (viewDependency exactDeps) info.deps
     in
-    Skeleton.box
-        { title = "Dependencies"
-        , items = dependencies
-        , footer = Nothing -- TODO Just ("/_elm/dependencies", "Add more dependencies?")
-        }
+        Skeleton.box
+            { title = "Dependencies"
+            , items = dependencies
+            , footer = Nothing -- TODO Just ("/_elm/dependencies", "Add more dependencies?")
+            }
 
 
 viewTestDeps : ExactDeps -> Project.Project -> Html msg
@@ -219,16 +216,16 @@ viewTestDeps exactDeps project =
         dependencies =
             case project of
                 Project.Application info ->
-                    List.map (viewDependency exactDeps) info.testDeps
+                    List.map (viewDependency exactDeps) info.testDepsDirect
 
                 Project.Package info ->
                     List.map (viewDependency exactDeps) info.testDeps
     in
-    Skeleton.box
-        { title = "Test Dependencies"
-        , items = dependencies
-        , footer = Nothing -- TODO Just ("/_elm/test-dependencies", "Add more test dependencies?")
-        }
+        Skeleton.box
+            { title = "Test Dependencies"
+            , items = dependencies
+            , footer = Nothing -- TODO Just ("/_elm/test-dependencies", "Add more test dependencies?")
+            }
 
 
 viewDependency : ExactDeps -> ( Package.Name, vsn ) -> List (Html msg)
@@ -253,7 +250,7 @@ viewDependency exactDeps ( pkg, _ ) =
 
 toPackageUrl : Package.Name -> Version.Version -> String
 toPackageUrl name version =
-    "http://package.elm-lang.org/packages/"
+    "https://package.elm-lang.org/packages/"
         ++ Package.toString name
         ++ "/"
         ++ Version.toString version
