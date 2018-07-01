@@ -9,12 +9,11 @@ import Json.Decode as D
 import String
 
 
-
 -- MAIN
 
 
 main =
-    Browser.embed
+    Browser.element
         { init = \flags -> ( D.decodeValue Error.decoder flags, Cmd.none )
         , update = \_ exit -> ( exit, Cmd.none )
         , view = view
@@ -88,7 +87,7 @@ viewHeader title filePath =
         header =
             "-- " ++ title ++ " " ++ String.padLeft leftover '-' (" " ++ filePath) ++ "\n\n"
     in
-    span [ style "color" "rgb(51,187,200)" ] [ text header ]
+        span [ style "color" "rgb(51,187,200)" ] [ text header ]
 
 
 
@@ -151,7 +150,7 @@ viewMessage chunks =
                         Error.Styled style string ->
                             span (styleToAttrs style) [ text string ]
             in
-            htmlChunk :: viewMessage others
+                htmlChunk :: viewMessage others
 
 
 styleToAttrs : Error.Style -> List (Attribute msg)
@@ -163,7 +162,6 @@ addBold : Bool -> List (Attribute msg) -> List (Attribute msg)
 addBold bool attrs =
     if bool then
         style "font-weight" "bold" :: attrs
-
     else
         attrs
 
@@ -172,7 +170,6 @@ addUnderline : Bool -> List (Attribute msg) -> List (Attribute msg)
 addUnderline bool attrs =
     if bool then
         style "text-decoration" "underline" :: attrs
-
     else
         attrs
 

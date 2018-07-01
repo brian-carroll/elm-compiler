@@ -7,7 +7,7 @@ import Html.Attributes exposing (..)
 
 main : Program () () ()
 main =
-    Browser.embed
+    Browser.element
         { init = \_ -> ( (), Cmd.none )
         , update = \_ _ -> ( (), Cmd.none )
         , subscriptions = \_ -> Sub.none

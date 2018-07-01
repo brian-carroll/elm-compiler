@@ -20,7 +20,7 @@ import Json.Decode as D
 
 main : Program D.Value Model ()
 main =
-    Browser.embed
+    Browser.element
         { init = \flags -> ( D.decodeValue decoder flags, Cmd.none )
         , update = \_ model -> ( model, BrianPlayground.elmToJs "hi" )
         , subscriptions = \_ -> BrianPlayground.jsToElm (\_ -> ())
