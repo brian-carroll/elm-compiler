@@ -1,12 +1,17 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Generate.WebAssembly.AST where
 
-data TypeId = TypeIdx Int
-data FunctionId = FunctionIdx Int | FunctionName String
-data TableId = TableIdx Int
+import Data.Map (Map)
+import Data.ByteString.Builder (Builder)
+
+-- TODO: Should the label names be Builder, Text, String, or what?
+data TypeId = TypeIdx Int | TypeName Builder
+data FunctionId = FunctionIdx Int | FunctionName Builder
+data TableId = TableIdxZero -- index must be 0 in Wasm MVP
 data MemId = MemIdxZero -- index must be 0 in Wasm MVP
-data GlobalId = GlobalIdx Int | GlobalName String
-data LocalId = LocalIdx Int | LocalName String
-data LabelId = LabelIdx Int | LabelName String
+data GlobalId = GlobalIdx Int | GlobalName Builder
+data LocalId = LocalIdx Int | LocalName Builder
+data LabelId = LabelIdx Int | LabelName Builder
 
 data Limits = Limits Int (Maybe Int)
 type MemType = Limits
@@ -14,10 +19,11 @@ data Mutability = Mutable | Immutable
 
 data ValType = I32 | I64 | F32 | F64
 
-data FuncType = FuncType [ValType] (Maybe ValType)
+data FuncType = FuncType (Maybe TypeId) [ValType] (Maybe ValType)
 data TableType = TableType Limits ElemType
 data ElemType = AnyFunc
 data GlobalType = GlobalType Mutability ValType 
+
 
 data Function =
   Function
@@ -28,18 +34,22 @@ data Function =
     , body :: Expr
     }
 
+
 data DataSegment =
   DataSegment
-  { memIdx :: MemId
-  , dataOffset :: Expr
-  , bytes :: [Int]
-  }
+    { memIdx :: MemId
+    , dataOffset :: Instr
+    , bytes :: Builder
+    }
+
 
 data Import =
-  Import String String ImportExportDesc
-        
+  Import Builder Builder ImportExportDesc
+
+
 data Export =
-  Export String ImportExportDesc
+  Export Builder ImportExportDesc
+
 
 data ImportExportDesc
   = ImpExpFunc FunctionId
@@ -47,7 +57,9 @@ data ImportExportDesc
   | ImpExpMem MemId
   | ImpExpGlobal GlobalId
 
+
 type Expr = [Instr]
+
 
 data Instr
   = Unreachable
@@ -74,21 +86,22 @@ data Instr
   | Drop Instr
   | Select Instr Instr Instr
   | ConstOp
-      { literal :: String
+      { literal :: Builder
       , constType :: ValType
       }
   | Op
-      { opCode :: String
+      { opCode :: Builder
       , subExprs :: [Instr]
       }
   | MemOp
-      { opCode :: String
+      { opCode :: Builder
       , subExprs :: [Instr]
       , memarg :: MemArg
       }
 
 
 data MemArg = MemArg { memOffset :: Int, align :: MemAlign }
+
 
 data MemAlign
   = Align8
@@ -97,31 +110,44 @@ data MemAlign
   | Align64
   | AlignNatural
 
-instance Show MemAlign where
-  show Align8 = "3"
-  show Align16 = "4"
-  show Align32 = "5"
-  show Align64 = "6"
-  show AlignNatural = ""
 
-data Module
-  = Module
-  { types :: [FuncType]
-  , funcs :: [Function]
-  , tables :: [TableType]
-  , mems :: [MemType]
-  , globals :: [GlobalType]
-  , elem :: [ElemType]
-  , data_ :: [DataSegment]
-  , start :: Maybe FunctionId
-  , imports :: [Import]
-  , exports :: [Export]
-  }
+memAlignToBuilder :: MemAlign -> Builder
+memAlignToBuilder align =
+  case align of
+    Align8 -> "3"
+    Align16 -> "4"
+    Align32 -> "5"
+    Align64 -> "6"
+    AlignNatural -> ""
 
 
+data Global =
+  Global
+    { globalId :: GlobalId
+    , globalType :: GlobalType
+    , globalValue :: Instr
+    }
+
+
+-- TODO: some of the Module fields are missing values, have only types!
+data Module =
+  Module
+    { types :: [FuncType]
+    , funcs :: [Function]
+    , tables :: [TableType]
+    , mems :: [MemType]
+    , globals :: [GlobalType]
+    , elem :: [ElemType]
+    , data_ :: [DataSegment]
+    , start :: Maybe FunctionId
+    , imports :: [Import]
+    , exports :: [Export]
+    }
+
+  
 -- Helper functions for Instructions DSL
 
-load :: String -> Int -> Instr -> Instr
+load :: Builder -> Int -> Instr -> Instr
 load opCode offset subExpr =
   MemOp
     { opCode = opCode
@@ -129,7 +155,7 @@ load opCode offset subExpr =
     , memarg = MemArg { memOffset = offset, align = AlignNatural }
     }
 
-store :: String -> Int -> Instr -> Instr -> Instr
+store :: Builder -> Int -> Instr -> Instr -> Instr
 store opCode offset addrExpr valExpr =
   MemOp
     { opCode = opCode
@@ -137,14 +163,14 @@ store opCode offset addrExpr valExpr =
     , memarg = MemArg { memOffset = offset, align = AlignNatural }
     }
 
-unop :: String -> Instr -> Instr
+unop :: Builder -> Instr -> Instr
 unop opCode subExpr =
   Op
     { opCode = opCode
     , subExprs = [subExpr]
     }
 
-binop :: String -> Instr -> Instr -> Instr
+binop :: Builder -> Instr -> Instr -> Instr
 binop opCode subExpr1 subExpr2 =
   Op
     { opCode = opCode

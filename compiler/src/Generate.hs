@@ -38,7 +38,7 @@ generate mode (Opt.Graph mains graph _fields) roots =
         builder =
           case mode of
             Mode.Wast fieldIndices ->
-              WA.generateWast mode graph rootMap
+              WA.generateWat mode graph rootMap
 
             _ ->
               JS.generateJs mode graph rootMap
