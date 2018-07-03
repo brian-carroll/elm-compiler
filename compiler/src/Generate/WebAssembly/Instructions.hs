@@ -13,14 +13,11 @@ import qualified Data.ByteString.Builder as B
 import Generate.WebAssembly.AST
   ( Instr(..)
   , ValType(..)
-  , MemArg(..)
-  , MemAlign(..)
   , load
   , store
   , unop
   , binop
   )
-
 
 
 unreachable = Unreachable
@@ -73,43 +70,43 @@ i64_store32 = store "i64.store32"
 memory_size :: Instr
 memory_size =
   Op
-    { opCode = "memory.size"
-    , subExprs = []
+    { _opCode = "memory.size"
+    , _subExprs = []
     }
 
 memory_grow :: Instr -> Instr
 memory_grow subExpr =
   Op
-    { opCode = "memory.grow"
-    , subExprs = [subExpr]
+    { _opCode = "memory.grow"
+    , _subExprs = [subExpr]
     }
   
 i32_const :: Int32 -> Instr
 i32_const x =
   ConstOp
-    { literal = B.int32Dec x
-    , constType = I32
+    { _literal = B.int32Dec x
+    , _constType = I32
     }
 
 i64_const :: Int64 -> Instr
 i64_const x =
   ConstOp
-    { literal = B.int64Dec x
-    , constType = I64
+    { _literal = B.int64Dec x
+    , _constType = I64
     }
 
 f32_const :: Float -> Instr
 f32_const x =
   ConstOp
-    { literal = B.floatDec x
-    , constType = F32
+    { _literal = B.floatDec x
+    , _constType = F32
     }
 
 f64_const :: Double -> Instr
 f64_const x =
   ConstOp
-    { literal = B.doubleDec x
-    , constType = F64
+    { _literal = B.doubleDec x
+    , _constType = F64
     }
 
 i32_eqz = unop "i32.eqz"

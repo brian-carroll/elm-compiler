@@ -3,6 +3,8 @@ module Generate.WebAssembly.AST where
 
 import Data.Map (Map)
 import Data.ByteString.Builder (Builder)
+import qualified Data.ByteString.Builder as B
+import Data.Monoid ((<>))
 
 -- TODO: Should the label names be Builder, Text, String, or what?
 data TypeId = TypeIdx Int | TypeName Builder
@@ -27,19 +29,19 @@ data GlobalType = GlobalType Mutability ValType
 
 data Function =
   Function
-    { functionId :: FunctionId
-    , params :: [(LocalId, ValType)]
-    , locals :: [(LocalId, ValType)]
-    , returnType :: Maybe ValType
-    , body :: Expr
+    { _functionId :: FunctionId
+    , _params :: [(LocalId, ValType)]
+    , _locals :: [(LocalId, ValType)]
+    , _returnType :: Maybe ValType
+    , _body :: Expr
     }
 
 
 data DataSegment =
   DataSegment
-    { memIdx :: MemId
-    , dataOffset :: Instr
-    , bytes :: Builder
+    { _memIdx :: MemId
+    , _dataOffset :: Instr
+    , _bytes :: Builder
     }
 
 
@@ -74,7 +76,7 @@ data Instr
       }
   | Br LabelId
   | BrIf LabelId Instr
-  | BrTable Instr [(LabelId, [Instr])] (LabelId, [Instr])
+  | BrTable [LabelId] LabelId Instr
   | Return
   | Call FunctionId [Instr]
   | CallIndirect FunctionId [Instr]
@@ -86,21 +88,21 @@ data Instr
   | Drop Instr
   | Select Instr Instr Instr
   | ConstOp
-      { literal :: Builder
-      , constType :: ValType
+      { _literal :: Builder
+      , _constType :: ValType
       }
   | Op
-      { opCode :: Builder
-      , subExprs :: [Instr]
+      { _opCode :: Builder
+      , _subExprs :: [Instr]
       }
   | MemOp
-      { opCode :: Builder
-      , subExprs :: [Instr]
-      , memarg :: MemArg
+      { _opCode :: Builder
+      , _memarg :: MemArg
+      , _subExprs :: [Instr]
       }
 
 
-data MemArg = MemArg { memOffset :: Int, align :: MemAlign }
+data MemArg = MemArg { _memOffset :: Int, _align :: MemAlign }
 
 
 data MemAlign
@@ -111,37 +113,27 @@ data MemAlign
   | AlignNatural
 
 
-memAlignToBuilder :: MemAlign -> Builder
-memAlignToBuilder align =
-  case align of
-    Align8 -> "3"
-    Align16 -> "4"
-    Align32 -> "5"
-    Align64 -> "6"
-    AlignNatural -> ""
-
-
 data Global =
   Global
-    { globalId :: GlobalId
-    , globalType :: GlobalType
-    , globalValue :: Instr
+    { _globalId :: GlobalId
+    , _globalType :: GlobalType
+    , _globalValue :: Instr
     }
 
 
 -- TODO: some of the Module fields are missing values, have only types!
 data Module =
   Module
-    { types :: [FuncType]
-    , funcs :: [Function]
-    , tables :: [TableType]
-    , mems :: [MemType]
-    , globals :: [GlobalType]
-    , elem :: [ElemType]
-    , data_ :: [DataSegment]
-    , start :: Maybe FunctionId
-    , imports :: [Import]
-    , exports :: [Export]
+    { _types :: [FuncType]
+    , _funcs :: [Function]
+    , _tables :: [TableType]
+    , _mems :: [MemType]
+    , _globals :: [GlobalType]
+    , _elem :: [ElemType]
+    , _data :: [DataSegment]
+    , _start :: Maybe FunctionId
+    , _imports :: [Import]
+    , _exports :: [Export]
     }
 
   
@@ -150,29 +142,29 @@ data Module =
 load :: Builder -> Int -> Instr -> Instr
 load opCode offset subExpr =
   MemOp
-    { opCode = opCode
-    , subExprs = [subExpr]
-    , memarg = MemArg { memOffset = offset, align = AlignNatural }
+    { _opCode = opCode
+    , _memarg = MemArg offset AlignNatural
+    , _subExprs = [subExpr]
     }
 
 store :: Builder -> Int -> Instr -> Instr -> Instr
 store opCode offset addrExpr valExpr =
   MemOp
-    { opCode = opCode
-    , subExprs = [addrExpr, valExpr]
-    , memarg = MemArg { memOffset = offset, align = AlignNatural }
+    { _opCode = opCode
+    , _memarg = MemArg offset AlignNatural
+    , _subExprs = [addrExpr, valExpr]
     }
 
 unop :: Builder -> Instr -> Instr
 unop opCode subExpr =
   Op
-    { opCode = opCode
-    , subExprs = [subExpr]
+    { _opCode = opCode
+    , _subExprs = [subExpr]
     }
 
 binop :: Builder -> Instr -> Instr -> Instr
 binop opCode subExpr1 subExpr2 =
   Op
-    { opCode = opCode
-    , subExprs = [subExpr1, subExpr2]
+    { _opCode = opCode
+    , _subExprs = [subExpr1, subExpr2]
     }
