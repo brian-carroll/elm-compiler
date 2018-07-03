@@ -1,12 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.WebAssembly.AST where
 
+import Data.Int (Int32)
 import Data.Map (Map)
+import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as B
 import Data.Monoid ((<>))
 
--- TODO: Should the label names be Builder, Text, String, or what?
 data TypeId = TypeIdx Int | TypeName Builder
 data FunctionId = FunctionIdx Int | FunctionName Builder
 data TableId = TableIdxZero -- index must be 0 in Wasm MVP
@@ -16,15 +17,27 @@ data LocalId = LocalIdx Int | LocalName Builder
 data LabelId = LabelIdx Int | LabelName Builder
 
 data Limits = Limits Int (Maybe Int)
-type MemType = Limits
 data Mutability = Mutable | Immutable
 
 data ValType = I32 | I64 | F32 | F64
-
 data FuncType = FuncType (Maybe TypeId) [ValType] (Maybe ValType)
-data TableType = TableType Limits ElemType
 data ElemType = AnyFunc
 data GlobalType = GlobalType Mutability ValType 
+
+
+data Module =
+  Module
+    { _types :: [FuncType]
+    , _funcs :: [Function]
+    , _globals :: [Global]
+    , _tables :: Maybe Table
+    , _elem :: [ElementSegment]
+    , _mems :: Maybe Memory
+    , _data :: [DataSegment]
+    , _start :: Maybe StartFunction
+    , _imports :: [Import]
+    , _exports :: [Export]
+    }
 
 
 data Function =
@@ -32,17 +45,45 @@ data Function =
     { _functionId :: FunctionId
     , _params :: [(LocalId, ValType)]
     , _locals :: [(LocalId, ValType)]
-    , _returnType :: Maybe ValType
+    , _resultType :: Maybe ValType
     , _body :: Expr
     }
 
 
+data Global =
+  Global
+    { _globalId :: GlobalId
+    , _globalType :: GlobalType
+    , _globalValue :: Instr
+    }
+    
+
+data Memory =
+  Memory MemId Limits
+    
+
 data DataSegment =
   DataSegment
     { _memIdx :: MemId
-    , _dataOffset :: Instr
-    , _bytes :: Builder
+    , _dataOffset :: Int32
+    , _bytes :: ByteString
     }
+
+
+data Table
+  = TableDeclaration Limits ElemType
+  | TableInlineDef ElemType [FunctionId]
+
+
+data ElementSegment =
+  ElementSegment
+    { _tableOffset :: Int32
+    , _functionIds :: [FunctionId]
+    }
+  
+  
+data StartFunction =
+  Start FunctionId
 
 
 data Import =
@@ -112,29 +153,6 @@ data MemAlign
   | Align64
   | AlignNatural
 
-
-data Global =
-  Global
-    { _globalId :: GlobalId
-    , _globalType :: GlobalType
-    , _globalValue :: Instr
-    }
-
-
--- TODO: some of the Module fields are missing values, have only types!
-data Module =
-  Module
-    { _types :: [FuncType]
-    , _funcs :: [Function]
-    , _tables :: [TableType]
-    , _mems :: [MemType]
-    , _globals :: [GlobalType]
-    , _elem :: [ElemType]
-    , _data :: [DataSegment]
-    , _start :: Maybe FunctionId
-    , _imports :: [Import]
-    , _exports :: [Export]
-    }
 
   
 -- Helper functions for Instructions DSL
