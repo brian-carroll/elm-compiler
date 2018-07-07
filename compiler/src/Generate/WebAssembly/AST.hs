@@ -120,7 +120,7 @@ data Instr
   | BrTable [LabelId] LabelId Instr
   | Return
   | Call FunctionId [Instr]
-  | CallIndirect FunctionId [Instr]
+  | CallIndirect TypeId Instr [Instr]
   | GetLocal LocalId
   | SetLocal LocalId Instr
   | TeeLocal LocalId Instr

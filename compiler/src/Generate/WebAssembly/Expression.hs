@@ -8,11 +8,15 @@ module Generate.WebAssembly.Expression where
   import qualified Data.ByteString.Builder as B
   import Data.Monoid ((<>))
   import qualified Data.ByteString as BS
+  import qualified Data.Text as Text
+  import qualified Data.Text.Encoding as TE
+
   import qualified AST.Optimized as Opt
   import Generate.WebAssembly.AST
   import Generate.WebAssembly.Instructions
-  import qualified Data.Text as Text
-  import qualified Data.Text.Encoding as TE
+  import Generate.WebAssembly.Builder as WA
+  import qualified Elm.Name as N
+  import qualified Generate.WebAssembly.Label as Label
 
 
   -- EXPRESSION GENERATOR STATE  
@@ -24,6 +28,7 @@ module Generate.WebAssembly.Expression where
       , dataSegment :: B.Builder
       , dataOffset :: Int32
       , revTableFuncIds :: [FunctionId]
+      , revStartInstr :: [Instr]
       }
 
 
@@ -31,6 +36,11 @@ module Generate.WebAssembly.Expression where
   addInstr instr state =
     state { revInstr = instr : (revInstr state) }
 
+
+  addStartInstr :: Instr -> ExprState -> ExprState
+  addStartInstr instr state =
+    state { revStartInstr = instr : (revStartInstr state) }
+  
 
   addFunc :: Function -> ExprState -> ExprState
   addFunc func state =
@@ -129,8 +139,8 @@ module Generate.WebAssembly.Expression where
     | CompString
 
 
-  comparableCtorBytes :: ComparableCtor -> ByteString
-  comparableCtorBytes ctor =
+  comparableCtor :: ComparableCtor -> ByteString
+  comparableCtor ctor =
     BS.singleton $
       case ctor of
         CompNil    -> 0
@@ -155,51 +165,139 @@ module Generate.WebAssembly.Expression where
   
       Opt.Chr char ->
         let
-          memoryByteString =
-            comparableCtorBytes CompChar
+          memoryInit =
+            comparableCtor CompChar
             <> encodeText char
         in
-          addData memoryByteString $
+          addData memoryInit $
             addInstr (i32_const $ dataOffset state) $
             state
   
       Opt.Str string ->
         let
-          numCodePointsByteString =
+          numCodePoints =
             int32toBytes $
               fromIntegral $
               Text.length string
 
-          memoryByteString =
-            comparableCtorBytes CompString
-            <> numCodePointsByteString
+          memoryInit =
+            comparableCtor CompString
+            <> numCodePoints
             <> encodeText string
         in
-          addData memoryByteString $
+          addData memoryInit $
             addInstr (i32_const $ dataOffset state) $
             state
 
       Opt.Int int ->
         let
-          memoryByteString =
-            comparableCtorBytes CompInt
+          memoryInit =
+            comparableCtor CompInt
             <> (int32toBytes $ fromIntegral int)
         in
-          addData memoryByteString $
+          addData memoryInit $
             addInstr (i32_const $ dataOffset state) $
             state
   
-      Opt.Float float ->
-        state
-        -- JsExpr $ JS.Float float
+      Opt.Float value ->
+        let
+          -- TODO: Work out how to convert Double to raw bytes, not decimal text
+          --  (Binary.encode seems to give way more than 8 bytes)
+          -- Workaround: Initialise memory to zeros, then overwrite real value 
+          -- in 'start' function. Then I only have to output decimal text.
+          memoryInit =
+            comparableCtor CompFloat
+            <> (BS.pack $ take 8 $ repeat 0)
+          
+          addressInstr =
+            i32_const $ dataOffset state
+          
+          startInstr =
+            f64_store 0 addressInstr (f64_const value)
+        in
+          addData memoryInit $
+            addInstr addressInstr $
+            addStartInstr startInstr $
+            state
   
+      {-
+          need an envDeps Dict in ExprState
+          add them as we encounter them
+          when we pop back up to outer function that creates this one,
+          generate code to populate it
+
+          what about 'let' names? they're people too.
+          Easiest thing is to make them part of the Env
+          Could make them special cases using Wasm locals but that means
+          distinguishing them correctly when current compiler doesn't
+          Downside is extra memory
+          Unless we implement let-in as a lambda, creating another function
+          inside the function. Inner function treats 'lets' as input params
+          and real inputs as closed-over values.
+          But is there a good way to detect this?
+
+          Lets are recursive in Elm AST
+          They come in dependency order
+          So on every Let Def, add to the locals Map
+          prepopulate the Map with args in reverse order
+            before recursing into the body
+            guarantees they will be in the right place in the map
+          for each Let Def in the body, insert an entry to the Map
+          for each VarLocal that isn't already in the Map, must be 
+            a closed-over value.
+          Create an ADT,
+              Local = Arg Int | ClosedOver Int | Let
+          locals Map has this ADT as values
+
+
+        Make all args & VarLocals & closed-over values into Wasm locals
+
+          They would become easier to fetch (registers?)
+          On entry into function, set all the locals from Env
+          Should be quick. Two instructions per param
+            (load with fixed offset, then set_local)
+          We'll have to load them at least once anyway, so that's free
+            and things have names => generated code is nice and readable
+            and VarLocal is more intuitive, similar to JS meaning
+            and we're guaranteed to only load the pointer once
+            and we don't have to pass around empty Env slots
+
+
+        Function code gen:
+          Take the list of params and create a Locals Map from it,
+            with ADT specifying 'Arg'
+          Push that onto the localMaps List in the ExprState
+
+          Recurse into the body, generate it and get the returned ExprState
+
+          Generate the Env destructuring code
+            put the Args and ClosedOvers in the Env
+          
+          Prepend Env destructuring code to the main body
+
+          Return the ExprState
+            drop the head of the localMaps List
+            get next Table Element index and increment it
+            write Table Element declaration
+            write DataSegment declaration for empty Env (Arg & ClosedOver)
+            write the Wasm Function declaration
+            add an Instruction i32.const (dataOffset before adding Env)
+        
+        Non-tail recursion
+          Need own function name as a closed-over variable
+          Does this come for free?
+            yes if we insert child function into parent env
+              *before* building child closure value
+      -}
       Opt.VarLocal name ->
-        state
-        -- JsExpr $ JS.Ref (Name.fromLocal name)
+        addInstr
+          (get_local $ Label.fromLocal name)
+          state
   
       Opt.VarGlobal (Opt.Global home name) ->
-        state
-        -- JsExpr $ JS.Ref (Name.fromGlobal home name)
+        addInstr
+          (get_global $ Label.fromGlobal home name)
+          state
   
       Opt.VarEnum (Opt.Global home name) index ->
         state
@@ -218,8 +316,12 @@ module Generate.WebAssembly.Expression where
         --     Mode.Prod _ _ -> Name.fromGlobal ModuleName.basics N.identity
   
       Opt.VarCycle home name ->
-        state
-        -- JsExpr $ JS.Call (JS.Ref (Name.fromCycle home name)) []
+        addInstr
+          (call_indirect
+            (Label.fromFuncType [] I32)
+            (get_global $ Label.fromCycle home name)
+            [])
+          state
   
       Opt.VarDebug name home region unhandledValueName ->
         state

@@ -3,6 +3,7 @@
 module Generate.WebAssembly.Builder
   ( instrToBuilder
   , toBuilder
+  , buildValType
   , Declaration
   )
   where
@@ -295,18 +296,18 @@ instrToBuilder indent instr =
               (One, concatSpaces $ firstLine : argBuilders)
 
 
-        CallIndirect fid args ->
+        CallIndirect typeId indexInstr args ->
           let
-            (anyMany, argBuilders) =
-              linesMap (instrToBuilder deeperIndent) args
+            (anyMany, builders) =
+              linesMap (instrToBuilder deeperIndent) (indexInstr : args)
 
             firstLine =
-              "call_indirect " <> buildFunctionId fid
+              "call_indirect " <> buildTypeId typeId
           in
             if anyMany then
-              (Many, concatLines $ firstLine : argBuilders)
+              (Many, concatLines $ firstLine : builders)
             else
-              (One, concatSpaces $ firstLine : argBuilders)
+              (One, concatSpaces $ firstLine : builders)
 
 
         GetLocal localId ->
@@ -448,6 +449,13 @@ buildFunctionId id =
   case id of
     FunctionIdx i -> B.intDec i
     FunctionName b -> b
+
+
+buildTypeId :: TypeId -> Builder
+buildTypeId id =
+  case id of
+    TypeIdx i -> B.intDec i
+    TypeName b -> b
 
 
 buildMemAlign :: MemAlign -> [Builder]
