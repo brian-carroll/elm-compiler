@@ -1,6 +1,11 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Generate.WebAssembly.Builder (instrToBuilder, toBuilder) where
+module Generate.WebAssembly.Builder
+  ( instrToBuilder
+  , toBuilder
+  , Declaration
+  )
+  where
 
 import Prelude hiding (lines, id)
 import qualified Data.List as List
@@ -116,7 +121,7 @@ instance Declaration Table where
   toBuilder table =
     case table of
       TableDeclaration limits AnyFunc ->
-        "(table 0 " <> toBuilder limits <> " anyfunc)"
+        "(table 0 " <> buildLimits limits <> " anyfunc)"
 
       TableInlineDef AnyFunc functionIds ->
         "(table anyfunc "
@@ -126,17 +131,17 @@ instance Declaration Table where
 
 instance Declaration Memory where
   toBuilder (Memory MemIdxZero limits) =
-      "(memory 0 " <> toBuilder limits <> ")"
+      "(memory 0 " <> buildLimits limits <> ")"
 
       
-instance Declaration Limits where
-  toBuilder (Limits initSize maybeMaxSize) =
-    let
-      maxBuilderList =
-        Maybe.maybeToList $ fmap B.intDec maybeMaxSize
-    in
-      concatWith " " $
-        B.intDec initSize : maxBuilderList
+buildLimits :: Limits -> Builder
+buildLimits (Limits initSize maybeMaxSize) =
+  let
+    maxBuilderList =
+      Maybe.maybeToList $ fmap B.intDec maybeMaxSize
+  in
+    concatWith " " $
+      B.intDec initSize : maxBuilderList
 
 
 instance Declaration DataSegment where
