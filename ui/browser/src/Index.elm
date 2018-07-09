@@ -38,7 +38,7 @@ type alias Flags =
     , dirs : List String
     , files : List File
     , readme : Maybe String
-    , project : Project.Project
+    , project : Maybe Project.Project
     , exactDeps : Dict.Dict String Version.Version
     }
 
@@ -61,7 +61,7 @@ decoder =
         (D.field "dirs" (D.list D.string))
         (D.field "files" (D.list fileDecoder))
         (D.field "readme" (D.nullable D.string))
-        (D.field "project" Project.decoder)
+        (D.field "project" (D.nullable Project.decoder))
         (D.field "exactDeps" (D.dict Version.decoder))
 
 
@@ -88,27 +88,46 @@ view : Model -> Html msg
 view model =
     case model of
         Err error ->
-            div [] <|
+            { title = "???"
+            , body =
                 [ text (D.errorToString error)
                 ]
+            }
 
         Ok { root, pwd, dirs, files, readme, project, exactDeps } ->
-            div [] <|
+            { title = String.join "/" ("~" :: pwd)
+            , body =
                 [ header [ class "header" ] []
                 , div [ class "content" ]
                     [ Navigator.view root pwd
-                    , section [ class "left-column" ]
-                        [ viewFiles dirs files
-                        , viewReadme readme
-                        ]
-                    , section [ class "right-column" ]
-                        [ viewProjectSummary project
-                        , viewDeps exactDeps project
-                        , viewTestDeps exactDeps project
-                        ]
+                    , viewLeftColumn dirs files readme
+                    , viewRightColumn exactDeps project
                     , div [ style "clear" "both" ] []
                     ]
                 , BrianPlayground.view
+                ]
+            }
+
+
+viewLeftColumn : List String -> List File -> Maybe String -> Html msg
+viewLeftColumn dirs files readme =
+    section [ class "left-column" ]
+        [ viewFiles dirs files
+        , viewReadme readme
+        ]
+
+
+viewRightColumn : ExactDeps -> Maybe Project.Project -> Html msg
+viewRightColumn exactDeps maybeProject =
+    section [ class "right-column" ] <|
+        case maybeProject of
+            Nothing ->
+                []
+
+            Just project ->
+                [ viewProjectSummary project
+                , viewDeps exactDeps project
+                , viewTestDeps exactDeps project
                 ]
 
 

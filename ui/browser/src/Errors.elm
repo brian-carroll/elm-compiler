@@ -78,16 +78,26 @@ viewErrorHelp error =
 -- VIEW HEADER
 
 
-viewHeader : String -> String -> Html msg
-viewHeader title filePath =
+viewHeader : String -> Maybe String -> Html msg
+viewHeader title maybeFilePath =
     let
-        leftover =
-            76 - String.length title
+        left =
+            "-- " ++ title ++ " "
 
-        header =
-            "-- " ++ title ++ " " ++ String.padLeft leftover '-' (" " ++ filePath) ++ "\n\n"
+        right =
+            case maybeFilePath of
+                Nothing ->
+                    ""
+
+                Just filePath ->
+                    " " ++ filePath
     in
-        span [ style "color" "rgb(51,187,200)" ] [ text header ]
+        span [ style "color" "rgb(51,187,200)" ] [ text (fill left right ++ "\n\n") ]
+
+
+fill : String -> String -> String
+fill left right =
+    left ++ String.repeat (80 - String.length left - String.length right) "-" ++ right
 
 
 
@@ -114,7 +124,7 @@ viewBadModule { path, problems } =
 
 viewProblem : String -> Error.Problem -> Html msg
 viewProblem filePath problem =
-    span [] (viewHeader problem.title filePath :: viewMessage problem.message)
+    span [] (viewHeader problem.title (Just filePath) :: viewMessage problem.message)
 
 
 viewSeparator : String -> String -> Html msg

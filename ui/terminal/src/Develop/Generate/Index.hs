@@ -31,7 +31,7 @@ import qualified Stuff.Verify as Verify
 get :: FilePath -> FilePath -> IO B.Builder
 get root pwd =
   do  flags <- getFlags root pwd
-      return $ Help.makePageHtml "Index" (E.encode (encode flags))
+      return $ Help.makePageHtml "Index" (Just (encode flags))
 
 
 
@@ -88,10 +88,14 @@ getFlags :: FilePath -> FilePath -> IO Flags
 getFlags root pwd =
   do  (dirs, files) <- getDirsAndFiles pwd
       readme <- getReadme pwd
+      exists <- Dir.doesFileExist (root </> "elm.json")
 
       maybeSummary <-
-        Task.try Progress.silentReporter $
-          Verify.verify root =<< Project.read "elm.json"
+        if exists then
+          Task.try Progress.silentReporter $
+            Verify.verify root =<< Project.read (root </> "elm.json")
+        else
+          return Nothing
 
       return $
         Flags
