@@ -33,13 +33,14 @@ module Generate.WebAssembly.Expression where
       , tableSize :: Int32
       , revTableFuncIds :: [FunctionId]
       , revStartInstr :: [Instr]
-      , envStack :: [Env]
+      , currentScope :: Scope
+      , parentScope :: Scope
       }
 
 
-  data Env =
-    Env
-      { argNames :: [N.Name]
+  data Scope =
+    Scope
+      { argNames :: Set.Set N.Name
       , closedOverNames :: Set.Set N.Name
       , letNames :: Set.Set N.Name
       }
@@ -64,10 +65,11 @@ module Generate.WebAssembly.Expression where
     state { revFunc = func : (revFunc state) }
 
 
-  addFuncIdToTable :: FunctionId -> ExprState -> ExprState
-  addFuncIdToTable fid state =
+  addTableFunc :: Function -> ExprState -> ExprState
+  addTableFunc func state =
     state
-      { revTableFuncIds = fid : (revTableFuncIds state)
+      { revFunc = func : (revFunc state)
+      , revTableFuncIds = (_functionId func) : (revTableFuncIds state)
       , tableSize = tableSize state + 1
       }
 
@@ -384,40 +386,32 @@ module Generate.WebAssembly.Expression where
   
   maybeInsertLocalClosedOver :: ExprState -> N.Name -> ExprState
   maybeInsertLocalClosedOver state name =
-    -- TODO: perhaps search the whole envStack?
-    -- But what would I actually *do* with that info?
-    case envStack state of
-      env : outerEnvs ->
-        let
-          isDefinedInternally =
-            Set.member name (letNames env)
-            || List.elem name (argNames env)
- 
-          updatedEnv =
-            if isDefinedInternally then
-              env
-            else
-              env { closedOverNames = Set.insert name (closedOverNames env) }
-        in
-          state
-            { envStack = updatedEnv : outerEnvs }
+    let
+      scope = currentScope state
 
-      [] ->
-        -- This case should be unreachable. During dev, crash so I notice it
-        undefined
-        -- Later do something less drastic like this:
-        -- state { envStack = [Map.fromList [(name, LocalClosedOver 0)]] }
+      isDefinedInternally =
+        Set.member name (letNames scope)
+        || Set.member name (argNames scope)
+
+      updatedScope =
+        if isDefinedInternally then
+          scope
+        else
+          scope { closedOverNames = Set.insert name (closedOverNames scope) }
+    in
+      state
+        { currentScope = updatedScope }
 
 
 
 {-
-    need an envDeps Dict in ExprState
+    need an scopeDeps Dict in ExprState
     add them as we encounter them
     when we pop back up to outer function that creates this one,
     generate code to populate it
 
     what about 'let' names? they're people too.
-    Easiest thing is to make them part of the Env
+    Easiest thing is to make them part of the Scope
     Could make them special cases using Wasm locals but that means
     distinguishing them correctly when current compiler doesn't
     Downside is extra memory
@@ -443,14 +437,14 @@ module Generate.WebAssembly.Expression where
   Make all args & VarLocals & closed-over values into Wasm locals
 
     They would become easier to fetch (registers?)
-    On entry into function, set all the locals from Env
+    On entry into function, set all the locals from Scope
     Should be quick. Two instructions per param
       (load with fixed offset, then set_local)
     We'll have to load them at least once anyway, so that's free
       and things have names => generated code is nice and readable
       and VarLocal is more intuitive, similar to JS meaning
       and we're guaranteed to only load the pointer once
-      and we don't have to pass around empty Env slots
+      and we don't have to pass around empty Scope slots
 
 
   Function code gen:
@@ -460,23 +454,23 @@ module Generate.WebAssembly.Expression where
 
     Recurse into the body, generate it and get the returned ExprState
 
-    Generate the Env destructuring code
-      put the Args and ClosedOvers in the Env
+    Generate the Scope destructuring code
+      put the Args and ClosedOvers in the Scope
     
-    Prepend Env destructuring code to the main body
+    Prepend Scope destructuring code to the main body
 
     Return the ExprState
       drop the head of the localMaps List
       get next Table Element index and increment it
       write Table Element declaration
-      write DataSegment declaration for empty Env (Arg & ClosedOver)
+      write DataSegment declaration for empty Scope (Arg & ClosedOver)
       write the Wasm Function declaration
-      add an Instruction i32.const (dataOffset before adding Env)
+      add an Instruction i32.const (dataOffset before adding Scope)
   
   Non-tail recursion
     Need own function name as a closed-over variable
     Does this come for free?
-      yes if we insert child function into parent env
+      yes if we insert child function into parent scope
         *before* building child closure value
 -}
 
@@ -489,69 +483,66 @@ module Generate.WebAssembly.Expression where
 --     , tableSize :: Int32
 --     , tableFuncIds :: [FunctionId]
 --     , revStartInstr :: [Instr]
---     , envStack :: [Env]
+--     , scopeStack :: [Scope]
 --     }
 
   generateFunction :: [N.Name] -> Opt.Expr -> ExprState -> ExprState
   generateFunction args body state =
     let
-      envArgs =
-        Env
-          { argNames = args
-          , closedOverNames = Set.empty
-          , letNames = Set.empty
-          }
-    
       tableOffset =
         tableSize state
 
-      funcIdBuilder =
-        "$elmFunc" <> B.int32Dec tableOffset
-
       funcId =
-        FunctionName funcIdBuilder
+        FunctionName ("$elmFunc" <> B.int32Dec tableOffset)
 
       bodyState =
         generate body $
           state
-            { envStack = envArgs : (envStack state)
-            , revInstr = []
+            { revInstr = []
             , tableSize = tableOffset + 1
+            , parentScope = currentScope state
+            , currentScope =
+                Scope
+                  { argNames = Set.fromList args
+                  , closedOverNames = Set.empty
+                  , letNames = Set.empty
+                  }
             }
 
-      envFull =
-        head (envStack bodyState)
-
       closedOverSet =
-        closedOverNames envFull
-      
+        closedOverNames $ currentScope bodyState
+
+      -- NEW PARENT ENV LOCAL
+
       numClosurePointers :: Int32
       numClosurePointers =
         fromIntegral $
           length args + Set.size closedOverSet
 
-      parentEnv =
-        head (envStack state) -- NOTE: partial function
+      currentParentScope =
+        parentScope state
 
       parentTempVarName =
-        N.fromString $ "$env" ++ show tableOffset
+        N.fromString $ "$scope" ++ show tableOffset
 
-      parentEnvLocalId =
+      parentScopeLocalId =
         Identifier.fromLocal parentTempVarName
 
-      updatedParentEnv =
+      updatedParentScope =
         if numClosurePointers == 0 then
-          parentEnv
+          currentParentScope
         else
           -- also insert closed-overs that aren't already there as
           -- closed-overs of parent!
-          parentEnv
+          currentParentScope
             { letNames =
                 Set.insert
                   parentTempVarName
-                  (letNames parentEnv)
+                  (letNames currentParentScope)
             }
-      
+
+      -- WASM CODE : ENV CONSTRUCT & DESTRUCT
+
       i32size :: Int32
       i32size = 4
       pointersSize = numClosurePointers * i32size
@@ -562,37 +553,37 @@ module Generate.WebAssembly.Expression where
         {- global functions & non-closures :
               just create a prototype
               no need for any copying
-              no need for any fiddling with parent env
+              no need for any fiddling with parent scope
               - all this gives us is the quick startup, who cares?
                   - for the globals I do care because I want Wasm globals
                   to be pointers... but they still would be...
                   - also want them to be below the heap
                   still could be if we move heap after 'start' & GC
            closures:
-              copy a prototype env
+              copy a prototype scope
               fill up the closed-over values
         -}
-      envConstructionCode :: [Instr]
-      envConstructionCode =
+      scopeConstructionCode :: [Instr]
+      scopeConstructionCode =
         let
           createNewClosure =
             set_local
-              parentEnvLocalId
+              parentScopeLocalId
               (call (_functionId gcAllocate) [i32_const totalSize])
 
           storeTableIndex =
-            i32_store 0 (get_local parentEnvLocalId) $
+            i32_store 0 (get_local parentScopeLocalId) $
               (i32_const tableOffset)
 
           storeArity =
-            i32_store 4 (get_local parentEnvLocalId) $
+            i32_store 4 (get_local parentScopeLocalId) $
               (i32_const $ fromIntegral $ length args)
 
           (storeClosedOverValues, _) =
             Set.foldl'
               (\(accInstr, accIndex) closedOverName ->
                 ( i32_store ((4 * accIndex) + 8)
-                      (get_local parentEnvLocalId)
+                      (get_local parentScopeLocalId)
                       (get_local (Identifier.fromLocal closedOverName))
                   : accInstr
                 , accIndex + 1
@@ -612,8 +603,8 @@ module Generate.WebAssembly.Expression where
       closureArgId =
         LocalIdx 0
 
-      envDestructureCode :: [Instr]
-      envDestructureCode =
+      scopeDestructureCode :: [Instr]
+      scopeDestructureCode =
         let
           (destructureClosedOvers, _) =
             Set.foldl'
@@ -628,7 +619,7 @@ module Generate.WebAssembly.Expression where
               ([], length args - 1)
               closedOverSet
 
-          (destructureEnv, _) =
+          (destructureScope, _) =
             List.foldl'
               (\(accInstr, accIndex) name ->
                 ( ( set_local (Identifier.fromLocal name) $
@@ -641,7 +632,11 @@ module Generate.WebAssembly.Expression where
               (destructureClosedOvers, 0)
               args
         in
-          destructureEnv
+          destructureScope
+
+
+      -- PREPARE RETURN VALUES
+
 
       func =
         Function
@@ -650,18 +645,17 @@ module Generate.WebAssembly.Expression where
           , _locals = map (\name -> (Identifier.fromLocal name, I32)) $
                        Set.toList closedOverSet
           , _resultType = Just I32
-          , _body = envDestructureCode ++ (reverse $ revInstr bodyState)
+          , _body = scopeDestructureCode ++ (reverse $ revInstr bodyState)
           }
       
       parentInstr =
         block 
           (LabelName $ "$createClosure" <> B.int32Dec tableOffset)
           I32
-          (envConstructionCode ++ [get_local parentEnvLocalId])
+          (scopeConstructionCode ++ [get_local parentScopeLocalId])
     in
       addInstr parentInstr $
-        addFunc func $
-        addFuncIdToTable funcId $
+        addTableFunc func $
         state
 
 
