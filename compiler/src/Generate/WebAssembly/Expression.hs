@@ -426,32 +426,29 @@ module Generate.WebAssembly.Expression where
       closedOverSet =
         closedOverNames $ currentScope bodyState
 
-      -- CREATE NEW LOCAL FOR COPYING CLOSED-OVER VALUES
+      -- CREATE LOCAL VAR IN SURROUNDING SCOPE
 
-      surroundingScope =
-        currentScope state
+      closureVarName =
+        N.fromString $ "$$closure" ++ show tableOffset
 
-      scopeVarName =
-        N.fromString $ "$scope" ++ show tableOffset
-
-      scopeLocalId =
-        Identifier.fromLocal scopeVarName
+      closureLocalId =
+        Identifier.fromLocal closureVarName
 
       updatedSurroundingScope =
-        addClosureToSurroundingScope scopeVarName closedOverSet surroundingScope
+        addClosureToSurroundingScope closureVarName closedOverSet (currentScope state)
 
-      -- Generated function has just one arg, the closure.
+      -- Generated function has just one param, the closure value.
       -- Use its index (0) instead of a name => no name clashes with locals.
-      closureArgId =
+      funcArgId =
         LocalIdx 0
 
       (closureConstructCode, closureDestructCode) =
-        generateClosure args closedOverSet scopeLocalId closureArgId tableOffset
+        generateClosure args closedOverSet closureLocalId funcArgId tableOffset
 
       func =
         Function
           { _functionId = funcId
-          , _params = [(closureArgId, I32)]
+          , _params = [(funcArgId, I32)]
           , _locals = map (\name -> (Identifier.fromLocal name, I32)) $
                        Set.toList closedOverSet
           , _resultType = Just I32
@@ -462,7 +459,7 @@ module Generate.WebAssembly.Expression where
         block 
           (LabelName $ "$createClosure" <> B.int32Dec tableOffset)
           I32
-          (closureConstructCode ++ [get_local scopeLocalId])
+          (closureConstructCode ++ [get_local closureLocalId])
     in
       bodyState
         { revInstr = closureConstructBlock : (revInstr state)
@@ -474,7 +471,7 @@ module Generate.WebAssembly.Expression where
 
 
   addClosureToSurroundingScope :: N.Name -> Set.Set N.Name -> Scope -> Scope
-  addClosureToSurroundingScope scopeVarName closedOverSet surroundingScope =
+  addClosureToSurroundingScope closureVarName closedOverSet surroundingScope =
       let
         allSurroundingNames =
           Set.unions
@@ -493,7 +490,7 @@ module Generate.WebAssembly.Expression where
         surroundingScope
           { localNames =
               Set.insert
-                scopeVarName
+                closureVarName
                 (localNames surroundingScope)
           , closedOverNames =
               Set.union (closedOverNames surroundingScope) skipScopeNames
@@ -501,7 +498,7 @@ module Generate.WebAssembly.Expression where
 
 
   generateClosure :: [N.Name] -> Set.Set N.Name -> LocalId -> LocalId -> Int32 -> ([Instr], [Instr])
-  generateClosure args closedOverSet scopeId closureArgId elemIdx =
+  generateClosure args closedOverSet scopeId funcArgId elemIdx =
     let
       nArgs = length args
 
@@ -527,7 +524,7 @@ module Generate.WebAssembly.Expression where
           (i32_const $ fromIntegral $ length args)
 
       (storeClosedOvers, destructClosedOvers) =
-        generateClosedOverValues nArgs closedOverSet scopeId closureArgId
+        generateClosedOverValues nArgs closedOverSet scopeId funcArgId
 
       closureConstructCode =
         createNewClosure
@@ -543,7 +540,7 @@ module Generate.WebAssembly.Expression where
                 (closureIndexToOffset pointerIdx)
 
               destructArg =
-                generateClosureDestruct closureArgId name byteOffset
+                generateClosureDestruct funcArgId name byteOffset
             in
             ( destructArg : argDestructCode
             , pointerIdx + 1
@@ -565,7 +562,7 @@ module Generate.WebAssembly.Expression where
 
   
   generateClosedOverValues :: Int -> Set.Set N.Name -> LocalId -> LocalId -> ([Instr], [Instr])
-  generateClosedOverValues nArgs closedOverSet scopeId closureArgId =
+  generateClosedOverValues nArgs closedOverSet scopeId funcArgId =
     let
       (storeClosedOvers, destructClosedOvers, _) =
         Set.foldl'
@@ -578,7 +575,7 @@ module Generate.WebAssembly.Expression where
                 generateClosureInsert scopeId name byteOffset
 
               destructInstr =
-                generateClosureDestruct closureArgId name byteOffset
+                generateClosureDestruct funcArgId name byteOffset
             in
               ( insertInstr : insertCode
               , destructInstr : destructCode
@@ -599,9 +596,9 @@ module Generate.WebAssembly.Expression where
 
 
   generateClosureDestruct :: LocalId -> N.Name -> Int -> Instr
-  generateClosureDestruct closureArgId name byteOffset =
+  generateClosureDestruct funcArgId name byteOffset =
     set_local (Identifier.fromLocal name) $
-      i32_load byteOffset (get_local closureArgId)
+      i32_load byteOffset (get_local funcArgId)
               
 
   gcAllocate :: Function
