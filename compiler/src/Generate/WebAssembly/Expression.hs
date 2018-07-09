@@ -34,15 +34,14 @@ module Generate.WebAssembly.Expression where
       , revTableFuncIds :: [FunctionId]
       , revStartInstr :: [Instr]
       , currentScope :: Scope
-      , parentScope :: Scope
       }
 
 
   data Scope =
     Scope
       { argNames :: Set.Set N.Name
+      , localNames :: Set.Set N.Name
       , closedOverNames :: Set.Set N.Name
-      , letNames :: Set.Set N.Name
       }
 
 
@@ -390,7 +389,7 @@ module Generate.WebAssembly.Expression where
       scope = currentScope state
 
       isDefinedInternally =
-        Set.member name (letNames scope)
+        Set.member name (localNames scope)
         || Set.member name (argNames scope)
 
       updatedScope =
@@ -402,89 +401,6 @@ module Generate.WebAssembly.Expression where
       state
         { currentScope = updatedScope }
 
-
-
-{-
-    need an scopeDeps Dict in ExprState
-    add them as we encounter them
-    when we pop back up to outer function that creates this one,
-    generate code to populate it
-
-    what about 'let' names? they're people too.
-    Easiest thing is to make them part of the Scope
-    Could make them special cases using Wasm locals but that means
-    distinguishing them correctly when current compiler doesn't
-    Downside is extra memory
-    Unless we implement let-in as a lambda, creating another function
-    inside the function. Inner function treats 'lets' as input params
-    and real inputs as closed-over values.
-    But is there a good way to detect this?
-
-    Lets are recursive in Elm AST
-    They come in dependency order
-    So on every Let Def, add to the locals Map
-    prepopulate the Map with args in reverse order
-      before recursing into the body
-      guarantees they will be in the right place in the map
-    for each Let Def in the body, insert an entry to the Map
-    for each VarLocal that isn't already in the Map, must be 
-      a closed-over value.
-    Create an ADT,
-        Local = Arg Int | ClosedOver Int | Let
-    locals Map has this ADT as values
-
-
-  Make all args & VarLocals & closed-over values into Wasm locals
-
-    They would become easier to fetch (registers?)
-    On entry into function, set all the locals from Scope
-    Should be quick. Two instructions per param
-      (load with fixed offset, then set_local)
-    We'll have to load them at least once anyway, so that's free
-      and things have names => generated code is nice and readable
-      and VarLocal is more intuitive, similar to JS meaning
-      and we're guaranteed to only load the pointer once
-      and we don't have to pass around empty Scope slots
-
-
-  Function code gen:
-    Take the list of params and create a Locals Map from it,
-      with ADT specifying 'Arg'
-    Push that onto the localMaps List in the ExprState
-
-    Recurse into the body, generate it and get the returned ExprState
-
-    Generate the Scope destructuring code
-      put the Args and ClosedOvers in the Scope
-    
-    Prepend Scope destructuring code to the main body
-
-    Return the ExprState
-      drop the head of the localMaps List
-      get next Table Element index and increment it
-      write Table Element declaration
-      write DataSegment declaration for empty Scope (Arg & ClosedOver)
-      write the Wasm Function declaration
-      add an Instruction i32.const (dataOffset before adding Scope)
-  
-  Non-tail recursion
-    Need own function name as a closed-over variable
-    Does this come for free?
-      yes if we insert child function into parent scope
-        *before* building child closure value
--}
-
--- data ExprState =
---   ExprState
---     { revInstr :: [Instr]
---     , revFunc :: [Function]
---     , dataSegment :: B.Builder
---     , dataOffset :: Int32
---     , tableSize :: Int32
---     , tableFuncIds :: [FunctionId]
---     , revStartInstr :: [Instr]
---     , scopeStack :: [Scope]
---     }
 
   generateFunction :: [N.Name] -> Opt.Expr -> ExprState -> ExprState
   generateFunction args body state =
@@ -499,144 +415,38 @@ module Generate.WebAssembly.Expression where
         generate body $
           state
             { revInstr = []
-            , tableSize = tableOffset + 1
-            , parentScope = currentScope state
             , currentScope =
                 Scope
                   { argNames = Set.fromList args
+                  , localNames = Set.empty
                   , closedOverNames = Set.empty
-                  , letNames = Set.empty
                   }
             }
 
       closedOverSet =
         closedOverNames $ currentScope bodyState
 
-      -- NEW PARENT ENV LOCAL
+      -- CREATE NEW LOCAL FOR COPYING CLOSED-OVER VALUES
 
-      numClosurePointers :: Int32
-      numClosurePointers =
-        fromIntegral $
-          length args + Set.size closedOverSet
+      surroundingScope =
+        currentScope state
 
-      currentParentScope =
-        parentScope state
-
-      parentTempVarName =
+      scopeVarName =
         N.fromString $ "$scope" ++ show tableOffset
 
-      parentScopeLocalId =
-        Identifier.fromLocal parentTempVarName
+      scopeLocalId =
+        Identifier.fromLocal scopeVarName
 
-      updatedParentScope =
-        if numClosurePointers == 0 then
-          currentParentScope
-        else
-          -- also insert closed-overs that aren't already there as
-          -- closed-overs of parent!
-          currentParentScope
-            { letNames =
-                Set.insert
-                  parentTempVarName
-                  (letNames currentParentScope)
-            }
+      updatedSurroundingScope =
+        addClosureToSurroundingScope scopeVarName closedOverSet surroundingScope
 
-      -- WASM CODE : ENV CONSTRUCT & DESTRUCT
-
-      i32size :: Int32
-      i32size = 4
-      pointersSize = numClosurePointers * i32size
-      funcIndexSize = i32size
-      aritySize = i32size
-      totalSize = funcIndexSize + aritySize + pointersSize
-
-        {- global functions & non-closures :
-              just create a prototype
-              no need for any copying
-              no need for any fiddling with parent scope
-              - all this gives us is the quick startup, who cares?
-                  - for the globals I do care because I want Wasm globals
-                  to be pointers... but they still would be...
-                  - also want them to be below the heap
-                  still could be if we move heap after 'start' & GC
-           closures:
-              copy a prototype scope
-              fill up the closed-over values
-        -}
-      scopeConstructionCode :: [Instr]
-      scopeConstructionCode =
-        let
-          createNewClosure =
-            set_local
-              parentScopeLocalId
-              (call (_functionId gcAllocate) [i32_const totalSize])
-
-          storeTableIndex =
-            i32_store 0 (get_local parentScopeLocalId) $
-              (i32_const tableOffset)
-
-          storeArity =
-            i32_store 4 (get_local parentScopeLocalId) $
-              (i32_const $ fromIntegral $ length args)
-
-          (storeClosedOverValues, _) =
-            Set.foldl'
-              (\(accInstr, accIndex) closedOverName ->
-                ( i32_store ((4 * accIndex) + 8)
-                      (get_local parentScopeLocalId)
-                      (get_local (Identifier.fromLocal closedOverName))
-                  : accInstr
-                , accIndex + 1
-                )
-              )
-              ([], length args - 1)
-              closedOverSet
-        in
-          createNewClosure
-          : storeTableIndex
-          : storeArity
-          : storeClosedOverValues
-
-
-      -- Function always has one arg, which is the first local
-      -- Avoid name clashes by not giving it a name, just index 0
+      -- Generated function has just one arg, the closure.
+      -- Use its index (0) instead of a name => no name clashes with locals.
       closureArgId =
         LocalIdx 0
 
-      scopeDestructureCode :: [Instr]
-      scopeDestructureCode =
-        let
-          (destructureClosedOvers, _) =
-            Set.foldl'
-              (\(accInstr, accIndex) name ->
-                ( ( set_local (Identifier.fromLocal name) $
-                    i32_load ((4 * accIndex) + 8)
-                      (get_local closureArgId)
-                  ) : accInstr
-                , accIndex + 1
-                )
-              )
-              ([], length args - 1)
-              closedOverSet
-
-          (destructureScope, _) =
-            List.foldl'
-              (\(accInstr, accIndex) name ->
-                ( ( set_local (Identifier.fromLocal name) $
-                      i32_load ((4 * accIndex) + 8)
-                        (get_local closureArgId)
-                  ) : accInstr
-                , accIndex + 1
-                )
-              )
-              (destructureClosedOvers, 0)
-              args
-        in
-          destructureScope
-
-
-      -- PREPARE RETURN VALUES
-
+      (closureConstructCode, closureDestructCode) =
+        generateClosure args closedOverSet scopeLocalId closureArgId tableOffset
 
       func =
         Function
@@ -645,20 +455,156 @@ module Generate.WebAssembly.Expression where
           , _locals = map (\name -> (Identifier.fromLocal name, I32)) $
                        Set.toList closedOverSet
           , _resultType = Just I32
-          , _body = scopeDestructureCode ++ (reverse $ revInstr bodyState)
+          , _body = closureDestructCode ++ (reverse $ revInstr bodyState)
           }
       
-      parentInstr =
+      closureConstructBlock =
         block 
           (LabelName $ "$createClosure" <> B.int32Dec tableOffset)
           I32
-          (scopeConstructionCode ++ [get_local parentScopeLocalId])
+          (closureConstructCode ++ [get_local scopeLocalId])
     in
-      addInstr parentInstr $
-        addTableFunc func $
-        state
+      bodyState
+        { revInstr = closureConstructBlock : (revInstr state)
+        , revFunc = func : (revFunc bodyState)
+        , tableSize = 1 + tableSize bodyState
+        , revTableFuncIds = funcId : revTableFuncIds bodyState
+        , currentScope = updatedSurroundingScope
+        }
 
 
+  addClosureToSurroundingScope :: N.Name -> Set.Set N.Name -> Scope -> Scope
+  addClosureToSurroundingScope scopeVarName closedOverSet surroundingScope =
+      let
+        allSurroundingNames =
+          Set.unions
+            [ argNames surroundingScope
+            , localNames surroundingScope
+            , closedOverNames surroundingScope
+            ]
+        
+        -- If any closed-over names skip this scope (defined in a higher scope),
+        -- then they are implicitly closed-over in this scope too.
+        skipScopeNames =
+          Set.filter
+            (\name -> not $ Set.member name allSurroundingNames)
+            closedOverSet
+      in
+        surroundingScope
+          { localNames =
+              Set.insert
+                scopeVarName
+                (localNames surroundingScope)
+          , closedOverNames =
+              Set.union (closedOverNames surroundingScope) skipScopeNames
+          }
+
+
+  generateClosure :: [N.Name] -> Set.Set N.Name -> LocalId -> LocalId -> Int32 -> ([Instr], [Instr])
+  generateClosure args closedOverSet scopeId closureArgId elemIdx =
+    let
+      nArgs = length args
+
+      i32size = 4
+      pointersSize = (nArgs + Set.size closedOverSet) * i32size
+      elemIndexSize = i32size
+      aritySize = i32size
+      totalSize = elemIndexSize + aritySize + pointersSize
+
+      createNewClosure =
+        set_local scopeId
+          (call
+            (_functionId gcAllocate)
+            [i32_const $ fromIntegral totalSize]
+          )
+
+      storeElemIndex =
+        i32_store 0 (get_local scopeId) $
+          (i32_const elemIdx)
+
+      storeArity =
+        i32_store 4 (get_local scopeId) $
+          (i32_const $ fromIntegral $ length args)
+
+      (storeClosedOvers, destructClosedOvers) =
+        generateClosedOverValues nArgs closedOverSet scopeId closureArgId
+
+      closureConstructCode =
+        createNewClosure
+        : storeElemIndex
+        : storeArity
+        : storeClosedOvers
+      
+      (closureDestructCode, _) =
+        List.foldl'
+          (\(argDestructCode, pointerIdx) name ->
+            let
+              byteOffset =
+                (closureIndexToOffset pointerIdx)
+
+              destructArg =
+                generateClosureDestruct closureArgId name byteOffset
+            in
+            ( destructArg : argDestructCode
+            , pointerIdx + 1
+            )
+          )
+          (destructClosedOvers, 0)
+          args
+    in
+      (closureConstructCode, closureDestructCode)
+
+
+  closureIndexToOffset :: Int -> Int
+  closureIndexToOffset pointerIdx =
+    let
+      pointerSize = 4
+      headerSize = 8 -- elemIdx + arity
+    in
+      headerSize + (pointerSize * pointerIdx)
+
+  
+  generateClosedOverValues :: Int -> Set.Set N.Name -> LocalId -> LocalId -> ([Instr], [Instr])
+  generateClosedOverValues nArgs closedOverSet scopeId closureArgId =
+    let
+      (storeClosedOvers, destructClosedOvers, _) =
+        Set.foldl'
+          (\(insertCode, destructCode, pointerIdx) name ->
+            let
+              byteOffset =
+                closureIndexToOffset pointerIdx
+
+              insertInstr =
+                generateClosureInsert scopeId name byteOffset
+
+              destructInstr =
+                generateClosureDestruct closureArgId name byteOffset
+            in
+              ( insertInstr : insertCode
+              , destructInstr : destructCode
+              , pointerIdx + 1
+              )
+          )
+          ([], [], nArgs)
+          closedOverSet
+    in
+      (storeClosedOvers, destructClosedOvers)
+
+
+  generateClosureInsert :: LocalId -> N.Name -> Int -> Instr
+  generateClosureInsert scopeId name byteOffset =
+    i32_store byteOffset
+      (get_local scopeId)
+      (get_local (Identifier.fromLocal name))
+
+
+  generateClosureDestruct :: LocalId -> N.Name -> Int -> Instr
+  generateClosureDestruct closureArgId name byteOffset =
+    set_local (Identifier.fromLocal name) $
+      i32_load byteOffset (get_local closureArgId)
+              
+
+  gcAllocate :: Function
   gcAllocate =
     Function
       { _functionId = FunctionName "$gcAllocate"
