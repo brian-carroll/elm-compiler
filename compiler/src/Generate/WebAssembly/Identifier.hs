@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Generate.WebAssembly.Label
+module Generate.WebAssembly.Identifier
   ( fromLocal
   , labelFromLocal
   , fromGlobal
@@ -28,6 +28,8 @@ module Generate.WebAssembly.Label
   import qualified Generate.WebAssembly.Builder as WAB
 
   -- CONSTRUCTORS
+
+  -- TODO: eliminate unnecessary work like avoiding JS keywords
 
   fromLocal :: N.Name -> WA.LocalId
   fromLocal name =
