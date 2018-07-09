@@ -33,6 +33,8 @@ view =
         , ul [] <| List.map (\_ -> li [] []) stupidList
         , viewExtRecord exampleRecord1
         , viewExtRecord exampleRecord2
+        , ul [] <| List.repeat (tailCallWrapperFunc 0) (li [] [])
+        , ul [] <| List.repeat (topLevelTailFunc 0) (li [] [])
         ]
 
 
@@ -86,7 +88,6 @@ mutualRecursionTest1 : Int -> Html msg
 mutualRecursionTest1 x =
     if x < 10 then
         mutualRecursionTest2 (x + 1)
-
     else
         text "That's it"
 
@@ -95,18 +96,36 @@ mutualRecursionTest2 : Int -> Html msg
 mutualRecursionTest2 x =
     if x < 10 then
         mutualRecursionTest1 (x + 1)
-
     else
         text "That's it"
+
+
+tailCallWrapperFunc x =
+    let
+        -- Tail-call NOT optimised
+        tailFunc xx =
+            if xx > 10 then
+                xx
+            else
+                tailFunc (xx + 1)
+    in
+        tailFunc x
+
+
+{-| Tail-call optimised
+-}
+topLevelTailFunc xx =
+    if xx > 10 then
+        xx
+    else
+        topLevelTailFunc (xx + 1)
 
 
 viewIf x y =
     if x && y then
         text "first"
-
     else if y then
         text "second"
-
     else
         text "third"
 
