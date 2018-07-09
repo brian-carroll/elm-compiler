@@ -88,7 +88,7 @@ module Generate.WebAssembly.Expression where
       }
 
 
-  -- Escape bytes for writing data segments to a Wasm text format file
+  -- Escape bytes for writing data segments in Wasm text format
   bytesToBuilderEscaped :: ByteString -> B.Builder
   bytesToBuilderEscaped bytes =
     -- Files are always UTF-8 so it's safe to fold byte-by-byte
@@ -138,14 +138,6 @@ module Generate.WebAssembly.Expression where
     in
       bytes
 
-
-  -- addDataInt32 :: Int32 -> ExprState -> ExprState
-  -- addDataInt32 i state =
-  --   let
-  --     x = 0
-  --   in
-  --     state
-  
 
   -- COMPARABLES
 
@@ -405,6 +397,7 @@ module Generate.WebAssembly.Expression where
   generateFunction :: [N.Name] -> Opt.Expr -> ExprState -> ExprState
   generateFunction args body state =
     let
+      -- Recurse into the body
       bodyState =
         generate body $
           state
@@ -417,34 +410,49 @@ module Generate.WebAssembly.Expression where
                   }
             }
 
+      -- Unique table index & function label
+
       tableOffset =
         tableSize bodyState
 
       funcId =
         FunctionName ("$elmFunc" <> B.int32Dec tableOffset)
 
+      
+      -- Closure data structure
+      --   Generate code to construct and destructure it (args & closed-over values)
+      --   Work out which names are closed-over, and pass them down through nested scopes
+      --   Create a temporary variable to help with construction & copying
+
+      closureTempName =
+        N.fromString $ "$$closure" ++ show tableOffset
+
+      closureTempLocalId =
+        Identifier.fromLocal closureTempName
+
       closedOverSet =
         closedOverNames $ currentScope bodyState
 
-      -- CREATE LOCAL VAR IN SURROUNDING SCOPE
-
-      closureVarName =
-        N.fromString $ "$$closure" ++ show tableOffset
-
-      closureLocalId =
-        Identifier.fromLocal closureVarName
-
+      surroundingScope =
+        currentScope state
+  
       updatedSurroundingScope =
-        addClosureToSurroundingScope closureVarName closedOverSet (currentScope state)
+        addClosureToSurroundingScope closureTempName closedOverSet surroundingScope
 
-      -- Generated function has just one param, the closure value.
-      -- Use its index (0) instead of a name => no name clashes with locals.
+      -- Generated function has just one param, the closure value
       funcArgId =
         LocalIdx 0
 
       (closureConstructCode, closureDestructCode) =
-        generateClosure args closedOverSet closureLocalId funcArgId tableOffset
+        generateClosure args closedOverSet closureTempLocalId funcArgId tableOffset
+    
+      closureConstructBlock =
+        block 
+          (LabelName $ "$createClosure" <> B.int32Dec tableOffset)
+          I32
+          (closureConstructCode ++ [get_local closureTempLocalId])
 
+      -- AST for the Wasm function
       func =
         Function
           { _functionId = funcId
@@ -454,47 +462,41 @@ module Generate.WebAssembly.Expression where
           , _resultType = Just I32
           , _body = closureDestructCode ++ (reverse $ revInstr bodyState)
           }
-      
-      closureConstructBlock =
-        block 
-          (LabelName $ "$createClosure" <> B.int32Dec tableOffset)
-          I32
-          (closureConstructCode ++ [get_local closureLocalId])
     in
       bodyState
         { revInstr = closureConstructBlock : (revInstr state)
+        , currentScope = updatedSurroundingScope
         , revFunc = func : (revFunc bodyState)
         , tableSize = 1 + tableSize bodyState
         , revTableFuncIds = funcId : revTableFuncIds bodyState
-        , currentScope = updatedSurroundingScope
         }
 
 
   addClosureToSurroundingScope :: N.Name -> Set.Set N.Name -> Scope -> Scope
-  addClosureToSurroundingScope closureVarName closedOverSet surroundingScope =
-      let
-        allSurroundingNames =
-          Set.unions
-            [ argNames surroundingScope
-            , localNames surroundingScope
-            , closedOverNames surroundingScope
-            ]
-        
-        -- If any closed-over names skip this scope (defined in a higher scope),
-        -- then they are implicitly closed-over in this scope too.
-        skipScopeNames =
-          Set.filter
-            (\name -> not $ Set.member name allSurroundingNames)
-            closedOverSet
-      in
-        surroundingScope
-          { localNames =
-              Set.insert
-                closureVarName
-                (localNames surroundingScope)
-          , closedOverNames =
-              Set.union (closedOverNames surroundingScope) skipScopeNames
-          }
+  addClosureToSurroundingScope closureTempName closedOverSet surroundingScope =
+    let
+      allSurroundingNames =
+        Set.unions
+          [ argNames surroundingScope
+          , localNames surroundingScope
+          , closedOverNames surroundingScope
+          ]
+      
+      -- If any closed-over names skip this scope (defined in a higher scope),
+      -- then they are implicitly closed-over in this scope too.
+      skipScopeNames =
+        Set.filter
+          (\name -> not $ Set.member name allSurroundingNames)
+          closedOverSet
+    in
+      surroundingScope
+        { localNames =
+            Set.insert
+              closureTempName
+              (localNames surroundingScope)
+        , closedOverNames =
+            Set.union (closedOverNames surroundingScope) skipScopeNames
+        }
 
 
   generateClosure :: [N.Name] -> Set.Set N.Name -> LocalId -> LocalId -> Int32 -> ([Instr], [Instr])
@@ -564,6 +566,8 @@ module Generate.WebAssembly.Expression where
   generateClosedOverValues :: Int -> Set.Set N.Name -> LocalId -> LocalId -> ([Instr], [Instr])
   generateClosedOverValues nArgs closedOverSet scopeId funcArgId =
     let
+      -- Generate construction and destructuring code together,
+      -- to guarantee offsets match
       (storeClosedOvers, destructClosedOvers, _) =
         Set.foldl'
           (\(insertCode, destructCode, pointerIdx) name ->
