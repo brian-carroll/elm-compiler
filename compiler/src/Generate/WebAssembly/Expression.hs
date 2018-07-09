@@ -20,6 +20,7 @@ module Generate.WebAssembly.Expression where
   import Generate.WebAssembly.Builder as WA
   import qualified Elm.Name as N
   import qualified Generate.WebAssembly.Identifier as Identifier
+  import qualified AST.Module.Name as ModuleName
 
 
   -- EXPRESSION GENERATOR STATE  
@@ -234,9 +235,7 @@ module Generate.WebAssembly.Expression where
             state
   
       Opt.VarLocal name ->
-        addInstr
-          (get_local $ Identifier.fromLocal name)
-          (maybeInsertLocalClosedOver state name)
+        generateVarLocal name state
   
       Opt.VarGlobal (Opt.Global home name) ->
         addInstr
@@ -244,20 +243,14 @@ module Generate.WebAssembly.Expression where
           state
   
       Opt.VarEnum (Opt.Global home name) index ->
-        state
-        -- case mode of
-        --   Mode.Dev _ _ ->
-        --     JsExpr $ JS.Ref (Name.fromGlobal home name)
-  
-        --   Mode.Prod _ _ ->
-        --     JsExpr $ JS.Int (Index.toMachine index)
+        addInstr
+          (get_global $ Identifier.fromGlobal home name)
+          state
   
       Opt.VarBox (Opt.Global home name) ->
-        state
-        -- JsExpr $ JS.Ref $
-        --   case mode of
-        --     Mode.Dev _ _ -> Name.fromGlobal home name
-        --     Mode.Prod _ _ -> Name.fromGlobal ModuleName.basics N.identity
+        addInstr
+          (get_global $ Identifier.fromGlobal ModuleName.basics N.identity)
+          state
   
       Opt.VarCycle home name ->
         addInstr
@@ -373,25 +366,34 @@ module Generate.WebAssembly.Expression where
         state
         -- let string = JS.String (Text.encodeUtf8Builder src) in
         -- JsExpr $ JS.Object [ ( Name.fromLocal "src", string ) ]
+
+
+  generateVarLocal :: N.Name -> ExprState -> ExprState
+  generateVarLocal name state =
+    addInstr
+      (get_local $ Identifier.fromLocal name)
+      (maybeInsertLocalClosedOver state name)
   
-  
+
   maybeInsertLocalClosedOver :: ExprState -> N.Name -> ExprState
   maybeInsertLocalClosedOver state name =
     let
       scope = currentScope state
 
-      isDefinedInternally =
-        Set.member name (localNames scope)
-        || Set.member name (argNames scope)
-
-      updatedScope =
-        if isDefinedInternally then
-          scope
-        else
-          scope { closedOverNames = Set.insert name (closedOverNames scope) }
+      isFromCurrentScope =
+        Set.member name (argNames scope)
+        || Set.member name (localNames scope)
     in
-      state
-        { currentScope = updatedScope }
+      if isFromCurrentScope then
+        state
+      else
+        state
+          { currentScope =
+              scope
+                { closedOverNames =
+                    Set.insert name (closedOverNames scope)
+                }
+          }
 
 
   generateFunction :: [N.Name] -> Opt.Expr -> ExprState -> ExprState
