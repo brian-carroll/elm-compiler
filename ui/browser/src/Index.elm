@@ -20,7 +20,7 @@ import Json.Decode as D
 
 main : Program D.Value Model ()
 main =
-    Browser.element
+    Browser.document
         { init = \flags -> ( D.decodeValue decoder flags, Cmd.none )
         , update = \_ model -> ( model, BrianPlayground.elmToJs "hi" )
         , subscriptions = \_ -> BrianPlayground.jsToElm (\_ -> ())
@@ -84,7 +84,7 @@ type alias Model =
 -- VIEW
 
 
-view : Model -> Html msg
+view : Model -> Browser.Document msg
 view model =
     case model of
         Err error ->
