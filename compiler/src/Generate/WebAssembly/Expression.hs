@@ -405,12 +405,6 @@ module Generate.WebAssembly.Expression where
   generateFunction :: [N.Name] -> Opt.Expr -> ExprState -> ExprState
   generateFunction args body state =
     let
-      tableOffset =
-        tableSize state
-
-      funcId =
-        FunctionName ("$elmFunc" <> B.int32Dec tableOffset)
-
       bodyState =
         generate body $
           state
@@ -422,6 +416,12 @@ module Generate.WebAssembly.Expression where
                   , closedOverNames = Set.empty
                   }
             }
+
+      tableOffset =
+        tableSize bodyState
+
+      funcId =
+        FunctionName ("$elmFunc" <> B.int32Dec tableOffset)
 
       closedOverSet =
         closedOverNames $ currentScope bodyState
