@@ -189,14 +189,9 @@ module Generate.WebAssembly.Expression where
   
       Opt.Str string ->
         let
-          numCodePoints =
-            int32toBytes $
-              fromIntegral $
-              Text.length string
-
           memoryInit =
             comparableCtor CompString
-            <> numCodePoints
+            <> (int32toBytes $ fromIntegral $ Text.length string)
             <> encodeText string
         in
           addData memoryInit $
@@ -214,25 +209,7 @@ module Generate.WebAssembly.Expression where
             state
   
       Opt.Float value ->
-        let
-          -- TODO: Work out how to convert Double to raw bytes, not decimal text
-          --  (Binary.encode seems to give way more than 8 bytes)
-          -- Workaround: Initialise memory to zeros, then overwrite real value 
-          -- in 'start' function. Then I only have to output decimal text.
-          memoryInit =
-            comparableCtor CompFloat
-            <> (BS.pack $ take 8 $ repeat 0)
-          
-          addressInstr =
-            i32_const $ dataOffset state
-          
-          startInstr =
-            f64_store 0 addressInstr (f64_const value)
-        in
-          addData memoryInit $
-            addInstr addressInstr $
-            addStartInstr startInstr $
-            state
+        generateFloat value state
   
       Opt.VarLocal name ->
         generateVarLocal name state
@@ -285,8 +262,7 @@ module Generate.WebAssembly.Expression where
         generateFunction args body state
   
       Opt.Call func args ->
-        state
-        -- JsExpr $ generateCall mode func args
+        generateCall func args state
   
       Opt.TailCall name args ->
         state
@@ -368,6 +344,29 @@ module Generate.WebAssembly.Expression where
         -- JsExpr $ JS.Object [ ( Name.fromLocal "src", string ) ]
 
 
+  generateFloat :: Double -> ExprState -> ExprState
+  generateFloat value state =
+    let
+      -- TODO: Work out how to convert Double to raw bytes, not decimal text
+      --  (Binary.encode seems to give way more than 8 bytes)
+      -- Workaround: Initialise memory to zeros, then overwrite real value 
+      -- in 'start' function. Then I only have to output decimal text.
+      memoryInit =
+        comparableCtor CompFloat
+        <> (BS.pack $ take 8 $ repeat 0)
+      
+      addressInstr =
+        i32_const $ dataOffset state
+      
+      startInstr =
+        f64_store 0 addressInstr (f64_const value)
+    in
+      addData memoryInit $
+        addInstr addressInstr $
+        addStartInstr startInstr $
+        state
+
+
   generateVarLocal :: N.Name -> ExprState -> ExprState
   generateVarLocal name state =
     addInstr
@@ -399,7 +398,6 @@ module Generate.WebAssembly.Expression where
   generateFunction :: [N.Name] -> Opt.Expr -> ExprState -> ExprState
   generateFunction args body state =
     let
-      -- Recurse into the body
       bodyState =
         generate body $
           state
@@ -412,58 +410,46 @@ module Generate.WebAssembly.Expression where
                   }
             }
 
-      -- Unique table index & function label
-
+      closedOverSet =
+        closedOverNames $ currentScope bodyState
+      
       tableOffset =
         tableSize bodyState
 
       funcId =
         FunctionName ("$elmFunc" <> B.int32Dec tableOffset)
 
-      
-      -- Closure data structure
-      --   Generate code to construct and destructure it (args & closed-over values)
-      --   Work out which names are closed-over, and pass them down through nested scopes
-      --   Create a temporary variable to help with construction & copying
-
-      closureTempName =
-        N.fromString $ "$$closure" ++ show tableOffset
-
-      closureTempLocalId =
-        Identifier.fromLocal closureTempName
-
-      closedOverSet =
-        closedOverNames $ currentScope bodyState
-
-      surroundingScope =
-        currentScope state
-  
-      updatedSurroundingScope =
-        addClosureToSurroundingScope closureTempName closedOverSet surroundingScope
-
-      -- Generated function has just one param, the closure value
       funcArgId =
         LocalIdx 0
 
+      -- Closure data structure to implement 'first-class functions'
       (closureConstructCode, closureDestructCode) =
-        generateClosure args closedOverSet closureTempLocalId funcArgId tableOffset
-    
-      closureConstructBlock =
-        block 
-          (LabelName $ "$createClosure" <> B.int32Dec tableOffset)
-          I32
-          (closureConstructCode ++ [get_local closureTempLocalId])
+        generateClosure args closedOverSet closureLocalId funcArgId tableOffset
 
-      -- AST for the Wasm function
       func =
         Function
           { _functionId = funcId
           , _params = [(funcArgId, I32)]
           , _locals = map (\name -> (Identifier.fromLocal name, I32)) $
-                       Set.toList closedOverSet
+                        Set.toList closedOverSet
           , _resultType = Just I32
           , _body = closureDestructCode ++ (reverse $ revInstr bodyState)
           }
+
+
+      -- Update surrounding scope where the function is created
+
+      (closureLocalId, surroundingScope) =
+        createTempVar $ currentScope state
+
+      updatedSurroundingScope =
+        addPassthruClosedOvers closedOverSet surroundingScope
+
+      closureConstructBlock =
+        block 
+          (LabelName $ "$createClosure" <> B.int32Dec tableOffset)
+          I32
+          (closureConstructCode ++ [get_local closureLocalId])
     in
       bodyState
         { revInstr = closureConstructBlock : (revInstr state)
@@ -474,8 +460,27 @@ module Generate.WebAssembly.Expression where
         }
 
 
-  addClosureToSurroundingScope :: N.Name -> Set.Set N.Name -> Scope -> Scope
-  addClosureToSurroundingScope closureTempName closedOverSet surroundingScope =
+  createTempVar :: Scope -> (LocalId, Scope)
+  createTempVar scope =
+    let
+      tempName =
+        N.fromString $ "$$tmp" ++ show (Set.size $ localNames scope)
+
+      tempId =
+        Identifier.fromLocal tempName
+    in
+      ( tempId
+      , scope
+          { localNames =
+              Set.insert
+                tempName
+                (localNames scope)
+          }
+      )
+      
+
+  addPassthruClosedOvers :: Set.Set N.Name -> Scope -> Scope
+  addPassthruClosedOvers closedOverSet surroundingScope =
     let
       allSurroundingNames =
         Set.unions
@@ -483,26 +488,20 @@ module Generate.WebAssembly.Expression where
           , localNames surroundingScope
           , closedOverNames surroundingScope
           ]
-      
-      -- If any closed-over names skip this scope (defined in a higher scope),
-      -- then they are implicitly closed-over in this scope too.
-      skipScopeNames =
+
+      passthruNames =
         Set.filter
           (\name -> not $ Set.member name allSurroundingNames)
           closedOverSet
     in
       surroundingScope
-        { localNames =
-            Set.insert
-              closureTempName
-              (localNames surroundingScope)
-        , closedOverNames =
-            Set.union (closedOverNames surroundingScope) skipScopeNames
+        { closedOverNames =
+            Set.union (closedOverNames surroundingScope) passthruNames
         }
 
 
   generateClosure :: [N.Name] -> Set.Set N.Name -> LocalId -> LocalId -> Int32 -> ([Instr], [Instr])
-  generateClosure args closedOverSet scopeId funcArgId elemIdx =
+  generateClosure args closedOverSet closureId funcArgId elemIdx =
     let
       nArgs = length args
 
@@ -513,22 +512,22 @@ module Generate.WebAssembly.Expression where
       totalSize = elemIndexSize + aritySize + pointersSize
 
       createNewClosure =
-        set_local scopeId
+        set_local closureId
           (call
             (_functionId gcAllocate)
             [i32_const $ fromIntegral totalSize]
           )
 
       storeElemIndex =
-        i32_store 0 (get_local scopeId) $
+        i32_store 0 (get_local closureId) $
           (i32_const elemIdx)
 
       storeArity =
-        i32_store 4 (get_local scopeId) $
+        i32_store 4 (get_local closureId) $
           (i32_const $ fromIntegral $ length args)
 
       (storeClosedOvers, destructClosedOvers) =
-        generateClosedOverValues nArgs closedOverSet scopeId funcArgId
+        generateClosedOverValues nArgs closedOverSet closureId funcArgId
 
       closureConstructCode =
         createNewClosure
@@ -566,7 +565,7 @@ module Generate.WebAssembly.Expression where
 
   
   generateClosedOverValues :: Int -> Set.Set N.Name -> LocalId -> LocalId -> ([Instr], [Instr])
-  generateClosedOverValues nArgs closedOverSet scopeId funcArgId =
+  generateClosedOverValues nArgs closedOverSet closureId funcArgId =
     let
       -- Generate construction and destructuring code together,
       -- to guarantee offsets match
@@ -578,7 +577,7 @@ module Generate.WebAssembly.Expression where
                 closureIndexToOffset pointerIdx
 
               insertInstr =
-                generateClosureInsert scopeId name byteOffset
+                generateClosureInsert closureId name byteOffset
 
               destructInstr =
                 generateClosureDestruct funcArgId name byteOffset
@@ -595,9 +594,9 @@ module Generate.WebAssembly.Expression where
 
 
   generateClosureInsert :: LocalId -> N.Name -> Int -> Instr
-  generateClosureInsert scopeId name byteOffset =
+  generateClosureInsert closureId name byteOffset =
     i32_store byteOffset
-      (get_local scopeId)
+      (get_local closureId)
       (get_local (Identifier.fromLocal name))
 
 
@@ -605,7 +604,34 @@ module Generate.WebAssembly.Expression where
   generateClosureDestruct funcArgId name byteOffset =
     set_local (Identifier.fromLocal name) $
       i32_load byteOffset (get_local funcArgId)
-              
+
+
+  generateCall :: Opt.Expr -> [Opt.Expr] -> ExprState -> ExprState
+  generateCall func args state =
+    let
+
+      typeId =
+        Identifier.fromFuncType [I32] I32
+
+      {-
+        create a new local var
+        copy the closure, put new ref into local var
+        store each arg into the new closure
+          fold over generateClosureInsert
+        if arity == 0
+          load the function table index
+          call indirect
+        else
+          return new closure ref
+      -}
+
+      funcState =
+        generate func state
+    in
+      state
+
+
+
 
   gcAllocate :: Function
   gcAllocate =
