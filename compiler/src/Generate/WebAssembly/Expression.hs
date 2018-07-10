@@ -606,31 +606,127 @@ module Generate.WebAssembly.Expression where
       i32_load byteOffset (get_local funcArgId)
 
 
+  wrapResultInstr :: (Instr -> Instr) -> [Instr] -> [Instr]
+  wrapResultInstr wrapper reverseInstructions =
+    case reverseInstructions of
+      resultInstr : rest ->
+        (wrapper resultInstr) : rest
+      [] ->
+        undefined
+
+
   generateCall :: Opt.Expr -> [Opt.Expr] -> ExprState -> ExprState
-  generateCall func args state =
+  generateCall funcExpr args state =
     let
-
-      typeId =
-        Identifier.fromFuncType [I32] I32
-
-      {-
-        create a new local var
-        copy the closure, put new ref into local var
-        store each arg into the new closure
-          fold over generateClosureInsert
-        if arity == 0
-          load the function table index
-          call indirect
-        else
-          return new closure ref
-      -}
-
       funcState =
-        generate func state
+        generate funcExpr state
+
+      (closureLocalId, scopeWithClosure) =
+        createTempVar (currentScope funcState)
+
+      (argPointerLocalId, updatedScope) =
+        createTempVar scopeWithClosure
+
+      getClosureCopy :: Instr -> Instr
+      getClosureCopy funcRefInstr =
+        set_local closureLocalId $
+          call (_functionId gcShallowCopy) [funcRefInstr]
+
+      getArity =
+        i32_load 4 $
+          get_local closureLocalId
+
+      getInitArgPointer =
+        set_local argPointerLocalId $
+          i32_add (get_local closureLocalId) $
+          i32_add (i32_const 8) $
+          i32_mul (i32_const 4) $
+          getArity
+
+      foldInitState =
+        funcState
+          { currentScope = updatedScope
+          , revInstr =
+              getInitArgPointer
+              : (wrapResultInstr getClosureCopy (revInstr funcState))
+          }
+
+      argsInsertedState =
+        List.foldl'
+          (\accState argExpr ->
+            let
+              argState =
+                generate argExpr accState
+            in
+              argState
+                { revInstr =
+                    wrapResultInstr
+                      insertArg
+                      (revInstr argState)
+                }
+          )
+          foldInitState
+          args
+
+      insertArg :: Instr -> Instr
+      insertArg argExpr =
+        i32_store 0
+          (tee_local argPointerLocalId
+            (i32_sub
+              (get_local argPointerLocalId)
+              (i32_const 4)
+            )
+          )
+          argExpr
+
+      -- If we're now pointing at the lowest arg in the closure, it's full
+      isClosureFull =
+        (i32_eq (i32_const 8)
+          (i32_sub
+            (get_local argPointerLocalId)
+            (get_local closureLocalId)
+          )
+        )
+
+      funcTableIndex =
+        i32_load 0 (get_local closureLocalId)
+
+      evaluateBody =
+        call_indirect elmFuncTypeId
+          funcTableIndex
+          [get_local closureLocalId]
+
+      resultInstr =
+        select
+          (get_local closureLocalId)
+          evaluateBody
+          isClosureFull
     in
-      state
+      argsInsertedState
+        { revInstr = resultInstr : (revInstr argsInsertedState)
+        }
 
 
+  -- All Elm functions have the same type in Wasm, pointer -> pointer
+  -- Take a pointer to the closure, return a pointer to the result
+  elmFuncTypeId :: TypeId
+  elmFuncTypeId =
+    Identifier.fromFuncType [I32] I32
+
+
+{-
+  TODO
+    - Generate some code (does any of this actually work?)
+      - manually write some Elm AST and generate WAT
+        - read & debug
+      - implement allocate and copy
+        - ever-increasing heap with no actual GC
+        - need size headers for values (change pointer arithmetic)
+      - run it
+    - some kind of prelude?
+    - start function?
+    - exports?
+-}
 
 
   gcAllocate :: Function
@@ -638,6 +734,17 @@ module Generate.WebAssembly.Expression where
     Function
       { _functionId = FunctionName "$gcAllocate"
       , _params = [(LocalName "$size", I32)]
+      , _locals = []
+      , _resultType = Just I32
+      , _body = [unreachable] -- TODO
+      }
+
+
+  gcShallowCopy :: Function
+  gcShallowCopy =
+    Function
+      { _functionId = FunctionName "$gcShallowCopy"
+      , _params = [(LocalName "$from", I32)]
       , _locals = []
       , _resultType = Just I32
       , _body = [unreachable] -- TODO

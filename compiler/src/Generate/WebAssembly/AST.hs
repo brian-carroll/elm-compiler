@@ -127,7 +127,11 @@ data Instr
   | GetGlobal GlobalId
   | SetGlobal GlobalId Instr
   | Drop Instr
-  | Select Instr Instr Instr
+  | Select
+      { _select0 :: Instr
+      , _select1 :: Instr
+      , _selectCond :: Instr
+      }
   | ConstOp
       { _literal :: Builder
       , _constType :: ValType
