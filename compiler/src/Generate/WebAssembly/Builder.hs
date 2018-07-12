@@ -186,8 +186,7 @@ instance Declaration StartFunction where
 
 instrToBuilder :: Builder -> Instr -> (Lines, Builder)
 instrToBuilder indent instr =
-  (lines, "(" <> instrBody <> ")")
-  where
+  let
     deeperIndent =
       deeper indent
 
@@ -200,7 +199,10 @@ instrToBuilder indent instr =
     concatSpaces builders =
       concatWith " " builders
 
-    (lines, instrBody) =
+    addParens (lines, body) =
+      (lines, "(" <> body <> ")")
+  in
+    addParens $
       case instr of
         Unreachable ->
           (One, "unreachable")
