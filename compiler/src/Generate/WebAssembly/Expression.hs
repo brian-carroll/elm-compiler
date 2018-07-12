@@ -1,11 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Generate.WebAssembly.Expression where
+module Generate.WebAssembly.Expression
+  ( ExprState
+  , generate
+  , initState
+  , stateToBuilder
+  , stateToDataOffset
+  , stateToTableSize
+  )
+  where
 
   import Data.Word (Word8)
   import Data.Bits ((.&.), shiftR)
   import Data.Int (Int32)
   import Data.ByteString (ByteString)
   import qualified Data.ByteString.Builder as B
+  import qualified Data.Binary.Put as Put
   import Data.Monoid ((<>))
   import qualified Data.ByteString as BS
   import qualified Data.Text as Text
@@ -17,7 +26,6 @@ module Generate.WebAssembly.Expression where
   import qualified AST.Optimized as Opt
   import Generate.WebAssembly.AST
   import Generate.WebAssembly.Instructions
-  import Generate.WebAssembly.Builder as WA
   import qualified Elm.Name as N
   import qualified Generate.WebAssembly.Identifier as Identifier
   import qualified AST.Module.Name as ModuleName
@@ -33,7 +41,6 @@ module Generate.WebAssembly.Expression where
       , dataOffset :: Int32
       , tableSize :: Int32
       , revTableFuncIds :: [FunctionId]
-      , revStartInstr :: [Instr]
       , currentScope :: Scope
       }
 
@@ -45,20 +52,96 @@ module Generate.WebAssembly.Expression where
       , closedOverNames :: Set.Set N.Name
       }
 
+  
+  -- Initial state
+
+  initState :: Int32 -> Int32 -> Set.Set N.Name -> ExprState
+  initState initDataOffset initTableSize startLocals =
+    ExprState
+      { revInstr = []
+      , revFunc = []
+      , dataSegment = ""
+      , dataOffset = initDataOffset
+      , tableSize = initTableSize
+      , revTableFuncIds = []
+      , currentScope = emptyScope
+      }
+  
+
+  emptyScope :: Scope
+  emptyScope =
+    Scope
+      { argNames = Set.empty
+      , localNames = Set.empty
+      , closedOverNames = Set.empty
+      }
+
+
+  -- Final state
+
+    {-
+      Instructions at top-level &
+      Leftover localNames from top-level expression
+        - create a thunk function declaration returning I32
+        - returned instruction is a call to that thunk
+    
+      At top level,
+      
+      no locals   1 instr     => instr
+      no locals   many instr  => block or thunk
+      locals      1 instr     => thunk
+      locals      many instr  => thunk
+      
+      No locals with many instructions seems unlikely I think?
+      In most cases aren't a sequence of instructions going to need
+      some local variable to link them together?
+      Sequence implies some side-effect, which can only be memory
+      (creating or copying)
+      And in that case I've probably created some local var as well.
+
+      Forget blocks, use thunks
+
+    -}
+
+
+
+  stateToBuilder :: ExprState -> B.Builder
+  stateToBuilder state =
+    ""
+
+
+  stateToInstr :: LabelId -> ExprState -> Instr
+  stateToInstr label state =
+    case revInstr state of
+      [] -> nop
+      [instr] -> instr
+      revInstrList -> block label I32 $ reverse revInstrList
+
+
+  stateToTableSize :: ExprState -> Int32
+  stateToTableSize state =
+    tableSize state
+
+
+  stateToDataOffset :: ExprState -> Int32
+  stateToDataOffset state =
+    dataOffset state
+
+
+  -- HELPERS
 
   addInstr :: Instr -> ExprState -> ExprState
   addInstr instr state =
     state { revInstr = instr : (revInstr state) }
 
+
   addInstrList :: [Instr] -> ExprState -> ExprState
   addInstrList instrs state =
-    state { revInstr = (List.reverse instrs) ++ (revInstr state) }
-    
+    state
+      { revInstr =
+          List.foldr (:) (revInstr state) instrs
+      }
 
-  addStartInstr :: Instr -> ExprState -> ExprState
-  addStartInstr instr state =
-    state { revStartInstr = instr : (revStartInstr state) }
-  
 
   addFunc :: Function -> ExprState -> ExprState
   addFunc func state =
@@ -177,39 +260,49 @@ module Generate.WebAssembly.Expression where
           (i32_const $ if bool then 1 else 0)
           state
   
-      Opt.Chr char ->
+      Opt.Chr text ->
         let
-          memoryInit =
+          memoryBytes =
             comparableCtor CompChar
-            <> encodeText char
+            <> encodeText text
         in
-          addData memoryInit $
+          addData memoryBytes $
             addInstr (i32_const $ dataOffset state) $
             state
   
-      Opt.Str string ->
+      Opt.Str text ->
         let
-          memoryInit =
+          memoryBytes =
             comparableCtor CompString
-            <> (int32toBytes $ fromIntegral $ Text.length string)
-            <> encodeText string
+            <> (int32toBytes $ fromIntegral $ Text.length text)
+            <> encodeText text
         in
-          addData memoryInit $
+          addData memoryBytes $
             addInstr (i32_const $ dataOffset state) $
             state
 
       Opt.Int int ->
         let
-          memoryInit =
+          memoryBytes =
             comparableCtor CompInt
             <> (int32toBytes $ fromIntegral int)
         in
-          addData memoryInit $
+          addData memoryBytes $
             addInstr (i32_const $ dataOffset state) $
             state
   
       Opt.Float value ->
-        generateFloat value state
+        let
+          memoryBuilder =
+            (B.byteString $ comparableCtor CompFloat)
+            <> (Put.execPut $ Put.putDoublele value)
+          address = dataOffset state
+        in
+          state
+            { dataSegment = (dataSegment state) <> memoryBuilder
+            , dataOffset = address + 8
+            , revInstr = i32_const address : (revInstr state)
+            }
   
       Opt.VarLocal name ->
         generateVarLocal name state
@@ -344,28 +437,6 @@ module Generate.WebAssembly.Expression where
         -- JsExpr $ JS.Object [ ( Name.fromLocal "src", string ) ]
 
 
-  generateFloat :: Double -> ExprState -> ExprState
-  generateFloat value state =
-    let
-      -- TODO: Work out how to convert Double to raw bytes, not decimal text
-      --  (Binary.encode seems to give way more than 8 bytes)
-      -- Workaround: Initialise memory to zeros, then overwrite real value 
-      -- in 'start' function. Then I only have to output decimal text.
-      memoryInit =
-        comparableCtor CompFloat
-        <> (BS.pack $ take 8 $ repeat 0)
-      
-      addressInstr =
-        i32_const $ dataOffset state
-      
-      startInstr =
-        f64_store 0 addressInstr (f64_const value)
-    in
-      addData memoryInit $
-        addInstr addressInstr $
-        addStartInstr startInstr $
-        state
-
 
   generateVarLocal :: N.Name -> ExprState -> ExprState
   generateVarLocal name state =
@@ -409,29 +480,30 @@ module Generate.WebAssembly.Expression where
                   , closedOverNames = Set.empty
                   }
             }
-
-      closedOverSet =
-        closedOverNames $ currentScope bodyState
       
-      tableOffset =
-        tableSize bodyState
+      bodyScope = currentScope bodyState
 
-      funcId =
-        FunctionName ("$elmFunc" <> B.int32Dec tableOffset)
+      closedOverSet = closedOverNames bodyScope
+      
+      tableOffset = tableSize bodyState
 
-      funcArgId =
-        LocalIdx 0
+      funcId = FunctionName ("$elmFunc" <> B.int32Dec tableOffset)
+
+      funcArgId = LocalIdx 0
 
       -- Closure data structure to implement 'first-class functions'
       (closureConstructCode, closureDestructCode) =
         generateClosure args closedOverSet closureLocalId funcArgId tableOffset
 
+      funcLocals = nameSetToLocalsList $
+          Set.union closedOverSet $
+          localNames bodyScope
+
       func =
         Function
           { _functionId = funcId
           , _params = [(funcArgId, I32)]
-          , _locals = map (\name -> (Identifier.fromLocal name, I32)) $
-                        Set.toList closedOverSet
+          , _locals = funcLocals
           , _resultType = Just I32
           , _body = closureDestructCode ++ (reverse $ revInstr bodyState)
           }
@@ -440,7 +512,7 @@ module Generate.WebAssembly.Expression where
       -- Update surrounding scope where the function is created
 
       (closureLocalId, surroundingScope) =
-        createTempVar $ currentScope state
+        createTempVar "closure" $ currentScope state
 
       updatedSurroundingScope =
         addPassthruClosedOvers closedOverSet surroundingScope
@@ -460,24 +532,42 @@ module Generate.WebAssembly.Expression where
         }
 
 
-  createTempVar :: Scope -> (LocalId, Scope)
-  createTempVar scope =
-    let
-      tempName =
-        N.fromString $ "$$tmp" ++ show (Set.size $ localNames scope)
+  nameSetToLocalsList :: Set.Set N.Name -> [(LocalId, ValType)]
+  nameSetToLocalsList nameSet =
+    Set.foldr'
+        (\name acc -> (Identifier.fromLocal name, I32) : acc)
+        []
+        nameSet
 
-      tempId =
-        Identifier.fromLocal tempName
+
+  createTempVar :: String -> Scope -> (LocalId, Scope)
+  createTempVar name scope =
+    let
+      noElmClashPrefix = "$"
+      uniqueSuffix = show (Set.size $ localNames scope)
+      tempName =
+        N.fromString $ noElmClashPrefix ++ name ++ uniqueSuffix
     in
-      ( tempId
+      ( Identifier.fromLocal tempName
       , scope
           { localNames =
-              Set.insert
-                tempName
-                (localNames scope)
+              Set.insert tempName (localNames scope)
           }
       )
-      
+
+  createTempVars :: [String] -> Scope -> ([LocalId], Scope)
+  createTempVars names scope =
+    List.foldl'
+      (\(accIds, accScope) name ->
+        let
+          (thisId, nextScope) =
+            createTempVar name accScope
+        in
+          (thisId : accIds, nextScope)
+      )
+      ([], scope)
+      names          
+          
 
   addPassthruClosedOvers :: Set.Set N.Name -> Scope -> Scope
   addPassthruClosedOvers closedOverSet surroundingScope =
@@ -621,11 +711,8 @@ module Generate.WebAssembly.Expression where
       funcState =
         generate funcExpr state
 
-      (closureLocalId, scopeWithClosure) =
-        createTempVar (currentScope funcState)
-
-      (argPointerLocalId, updatedScope) =
-        createTempVar scopeWithClosure
+      ([closureLocalId, argPointerLocalId], updatedScope) =
+        createTempVars ["closure", "arg"] (currentScope funcState)
 
       getClosureCopy :: Instr -> Instr
       getClosureCopy funcRefInstr =
@@ -716,16 +803,23 @@ module Generate.WebAssembly.Expression where
 
 {-
   TODO
-    - Generate some code (does any of this actually work?)
+    - Test builder
+      - Take some manually written WAT files
+      - Manually translate to AST
+      - Run builder
+
+    - Test generator
       - manually write some Elm AST and generate WAT
         - read & debug
       - implement allocate and copy
         - ever-increasing heap with no actual GC
         - need size headers for values (change pointer arithmetic)
       - run it
-    - some kind of prelude?
-    - start function?
-    - exports?
+
+    - Add manual Wast code
+      - some kind of prelude
+      - start function?
+      - exports
 -}
 
 
