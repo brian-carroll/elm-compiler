@@ -17,6 +17,7 @@ module Generate.WebAssembly.Expression
   import qualified Data.Binary.Put as Put
   import Data.Monoid ((<>))
   import qualified Data.ByteString as BS
+  import qualified Data.ByteString.Lazy as BSL
   import qualified Data.Text as Text
   import qualified Data.Text.Encoding as TE
   import qualified Data.Map.Strict as Map
@@ -157,25 +158,25 @@ module Generate.WebAssembly.Expression
       }
 
 
-  addData :: ByteString -> ExprState -> ExprState
-  addData bytes state =
-    state
-      -- dataSegment is escaped for writing to a file.
-      -- Browser will un-escape when initialising Wasm memory.
-      { dataSegment =
-          (dataSegment state) <> bytesToBuilderEscaped bytes
+  addDataLiteral :: ExprState -> Int32 -> ByteString -> ExprState
+  addDataLiteral state ctor payload =
+    let
+      unescaped = (encodeInt32 ctor) <> payload
+      offset = dataOffset state
+    in
+      state
+        { dataSegment =
+            (dataSegment state) <> escapeDataSegment unescaped
+        , dataOffset =
+            offset + (fromIntegral $ BS.length unescaped)
+        , revInstr =
+            (i32_const offset) : (revInstr state)
+        }
 
-      -- dataOffset is based on unescaped length.
-      -- Points to the initialised memory location at runtime.
-      , dataOffset =
-          (dataOffset state) + (fromIntegral $ BS.length bytes)
-      }
 
-
-  -- Escape bytes for writing data segments in Wasm text format
-  bytesToBuilderEscaped :: ByteString -> B.Builder
-  bytesToBuilderEscaped bytes =
-    -- Files are always UTF-8 so it's safe to fold byte-by-byte
+  -- Escape bytes for writing between quotes in a UTF-8 WAT file
+  escapeDataSegment :: ByteString -> B.Builder
+  escapeDataSegment bytes =
     BS.foldl'
       (\builder byte ->
         let
@@ -197,31 +198,15 @@ module Generate.WebAssembly.Expression
     TE.encodeUtf8 text
 
 
-  -- Convert Int32 to ByteSring (little-endian and always length 4)
-  int32toBytes :: Int32 -> ByteString
-  int32toBytes i32 =
-    let
-      (bytes, _) =
-        BS.unfoldrN 4
-          (\(remainder, count) ->
-            if count < 0 then
-              Nothing
-            else
-              let
-                thisByte =
-                  fromIntegral remainder .&. 255
+  encodeInt32 :: Int32 -> ByteString
+  encodeInt32 i32 =
+    BSL.toStrict $ Put.runPut $ Put.putInt32le i32
 
-                nextAccumulator =
-                  ( remainder `shiftR` 8
-                  , count - 1
-                  )
-              in
-                Just (thisByte, nextAccumulator)
-          )
-          (i32, 3)
-    in
-      bytes
 
+  encodeDouble :: Double -> ByteString
+  encodeDouble d =
+    BSL.toStrict $ Put.runPut $ Put.putDoublele d
+  
 
   -- COMPARABLES
 
@@ -236,18 +221,17 @@ module Generate.WebAssembly.Expression
     | CompString
 
 
-  comparableCtor :: ComparableCtor -> ByteString
+  comparableCtor :: ComparableCtor -> Int32
   comparableCtor ctor =
-    BS.singleton $
-      case ctor of
-        CompNil    -> 0
-        CompCons   -> 1
-        CompTuple2 -> 2
-        CompTuple3 -> 3
-        CompInt    -> 4
-        CompFloat  -> 5
-        CompChar   -> 6
-        CompString -> 7
+    case ctor of
+      CompNil    -> 0
+      CompCons   -> 1
+      CompTuple2 -> 2
+      CompTuple3 -> 3
+      CompInt    -> 4
+      CompFloat  -> 5
+      CompChar   -> 6
+      CompString -> 7
 
 
   -- EXPRESSION
@@ -261,48 +245,28 @@ module Generate.WebAssembly.Expression
           state
   
       Opt.Chr text ->
-        let
-          memoryBytes =
-            comparableCtor CompChar
-            <> encodeText text
-        in
-          addData memoryBytes $
-            addInstr (i32_const $ dataOffset state) $
-            state
+        addDataLiteral state
+          (comparableCtor CompChar)
+          (encodeText text)
   
       Opt.Str text ->
         let
-          memoryBytes =
-            comparableCtor CompString
-            <> (int32toBytes $ fromIntegral $ Text.length text)
-            <> encodeText text
+          numCodePoints =
+            encodeInt32 $ fromIntegral $ Text.length text
         in
-          addData memoryBytes $
-            addInstr (i32_const $ dataOffset state) $
-            state
+          addDataLiteral state
+            (comparableCtor CompString)
+            (numCodePoints <> encodeText text)
 
       Opt.Int int ->
-        let
-          memoryBytes =
-            comparableCtor CompInt
-            <> (int32toBytes $ fromIntegral int)
-        in
-          addData memoryBytes $
-            addInstr (i32_const $ dataOffset state) $
-            state
+        addDataLiteral state
+          (comparableCtor CompInt)
+          (encodeInt32 $ fromIntegral int)
   
-      Opt.Float value ->
-        let
-          memoryBuilder =
-            (B.byteString $ comparableCtor CompFloat)
-            <> (Put.execPut $ Put.putDoublele value)
-          address = dataOffset state
-        in
-          state
-            { dataSegment = (dataSegment state) <> memoryBuilder
-            , dataOffset = address + 8
-            , revInstr = i32_const address : (revInstr state)
-            }
+      Opt.Float double ->
+        addDataLiteral state
+          (comparableCtor CompFloat)
+          (encodeDouble double)
   
       Opt.VarLocal name ->
         generateVarLocal name state
