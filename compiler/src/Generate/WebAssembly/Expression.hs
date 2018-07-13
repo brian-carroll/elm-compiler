@@ -3,9 +3,7 @@ module Generate.WebAssembly.Expression
   ( ExprState
   , generate
   , initState
-  , stateToBuilder
-  , stateToDataOffset
-  , stateToTableSize
+  , flushState
   )
   where
 
@@ -25,11 +23,13 @@ module Generate.WebAssembly.Expression
   import qualified Data.Set as Set
 
   import qualified AST.Optimized as Opt
+  import qualified Elm.Name as N
+  import qualified AST.Module.Name as ModuleName
   import Generate.WebAssembly.AST
   import Generate.WebAssembly.Instructions
-  import qualified Elm.Name as N
+  import qualified Generate.WebAssembly.Builder as WAB
   import qualified Generate.WebAssembly.Identifier as Identifier
-  import qualified AST.Module.Name as ModuleName
+
 
 
   -- EXPRESSION GENERATOR STATE  
@@ -56,8 +56,8 @@ module Generate.WebAssembly.Expression
   
   -- Initial state
 
-  initState :: Int32 -> Int32 -> Set.Set N.Name -> ExprState
-  initState initDataOffset initTableSize startLocals =
+  initState :: Int32 -> Int32 -> ExprState
+  initState initDataOffset initTableSize =
     ExprState
       { revInstr = []
       , revFunc = []
@@ -80,53 +80,63 @@ module Generate.WebAssembly.Expression
 
   -- Final state
 
-    {-
-      Instructions at top-level &
-      Leftover localNames from top-level expression
-        - create a thunk function declaration returning I32
-        - returned instruction is a call to that thunk
-    
-      At top level,
-      
-      no locals   1 instr     => instr
-      no locals   many instr  => block or thunk
-      locals      1 instr     => thunk
-      locals      many instr  => thunk
-      
-      No locals with many instructions seems unlikely I think?
-      In most cases aren't a sequence of instructions going to need
-      some local variable to link them together?
-      Sequence implies some side-effect, which can only be memory
-      (creating or copying)
-      And in that case I've probably created some local var as well.
+  -- Flush everything to a Builder, so it can be written to disk, freeing up memory
+  flushState :: B.Builder -> ExprState -> (Instr, B.Builder, ExprState)
+  flushState uniqueId state =
+    let
+      -- Initialised memory
+      dataBuilder =
+        WAB.toBuilder $
+          DataSegment MemIdxZero (dataOffset state) (dataSegment state)
 
-      Forget blocks, use thunks
+      -- Generated functions
+      -- If we've created local vars, generate one more function
+      (finalInstr, finalRevFunc) =
+        case revInstr state of
+          [] ->
+            undefined -- can't have an empty expression
 
-    -}
+          [i] ->
+            if Set.null topLevelLocals then
+              ( i, revFunc state )
+            else
+              ( call thunkId []
+              , (makeThunk [i]) : revFunc state
+              )
 
+          iList ->
+            ( call thunkId []
+            , (makeThunk $ reverse iList) : revFunc state
+            )
 
+      topLevelLocals = localNames $ currentScope state
+      thunkId = FunctionName ("$thunk$" <> uniqueId)
+      makeThunk body =
+        Function
+          { _functionId = thunkId
+          , _params = []
+          , _locals = nameSetToLocalsList topLevelLocals
+          , _resultType = Just I32
+          , _body = body
+          }
 
-  stateToBuilder :: ExprState -> B.Builder
-  stateToBuilder state =
-    ""
+      funcsBuilder =
+        foldr (\f b -> b <> (WAB.toBuilder f)) "" finalRevFunc
 
+      -- Table elements (functions for dynamic dispatch)
+      (functionIds, elemOffset) =
+        foldr
+          (\fid (fids, offset) -> (fid : fids, offset - 1))
+          ([], tableSize state)
+          (revTableFuncIds state)
 
-  stateToInstr :: LabelId -> ExprState -> Instr
-  stateToInstr label state =
-    case revInstr state of
-      [] -> nop
-      [instr] -> instr
-      revInstrList -> block label I32 $ reverse revInstrList
-
-
-  stateToTableSize :: ExprState -> Int32
-  stateToTableSize state =
-    tableSize state
-
-
-  stateToDataOffset :: ExprState -> Int32
-  stateToDataOffset state =
-    dataOffset state
+      elemBuilder =
+        WAB.toBuilder $ ElementSegment elemOffset functionIds
+    in
+      ( finalInstr
+      , dataBuilder <> elemBuilder <> funcsBuilder
+      , initState (dataOffset state) (tableSize state)
+      )
 
 
   -- HELPERS
@@ -134,28 +144,6 @@ module Generate.WebAssembly.Expression
   addInstr :: Instr -> ExprState -> ExprState
   addInstr instr state =
     state { revInstr = instr : (revInstr state) }
-
-
-  addInstrList :: [Instr] -> ExprState -> ExprState
-  addInstrList instrs state =
-    state
-      { revInstr =
-          List.foldr (:) (revInstr state) instrs
-      }
-
-
-  addFunc :: Function -> ExprState -> ExprState
-  addFunc func state =
-    state { revFunc = func : (revFunc state) }
-
-
-  addTableFunc :: Function -> ExprState -> ExprState
-  addTableFunc func state =
-    state
-      { revFunc = func : (revFunc state)
-      , revTableFuncIds = (_functionId func) : (revTableFuncIds state)
-      , tableSize = tableSize state + 1
-      }
 
 
   addDataLiteral :: ExprState -> Int32 -> ByteString -> ExprState

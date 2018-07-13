@@ -14,6 +14,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.ByteString.Builder as B
 import Data.ByteString.Builder (Builder)
 import Data.Monoid ((<>))
+
 import Generate.WebAssembly.AST
 import Generate.WebAssembly.Instructions (i32_const)
 
@@ -146,7 +147,7 @@ buildLimits (Limits initSize maybeMaxSize) =
 
 
 instance Declaration DataSegment where
-  toBuilder (DataSegment MemIdxZero dataOffset bytes) =
+  toBuilder (DataSegment MemIdxZero dataOffset builder) =
     let
       (_, dataOffsetBuilder) =
         instrToBuilder "" $ i32_const dataOffset
@@ -154,7 +155,7 @@ instance Declaration DataSegment where
       "(data "
         <> dataOffsetBuilder
         <> " \""
-        <> B.byteString bytes
+        <> builder
         <> "\")"
 
 

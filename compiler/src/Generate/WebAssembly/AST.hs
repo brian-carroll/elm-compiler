@@ -66,7 +66,7 @@ data DataSegment =
   DataSegment
     { _memIdx :: MemId
     , _dataOffset :: Int32
-    , _bytes :: ByteString
+    , _bytes :: Builder
     }
 
 
