@@ -16,7 +16,7 @@ data GlobalId = GlobalIdx Int | GlobalName Builder
 data LocalId = LocalIdx Int | LocalName Builder
 data LabelId = LabelIdx Int | LabelName Builder
 
-data Limits = Limits Int (Maybe Int)
+data Limits = Limits Int32 (Maybe Int32)
 data Mutability = Mutable | Immutable
 
 data ValType = I32 | I64 | F32 | F64

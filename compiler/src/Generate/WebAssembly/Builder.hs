@@ -140,10 +140,10 @@ buildLimits :: Limits -> Builder
 buildLimits (Limits initSize maybeMaxSize) =
   let
     maxBuilderList =
-      Maybe.maybeToList $ fmap B.intDec maybeMaxSize
+      Maybe.maybeToList $ fmap B.int32Dec maybeMaxSize
   in
     concatWith " " $
-      B.intDec initSize : maxBuilderList
+      B.int32Dec initSize : maxBuilderList
 
 
 instance Declaration DataSegment where

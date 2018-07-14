@@ -28,7 +28,7 @@ module Generate.WebAssembly.Expression
   import Generate.WebAssembly.AST
   import Generate.WebAssembly.Instructions
   import qualified Generate.WebAssembly.Builder as WAB
-  import qualified Generate.WebAssembly.Identifier as Identifier
+  import qualified Generate.WebAssembly.Identifier as Id
 
 
 
@@ -110,7 +110,7 @@ module Generate.WebAssembly.Expression
             )
 
       topLevelLocals = localNames $ currentScope state
-      thunkId = FunctionName ("$thunk$" <> uniqueId)
+      thunkId = FunctionName ("$thunk" <> uniqueId)
       makeThunk body =
         Function
           { _functionId = thunkId
@@ -139,10 +139,19 @@ module Generate.WebAssembly.Expression
       )
 
 
+  generateModuleFooter :: ExprState -> B.Builder
+  generateModuleFooter state =
+    let
+      table = TableDeclaration (Limits (tableSize state) Nothing) AnyFunc
+      mem = Memory MemIdxZero (Limits (dataOffset state) Nothing)
+    in
+      (WAB.toBuilder table) <> "\n" <> (WAB.toBuilder mem)
+
+
   -- HELPERS
 
-  addInstr :: Instr -> ExprState -> ExprState
-  addInstr instr state =
+  addInstr :: ExprState -> Instr -> ExprState
+  addInstr state instr =
     state { revInstr = instr : (revInstr state) }
 
 
@@ -228,9 +237,9 @@ module Generate.WebAssembly.Expression
   generate expression state =
     case expression of
       Opt.Bool bool ->
-        addInstr
-          (i32_const $ if bool then 1 else 0)
-          state
+        addInstr state $
+          get_global $ Id.fromGlobal ModuleName.basics $ N.fromString $
+          if bool then "True" else "False"
   
       Opt.Chr text ->
         addDataLiteral state
@@ -260,27 +269,23 @@ module Generate.WebAssembly.Expression
         generateVarLocal name state
   
       Opt.VarGlobal (Opt.Global home name) ->
-        addInstr
-          (get_global $ Identifier.fromGlobal home name)
-          state
+        addInstr state $
+          get_global $ Id.fromGlobal home name
   
       Opt.VarEnum (Opt.Global home name) index ->
-        addInstr
-          (get_global $ Identifier.fromGlobal home name)
-          state
+        addInstr state $
+          get_global $ Id.fromGlobal home name
   
       Opt.VarBox (Opt.Global home name) ->
-        addInstr
-          (get_global $ Identifier.fromGlobal ModuleName.basics N.identity)
-          state
+        addInstr state $
+          get_global $ Id.fromGlobal ModuleName.basics N.identity
   
       Opt.VarCycle home name ->
-        addInstr
-          (call_indirect
-            (Identifier.fromFuncType [] I32)
-            (get_global $ Identifier.fromCycle home name)
-            [])
-          state
+        addInstr state $
+          call_indirect
+            (Id.fromFuncType [] I32)
+            (get_global $ Id.fromCycle home name)
+            []
   
       Opt.VarDebug name home region unhandledValueName ->
         state
@@ -393,8 +398,8 @@ module Generate.WebAssembly.Expression
   generateVarLocal :: N.Name -> ExprState -> ExprState
   generateVarLocal name state =
     addInstr
-      (get_local $ Identifier.fromLocal name)
       (maybeInsertLocalClosedOver state name)
+      (get_local $ Id.fromLocal name)
   
 
   maybeInsertLocalClosedOver :: ExprState -> N.Name -> ExprState
@@ -487,7 +492,7 @@ module Generate.WebAssembly.Expression
   nameSetToLocalsList :: Set.Set N.Name -> [(LocalId, ValType)]
   nameSetToLocalsList nameSet =
     Set.foldr'
-        (\name acc -> (Identifier.fromLocal name, I32) : acc)
+        (\name acc -> (Id.fromLocal name, I32) : acc)
         []
         nameSet
 
@@ -500,7 +505,7 @@ module Generate.WebAssembly.Expression
       tempName =
         N.fromString $ noElmClashPrefix ++ name ++ uniqueSuffix
     in
-      ( Identifier.fromLocal tempName
+      ( Id.fromLocal tempName
       , scope
           { localNames =
               Set.insert tempName (localNames scope)
@@ -639,12 +644,12 @@ module Generate.WebAssembly.Expression
   generateClosureInsert closureId name byteOffset =
     i32_store byteOffset
       (get_local closureId)
-      (get_local (Identifier.fromLocal name))
+      (get_local (Id.fromLocal name))
 
 
   generateClosureDestruct :: LocalId -> N.Name -> Int -> Instr
   generateClosureDestruct funcArgId name byteOffset =
-    set_local (Identifier.fromLocal name) $
+    set_local (Id.fromLocal name) $
       i32_load byteOffset (get_local funcArgId)
 
 
@@ -750,7 +755,7 @@ module Generate.WebAssembly.Expression
   -- Take a pointer to the closure, return a pointer to the result
   elmFuncTypeId :: TypeId
   elmFuncTypeId =
-    Identifier.fromFuncType [I32] I32
+    Id.fromFuncType [I32] I32
 
 
 {-
