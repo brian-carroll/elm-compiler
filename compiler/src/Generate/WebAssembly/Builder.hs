@@ -21,20 +21,6 @@ import Generate.WebAssembly.Instructions (i32_const)
 -- HELPERS
 
 
-data Lines = One | Many deriving (Eq)
-
-
-linesMap :: (a -> (Lines, b)) -> [a] -> (Bool, [b])
-linesMap func xs =
-  let
-    pairs =
-      map func xs
-  in
-    ( any ((==) Many . fst) pairs
-    , map snd pairs
-    )
-
-
 deeper :: Builder -> Builder
 deeper indent =
   "  " <> indent
@@ -63,8 +49,8 @@ instance Declaration Function where
           ++ (Maybe.maybeToList $
                 fmap (\rt -> "result " <> buildValType rt) resultType)
 
-      (_, instrBuilders) =
-        linesMap (instrToBuilder "  ") body
+      instrBuilders =
+        map (instrToBuilder "  ") body
     in
       "("
         <> (concatWith "\n  " (signature : instrBuilders))
@@ -105,7 +91,7 @@ buildDescriptor descriptor =
 instance Declaration Global where
   toBuilder (Global globalId mut valType valueInstr) =
     let
-      (_, valueBuilder) =
+      valueBuilder =
         instrToBuilder "" valueInstr
 
       typeBuilder =
@@ -149,7 +135,7 @@ buildLimits (Limits initSize maybeMaxSize) =
 instance Declaration DataSegment where
   toBuilder (DataSegment MemIdxZero dataOffset builder) =
     let
-      (_, dataOffsetBuilder) =
+      dataOffsetBuilder =
         instrToBuilder "" $ i32_const dataOffset
     in
       "(data "
@@ -162,7 +148,7 @@ instance Declaration DataSegment where
 instance Declaration ElementSegment where
   toBuilder (ElementSegment tableOffset functionIds) =
     let
-      (_, offsetBuilder) =
+      offsetBuilder =
         instrToBuilder "" (i32_const tableOffset)
     in
       case functionIds of
@@ -185,7 +171,7 @@ instance Declaration StartFunction where
 
 -- INSTRUCTIONS
 
-instrToBuilder :: Builder -> Instr -> (Lines, Builder)
+instrToBuilder :: Builder -> Instr -> Builder
 instrToBuilder indent instr =
   let
     deeperIndent =
@@ -200,30 +186,28 @@ instrToBuilder indent instr =
     concatSpaces builders =
       concatWith " " builders
 
-    addParens (lines, body) =
-      (lines, "(" <> body <> ")")
+    addParens body =
+      "(" <> body <> ")"
   in
     addParens $
       case instr of
         Unreachable ->
-          (One, "unreachable")
+          "unreachable"
 
         Nop ->
-          (One, "nop")
+          "nop"
 
         Block labelId valType instrList ->
-          (,) Many $
             buildBlock "block" deeperIndent labelId valType instrList
             <> indent <> "end"
 
         Loop labelId valType instrList ->
-          (,) Many $
             buildBlock "loop" deeperIndent labelId valType instrList
             <> indent <> "end"
 
         IfElse valType cond (mThenLabel, thenExpr) (mElseLabel, elseExpr) ->
           let
-            (_, condBuilder) =
+            condBuilder =
               instrToBuilder deeperIndent cond
 
             thenLabelList =
@@ -235,170 +219,109 @@ instrToBuilder indent instr =
             thenBuilder =
               concatLines $
                 thenLabelList ++ 
-                map (snd . instrToBuilder deeperIndent) thenExpr
+                map (instrToBuilder deeperIndent) thenExpr
 
             elseBuilder =
               concatLines $
                 elseLabelList ++ 
-                map (snd . instrToBuilder deeperIndent) elseExpr
+                map (instrToBuilder deeperIndent) elseExpr
           in
-            (,) Many $
-              "if " <> (buildValType valType) <> "\n"
-                <> deeperIndent <> thenBuilder
-                <> indent <> "else\n"
-                <> deeperIndent <> elseBuilder
-                <> indent <> "end\n"
-                <> deeperIndent <> condBuilder
+            "if " <> (buildValType valType) <> "\n"
+              <> deeperIndent <> thenBuilder
+              <> indent <> "else\n"
+              <> deeperIndent <> elseBuilder
+              <> indent <> "end\n"
+              <> deeperIndent <> condBuilder
 
         Br labelId ->
-          (One, "br " <> (buildLabelId labelId))
+          "br " <> (buildLabelId labelId)
 
         BrIf labelId condInstr ->
-          let
-            (oneOrMany, builder) =
-              instrToBuilder deeperIndent condInstr
-
-            sep =
-              case oneOrMany of
-                One -> " "
-                Many -> newLineDeeper
-          in
-            ( oneOrMany
-            , "br_if " <> buildLabelId labelId
-                  <> sep <> builder
-            )
+          "br_if " <> buildLabelId labelId
+                <> newLineDeeper
+                <> instrToBuilder deeperIndent condInstr
 
         BrTable branchLabels defaultLabel condInstr ->
           let          
             branchBuilders =
               map buildLabelId branchLabels
 
-            (_, condBuilder) =
+            condBuilder =
               instrToBuilder deeperIndent condInstr
           in
-            (,) Many $
-              "br_table\n"
-                <> (concatLines branchBuilders)
-                <> newLineDeeper <> (buildLabelId defaultLabel)
-                <> newLineDeeper <> condBuilder
+            "br_table\n"
+              <> (concatLines branchBuilders)
+              <> newLineDeeper <> (buildLabelId defaultLabel)
+              <> newLineDeeper <> condBuilder
 
         Return ->
-          (One, "return")
+          "return"
 
         Call fid args ->
-          let
-            (anyMany, argBuilders) =
-              linesMap (instrToBuilder deeperIndent) args
-
-            firstLine =
-              "call " <> buildFunctionId fid
-          in
-            if anyMany then
-              (Many, concatLines $ firstLine : argBuilders)
-            else
-              (One, concatSpaces $ firstLine : argBuilders)
+          concatLines $
+            ("call " <> buildFunctionId fid)
+            : (map (instrToBuilder deeperIndent) args)
 
 
         CallIndirect typeId indexInstr args ->
-          let
-            (anyMany, builders) =
-              linesMap (instrToBuilder deeperIndent) (indexInstr : args)
-
-            firstLine =
-              "call_indirect " <> buildTypeId typeId
-          in
-            if anyMany then
-              (Many, concatLines $ firstLine : builders)
-            else
-              (One, concatSpaces $ firstLine : builders)
+          concatLines $
+            ("call_indirect " <> buildTypeId typeId)
+            : (map (instrToBuilder deeperIndent) (indexInstr : args))
 
 
         GetLocal localId ->
-          (One, "get_local " <> buildLocalId localId)
+          "get_local " <> buildLocalId localId
 
 
         SetLocal localId value ->
-          case instrToBuilder deeperIndent value of
-            (One, builder) ->
-              (One, "set_local " <> buildLocalId localId <> " " <> builder)
-            (Many, builder) ->
-              (Many, "set_local " <> buildLocalId localId
-                <> newLineDeeper <> builder)
+          "set_local " <> buildLocalId localId
+            <> newLineDeeper <> instrToBuilder deeperIndent value
 
 
         TeeLocal localId value ->
-          case instrToBuilder deeperIndent value of
-            (One, builder) ->
-              (One, "tee_local " <> buildLocalId localId <> " " <> builder)
-            (Many, builder) ->
-              (Many, "tee_local " <> buildLocalId localId
-                <> newLineDeeper <> builder)
+          "tee_local " <> buildLocalId localId
+            <> newLineDeeper <> instrToBuilder deeperIndent value
 
 
         GetGlobal gid ->
-          (One, "get_global " <> buildGlobalId gid)
+          "get_global " <> buildGlobalId gid
 
 
         SetGlobal gid value ->
-          case instrToBuilder deeperIndent value of
-            (One, builder) ->
-              (One, "set_global " <> buildGlobalId gid <> " " <> builder)
-            (Many, builder) ->
-              (Many, "set_global " <> buildGlobalId gid
-                <> newLineDeeper <> builder)
+          "set_global " <> buildGlobalId gid
+            <> newLineDeeper <> instrToBuilder deeperIndent value
 
 
         Drop droppedInstr ->
-          case instrToBuilder deeperIndent droppedInstr of
-            (One, builder) ->
-              (One, "drop " <> builder)
-            (Many, builder) ->
-              (Many, "drop " <> newLineDeeper <> builder)
+          "drop " <> newLineDeeper <> instrToBuilder deeperIndent droppedInstr
 
 
         Select instr0 instr1 testInstr ->
-          let
-            (anyMany, builders) =
-              linesMap
-                (instrToBuilder deeperIndent)
-                [instr0, instr1, testInstr]
-          in
-            if anyMany then
-              (Many, concatLines $ "select" : builders)
-            else
-              (One, concatSpaces $ "select" : builders)
+          concatLines $
+            "select"
+            : map (instrToBuilder deeperIndent) [instr0, instr1, testInstr]
 
 
         ConstOp valBuilder valType ->
-          (,) One $
-            buildValType valType <> ".const " <> valBuilder
+          buildValType valType <> ".const " <> valBuilder
 
 
         Op opCodeBuilder operands ->
-          let
-            (anyMany, builders) =
-              linesMap (instrToBuilder deeperIndent) operands
-          in
-            if anyMany then
-              (Many, concatLines $ opCodeBuilder : builders)
-            else
-              (One, concatSpaces $ opCodeBuilder : builders)
+          concatLines $
+            opCodeBuilder : (map (instrToBuilder deeperIndent) operands)
 
 
         MemOp opCodeBuilder (MemArg offset memAlign) operands ->
           let
-            (anyMany, builders) =
-              linesMap (instrToBuilder deeperIndent) operands
+            builders =
+              map (instrToBuilder deeperIndent) operands
 
             firstLine = concatSpaces $
               opCodeBuilder
                 : ("offset=" <> B.intDec offset)
                 : (buildMemAlign memAlign)
           in
-            if anyMany then
-              (Many, concatLines $ firstLine : builders)
-            else
-              (One, concatSpaces $ firstLine : builders)
+            concatLines $ firstLine : builders
 
 
 buildBlock :: Builder -> Builder -> LabelId -> ValType -> [Instr] -> Builder
@@ -411,7 +334,7 @@ buildBlock opcode deeperIndent labelId valType instrList =
         <> "\n"
 
     builders =
-      map (snd . instrToBuilder deeperIndent) instrList
+      map (instrToBuilder deeperIndent) instrList
   in
     firstLine <>
       (concatWith ("\n" <> deeperIndent) builders)
