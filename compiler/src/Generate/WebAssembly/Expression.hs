@@ -4,6 +4,7 @@ module Generate.WebAssembly.Expression
   , generate
   , initState
   , flushState
+  , generateModuleFooter
   )
   where
 
@@ -139,13 +140,13 @@ module Generate.WebAssembly.Expression
       )
 
 
-  generateModuleFooter :: ExprState -> B.Builder
+  generateModuleFooter :: ExprState -> (Table, Memory)
   generateModuleFooter state =
     let
       table = TableDeclaration (Limits (tableSize state) Nothing) AnyFunc
       mem = Memory MemIdxZero (Limits (dataOffset state) Nothing)
     in
-      (WAB.toBuilder table) <> "\n" <> (WAB.toBuilder mem)
+      (table, mem)
 
 
   -- HELPERS
@@ -773,7 +774,7 @@ module Generate.WebAssembly.Expression
         - need size headers for values (change pointer arithmetic)
       - run it
 
-    - Add manual Wast code
+    - Add manual Wat code
       - some kind of prelude
       - start function?
       - exports

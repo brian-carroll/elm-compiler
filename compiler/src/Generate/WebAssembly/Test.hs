@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Generate.WebAssembly.Test where
+module Generate.WebAssembly.Test (rootMap, graph) where
   import qualified Data.Map as Map
   import qualified Data.Set as Set
   import qualified Data.Text as Text
@@ -26,17 +26,25 @@ module Generate.WebAssembly.Test where
 
   -}
 
-  -- data Global = Global ModuleName.Canonical N.Name
+
+  rootMap :: Map.Map ModuleName.Canonical Opt.Main
+  rootMap =
+    Map.singleton moduleName main
 
 
-  testModule :: ModuleName.Canonical
-  testModule =
-    ModuleName.Canonical Pkg.dummyName "testModule"
+  moduleName :: ModuleName.Canonical
+  moduleName =
+    ModuleName.Canonical Pkg.dummyName "TestModule"
+
+
+  main :: Opt.Main
+  main =
+    Opt.Static
 
 
   g :: Text.Text -> Opt.Global
   g name =
-    Opt.Global testModule (N.fromText name)
+    Opt.Global moduleName (N.fromText name)
 
 
   l :: Text.Text -> Opt.Expr
@@ -49,8 +57,8 @@ module Generate.WebAssembly.Test where
     Opt.VarGlobal (g "add")
 
 
-  testClosures :: Map.Map Opt.Global Opt.Node
-  testClosures =
+  graph :: Map.Map Opt.Global Opt.Node
+  graph =
     Map.fromList
       [ ( g "outerScopeValue"
         , Opt.Define (Opt.Int 1) Set.empty
@@ -68,31 +76,16 @@ module Generate.WebAssembly.Test where
                 ]
               )
             )
-            (Set.fromList
-              [ g "outerScopeValue"
-              , g "add"
-              ]
-            )
+            (Set.singleton $ g "outerScopeValue")
         )
       , ( g "curried"
         , Opt.Define
             (Opt.Call (Opt.VarGlobal (g "closure")) [Opt.Int 2])
-            (Set.fromList
-              [ g "outerScopeValue"
-              , g "closure"
-              , g "add"
-              ]
-            )
+            (Set.singleton $ g "closure")
         )
-      , ( g "answer"
+      , ( g "main"
         , Opt.Define
             (Opt.Call (Opt.VarGlobal (g "curried")) [Opt.Int 3])
-            (Set.fromList
-              [ g "outerScopeValue"
-              , g "closure"
-              , g "answer"
-              , g "add"
-              ]
-            )
+            (Set.singleton $ g "curried")
         )
       ]

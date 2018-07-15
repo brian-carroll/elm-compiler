@@ -22,7 +22,6 @@ data Mutability = Mutable | Immutable
 data ValType = I32 | I64 | F32 | F64
 data FuncType = FuncType (Maybe TypeId) [ValType] (Maybe ValType)
 data ElemType = AnyFunc
-data GlobalType = GlobalType Mutability ValType 
 
 
 data Module =
@@ -51,12 +50,8 @@ data Function =
 
 
 data Global =
-  Global
-    { _globalId :: GlobalId
-    , _globalType :: GlobalType
-    , _globalValue :: Instr
-    }
-    
+  Global GlobalId Mutability ValType Instr
+
 
 data Memory =
   Memory MemId Limits

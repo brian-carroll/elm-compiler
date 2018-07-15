@@ -16,8 +16,13 @@ module Generate.WebAssembly where
   import qualified Generate.WebAssembly.Expression as Expr
   import qualified Generate.WebAssembly.Identifier as Identifier
   import qualified Generate.WebAssembly.Builder as WAB
+  import qualified Generate.WebAssembly.Test as Test
   import Generate.WebAssembly.Instructions
   import qualified Elm.Name as N
+
+
+  import qualified Generate.JavaScript.Name as DebugN
+  import Debug.Trace as Debug
 
 
   type Graph = Map.Map Opt.Global Opt.Node
@@ -26,27 +31,19 @@ module Generate.WebAssembly where
   generateWat :: Mode.Mode -> Map.Map Opt.Global Opt.Node -> Map.Map ModuleName.Canonical Opt.Main -> Builder
   generateWat mode graph rootMap =
     let
-      state = Map.foldrWithKey (addMain mode graph) emptyState rootMap
+      -- state = Map.foldrWithKey (addMain mode graph) emptyState rootMap
+      state = Map.foldrWithKey (addMain mode Test.graph) emptyState Test.rootMap
     in
       stateToBuilder state
 
 
   -- GRAPH TRAVERSAL STATE
 
-  {-
-  We don't strictly have to output things in dependency order like JS
-  But we do need to traverse dependencies in the same way to eliminate dead code
-  And while we're traversing them, we might as well output them.
-  -}
-
-
-
   data State =
     State
       { _builder :: Builder
       , _revStartInstr :: [WA.Instr]
-      , _tableSize :: Int32
-      , _dataOffset :: Int32
+      , _exprState :: Expr.ExprState
       , _seenGlobals :: Set.Set Opt.Global  
       }
 
@@ -56,32 +53,24 @@ module Generate.WebAssembly where
     State
       { _builder = ""
       , _revStartInstr = []
-      , _tableSize = 0
-      , _dataOffset = 0
+      , _exprState = Expr.initState 0 0
       , _seenGlobals = Set.empty
       }
 
 
-  -- addExpr :: Opt.Expr -> State -> State
-  -- addExpr expr state =
-  --   let
-  --     exprState :: Expr.ExprState
-  --     exprState =
-  --       Expr.generate expr $
-  --         Expr.initState
-  --           (fromIntegral $ _dataOffset state)
-  --           (fromIntegral $ Map.size $ _table state)
-  --           Set.empty
-  --   in
-  --     state
-
-
-
-
   stateToBuilder :: State -> Builder
-  stateToBuilder (State builder startBody table _ _) =
-  --   builder <> startBody -- <> (generateTable table)
-    ""
+  stateToBuilder (State builder revStart exprState _) =
+    let
+      (startDecl, startFunc) =
+        generateStart revStart
+      (table, mem) =
+        Expr.generateModuleFooter exprState
+    in
+      builder
+        <> "\n" <> WAB.toBuilder startFunc
+        <> "\n" <> WAB.toBuilder startDecl
+        <> "\n" <> WAB.toBuilder table
+        <> "\n" <> WAB.toBuilder mem
 
 
   -- Generate code
@@ -93,12 +82,12 @@ module Generate.WebAssembly where
 
 
   addGlobal :: Mode.Mode -> Graph -> State -> Opt.Global -> State
-  addGlobal mode graph state@(State builder startBody table dataOffset seen) global =
+  addGlobal mode graph state@(State builder revStart exprState seen) global =
     if Set.member global seen then
       state
     else
       addGlobalHelp mode graph global $
-        State builder startBody table dataOffset (Set.insert global seen)
+        State builder revStart exprState (Set.insert global seen)
 
 
   addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
@@ -106,71 +95,47 @@ module Generate.WebAssembly where
     let
       addDeps deps someState =
         Set.foldl' (addGlobal mode graph) someState deps
+      
+      (Opt.Global moduleName name) = global
+
+      tracedGlobal =
+        Debug.trace ("global: " ++ 
+          (show $ B.toLazyByteString $ DebugN.toBuilder $ 
+            DebugN.fromGlobal moduleName name
+          ))
+          global
+
+      -- tracedGraph =
+      --   Debug.trace ("graph: " ++ show graph) graph
     in
-      case graph ! global of
+      case graph ! tracedGlobal of
         Opt.Define expr deps ->
           let
-            depState :: State
             depState =
               addDeps deps state
             
-            globalId@(WA.GlobalName uniqueId) =
+            gid@(WA.GlobalName uniqueId) =
               Identifier.fromGlobal moduleName name
 
-            exprState :: Expr.ExprState
-            exprState =
-              Expr.generate expr $
-                Expr.initState (_dataOffset depState) (_tableSize depState)
-            
             (instr, exprBuilder, flushedExprState) =
-              Expr.flushState uniqueId exprState
-            -- need table size at some point, but that's all
-            -- don't need dataOffset
-            
+              Expr.flushState uniqueId $ Expr.generate expr (_exprState depState)
+
             (decl, newRevStart) =
               case instr of
                 WA.ConstOp _ _ ->
-                  ( WA.Global globalId (WA.GlobalType WA.Immutable WA.I32) instr
+                  ( WA.Global gid WA.Immutable WA.I32 instr
                   , (_revStartInstr depState)
                   )
                 _ ->
-                  ( WA.Global globalId (WA.GlobalType WA.Mutable WA.I32) $
-                      i32_const 0
+                  ( WA.Global gid WA.Mutable WA.I32 $ i32_const 0
                   , instr : (_revStartInstr depState)
                   )
           in
             depState
-              { _builder = (_builder state) <> exprBuilder <> WAB.toBuilder decl
+              { _builder = (_builder depState) <> exprBuilder <> WAB.toBuilder decl
               , _revStartInstr = newRevStart
-              -- , _tableSize = flushedExprState
-              -- , _dataOffset = flushedExprState
+              , _exprState = flushedExprState
               }
-{-
-
-  data State =
-    State
-      { _builder :: Builder
-      , _revStartInstr :: [WA.Instr]
-      , _tableSize :: Int32
-      , _dataOffset :: Int32
-      , _seenGlobals :: Set.Set Opt.Global  
-      }
-
--}
-          -- addStmt (addDeps deps state) (
-          --   var global (Expr.generate mode expr)
-          -- )
-          -- set_global (Identifier.fromGlobal moduleName name)
-          
-          {-
-            Need to declare it anyway.
-              Create the Declaration, toBuilder it, and append to builder
-            If expr is const, we're done
-            If not, it's mutable and we add a 'set_global' in 'start'
-          -}
-          
-
-
     
         Opt.DefineTailFunc argNames body deps ->
           -- addStmt (addDeps deps state) (
@@ -235,4 +200,14 @@ module Generate.WebAssembly where
           -- )
           state
     
-   
+
+
+  generateStart :: [WA.Instr] -> (WA.StartFunction, WA.Function)
+  generateStart revBody =
+    let
+      startId = WA.FunctionName "$start"
+      startDecl = WA.Start startId
+      startFunc =
+        WA.Function startId [] [] Nothing (reverse revBody)
+    in
+      (startDecl, startFunc)

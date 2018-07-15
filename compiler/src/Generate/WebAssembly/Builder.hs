@@ -103,7 +103,7 @@ buildDescriptor descriptor =
 
 
 instance Declaration Global where
-  toBuilder (Global globalId (GlobalType mut valType) valueInstr) =
+  toBuilder (Global globalId mut valType valueInstr) =
     let
       (_, valueBuilder) =
         instrToBuilder "" valueInstr
