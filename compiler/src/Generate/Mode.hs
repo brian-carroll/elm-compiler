@@ -4,7 +4,7 @@ module Generate.Mode
   , debug
   , dev
   , prod
-  , wast
+  , wat
   , isWasm
   , isDebug
   , isServer
@@ -29,7 +29,7 @@ import qualified Generate.JavaScript.Name as Name
 data Mode
   = Dev Target (Maybe I.Interfaces)
   | Prod Target ShortFieldNames
-  | Wast FieldIndices
+  | Wat FieldIndices
 
 data Target = Client | Server
 
@@ -49,15 +49,15 @@ prod target (Opt.Graph _ _ fieldCounts) =
   Prod target (shortenFieldNames fieldCounts)
 
 
-wast :: Opt.Graph -> Mode
-wast (Opt.Graph _ _ fieldCounts) =
-  Wast (indexFieldNames fieldCounts)
+wat :: Opt.Graph -> Mode
+wat (Opt.Graph _ _ fieldCounts) =
+  Wat (indexFieldNames fieldCounts)
 
 
 isWasm :: Mode -> Bool
 isWasm mode =
   case mode of
-    Wast _ -> True
+    Wat _ -> True
     _ -> False
 
 
@@ -69,7 +69,7 @@ isDebug mode =
   case mode of
     Dev _ mi -> Maybe.isJust mi
     Prod _ _ -> False
-    Wast _ -> False
+    Wat _ -> False
 
 
 -- IS SERVER?
@@ -80,7 +80,7 @@ isServer mode =
   case mode of
     Dev target _ -> isServerHelp target
     Prod target _ -> isServerHelp target
-    Wast _ -> False
+    Wat _ -> False
 
 
 isServerHelp :: Target -> Bool

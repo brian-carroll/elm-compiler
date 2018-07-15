@@ -37,7 +37,7 @@ generate mode (Opt.Graph mains graph _fields) roots =
       let
         builder =
           case mode of
-            Mode.Wast fieldIndices ->
+            Mode.Wat fieldIndices ->
               WA.generateWat mode graph rootMap
 
             _ ->

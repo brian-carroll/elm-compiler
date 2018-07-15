@@ -84,7 +84,7 @@ generate mode target maybeOutput summary graph@(Crawl.Graph args locals _ _ _) a
 
               Wast ->
                 do  noDebugUses summary objectGraph
-                    return $ Mode.wast objectGraph
+                    return $ Mode.wat objectGraph
 
           generateMonolith realMode maybeOutput summary objectGraph (name:names)
 
@@ -287,7 +287,7 @@ parseOutput string =
     else if FP.takeExtension string == ".js" && length string > 3 then
       splitOutput JavaScript string
 
-    else if FP.takeExtension string == ".wast" && length string > 5 then
+    else if FP.takeExtension string == ".wat" && length string > 5 then
       splitOutput WebAssembly string
       
     else
