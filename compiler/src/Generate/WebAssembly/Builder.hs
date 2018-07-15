@@ -1,16 +1,11 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Generate.WebAssembly.Builder
-  ( instrToBuilder
-  , toBuilder
-  , buildValType
-  , Declaration
-  )
-  where
+module Generate.WebAssembly.Builder (buildModule) where
 
 import Prelude hiding (lines, id)
+import Data.Int (Int32)
 import qualified Data.List as List
-import qualified Data.Maybe as Maybe
+import Data.Maybe (fromMaybe, maybeToList)
 import qualified Data.ByteString.Builder as B
 import Data.ByteString.Builder (Builder)
 import Data.Monoid ((<>))
@@ -21,9 +16,25 @@ import Generate.WebAssembly.Instructions (i32_const)
 -- HELPERS
 
 
+indent1 :: Builder
+indent1 = "  "
+
+
+indent2 :: Builder
+indent2 = indent1 <> indent1
+
+
+newLineIndent1 :: Builder
+newLineIndent1 = "\n" <> indent1
+
+
+newLineIndent2 :: Builder
+newLineIndent2 = "\n" <> indent2
+
+
 deeper :: Builder -> Builder
 deeper indent =
-  "  " <> indent
+  indent <> indent1
 
 
 concatWith :: Builder -> [Builder] -> Builder
@@ -31,142 +42,225 @@ concatWith separator builderList =
   mconcat $ List.intersperse separator builderList
 
 
--- DECLARATIONS
-
-class Declaration a where
-  toBuilder :: a -> Builder
-
-
-instance Declaration Function where
-  toBuilder (Function functionId params locals resultType body) =
-    let
-      signature =
-        concatWith " " $
-          "func"
-          : buildFunctionId functionId
-          : (map (buildSignature "param") params)
-          ++ (map (buildSignature "local") locals)
-          ++ (Maybe.maybeToList $
-                fmap (\rt -> "result " <> buildValType rt) resultType)
-
-      instrBuilders =
-        map (instrToBuilder "  ") body
-    in
-      "("
-        <> (concatWith "\n  " (signature : instrBuilders))
-        <> ")"
-
-buildSignature :: Builder -> (LocalId, ValType) -> Builder
-buildSignature keyword (localId, valType) =
-  "(" <> keyword <> " " <> buildLocalId localId
-    <> " " <> buildValType valType <> ")"
+parens :: Builder -> Builder
+parens b =
+  "(" <> b <> ")"
 
 
-instance Declaration Import where
-  toBuilder (Import level1Builder level2Builder descriptor) =
-    "(import "
-      <> "\"" <> level1Builder <> "\" "
-      <> "\"" <> level2Builder <> "\" "
+-- MODULE
+
+buildModule :: Module -> Builder
+buildModule m =
+  let
+    imports =
+      map buildImport (_imports m)
+
+    mem =
+      map buildMemory $ maybeToList (_mems m)
+
+    table =
+      map buildTable $ maybeToList (_tables m)
+
+    start =
+      map buildStart $ maybeToList (_start m)  
+  
+    decls =
+      map buildDeclaration (_decls m)
+  in
+    parens $
+      concatWith newLineIndent1 $
+      "module" : imports ++ mem ++ table ++ start ++ decls
+
+
+buildImport :: Import -> Builder
+buildImport (Import level1 level2 descriptor) =
+  parens $
+    "import "
+      <> "\"" <> level1 <> "\" "
+      <> "\"" <> level2 <> "\" "
       <> buildDescriptor descriptor
-      <> ")"
 
 
-instance Declaration Export where
-  toBuilder (Export jsName descriptor) =
-    "(export "
-      <> "\"" <> jsName <> "\" "
-      <> buildDescriptor descriptor
-      <> ")"
-        
-
-buildDescriptor :: ImportExportDesc -> Builder
-buildDescriptor descriptor =
-  case descriptor of
-    ImpExpFunc functionId -> "(func " <> buildFunctionId functionId <> ")"
-    ImpExpTable TableIdxZero -> "(table 0)"
-    ImpExpMem MemIdxZero -> "(memory 0)"
-    ImpExpGlobal globalId -> "(global " <> buildGlobalId globalId <> ")"
+buildMemory :: Memory -> Builder
+buildMemory (Memory MemIdxZero limits) =
+  parens $
+    "memory 0 " <> buildLimits limits
 
 
-instance Declaration Global where
-  toBuilder (Global globalId mut valType valueInstr) =
-    let
-      valueBuilder =
-        instrToBuilder "" valueInstr
-
-      typeBuilder =
-        case mut of
-          Mutable -> "(mut " <> buildValType valType <> ")"
-          Immutable -> buildValType valType
-    in
-      "(global "
-        <> buildGlobalId globalId <> " "
-        <> typeBuilder <> " "
-        <> valueBuilder <> ")"
-
-
-instance Declaration Table where
-  toBuilder table =
+buildTable :: Table -> Builder
+buildTable table =
+  parens $
     case table of
       TableDeclaration limits AnyFunc ->
-        "(table 0 " <> buildLimits limits <> " anyfunc)"
+        "table 0 " <> buildLimits limits <> " anyfunc"
 
       TableInlineDef AnyFunc functionIds ->
-        "(table anyfunc "
-          <> toBuilder (ElementSegment 0 functionIds)
-          <> ")"
-
-
-instance Declaration Memory where
-  toBuilder (Memory MemIdxZero limits) =
-      "(memory 0 " <> buildLimits limits <> ")"
+        "table anyfunc "
+          <> buildElementSegment 0 functionIds
 
       
 buildLimits :: Limits -> Builder
 buildLimits (Limits initSize maybeMaxSize) =
   let
     maxBuilderList =
-      Maybe.maybeToList $ fmap B.int32Dec maybeMaxSize
+      maybeToList $ fmap B.int32Dec maybeMaxSize
   in
     concatWith " " $
       B.int32Dec initSize : maxBuilderList
 
 
-instance Declaration DataSegment where
-  toBuilder (DataSegment MemIdxZero dataOffset builder) =
-    let
-      dataOffsetBuilder =
-        instrToBuilder "" $ i32_const dataOffset
-    in
-      "(data "
+buildStart :: FunctionId -> Builder
+buildStart functionId =
+  parens $
+    "start " <> buildFunctionId functionId
+
+
+-- DECLARATIONS
+
+
+buildDeclaration :: Declaration -> Builder
+buildDeclaration decl =
+  case decl of
+    FuncType maybeTypeId paramTypes maybeResultType ->
+      buildFuncType maybeTypeId paramTypes maybeResultType
+    
+    Global globalId mut valType valueInstr ->
+      buildGlobal globalId mut valType valueInstr
+    
+    ElementSegment offset functionIds ->
+      buildElementSegment offset functionIds
+    
+    DataSegment offset builder ->
+      buildDataSegment offset builder
+    
+    Export jsName descriptor ->
+      buildExport jsName descriptor
+    
+    Function functionId params locals resultType body ->
+      buildFunction functionId params locals resultType body
+
+
+buildFunction :: FunctionId
+  -> [(LocalId, ValType)]
+  -> [(LocalId, ValType)]
+  -> Maybe ValType
+  -> [Instr]
+  -> Builder
+buildFunction functionId params locals resultType body =
+  let
+    signature =
+      concatWith " " $
+        "func"
+        : buildFunctionId functionId
+        : (map (buildSignature "param") params)
+        ++ (map (buildSignature "local") locals)
+        ++ (map (buildSignatureType "result ") $ maybeToList resultType)
+
+    instrBuilders =
+      map (instrToBuilder indent2) body
+  in
+    parens $
+      concatWith newLineIndent2 (signature : instrBuilders)
+
+
+buildSignature :: Builder -> (LocalId, ValType) -> Builder
+buildSignature keyword (localId, valType) =
+  parens $
+    keyword <> " " <> buildLocalId localId
+      <> " " <> buildValType valType
+
+
+buildFuncType :: Maybe TypeId -> [ValType] -> Maybe ValType -> Builder
+buildFuncType maybeTypeId paramTypes maybeResultType =
+  let
+    typeId = fromMaybe "" (fmap buildTypeId maybeTypeId)
+
+    paramTypeBuilders =
+      map (buildSignatureType "param") paramTypes
+
+    resultType =
+      maybeToList $
+      fmap (buildSignatureType "result") maybeResultType
+  in
+    parens $ concatWith " " $
+      "func" : typeId : paramTypeBuilders ++ resultType
+
+
+buildSignatureType :: Builder -> ValType -> Builder
+buildSignatureType keyword valType =
+  parens $
+    keyword <> " " <> buildValType valType
+
+    
+
+buildExport :: Builder -> ImportExportDesc -> Builder
+buildExport jsName descriptor =
+  parens $
+    "export "
+    <> "\"" <> jsName <> "\" "
+    <> buildDescriptor descriptor
+        
+
+buildDescriptor :: ImportExportDesc -> Builder
+buildDescriptor descriptor =
+  parens $
+    case descriptor of
+      ImpExpFunc functionId -> "func " <> buildFunctionId functionId
+      ImpExpTable TableIdxZero -> "table 0"
+      ImpExpMem MemIdxZero -> "memory 0"
+      ImpExpGlobal globalId -> "global " <> buildGlobalId globalId
+
+
+buildGlobal :: GlobalId -> Mutability -> ValType -> Instr -> Builder
+buildGlobal globalId mut valType valueInstr =
+  let
+    valueBuilder =
+      instrToBuilder "" valueInstr
+
+    typeBuilder =
+      case mut of
+        Mutable -> "(mut " <> buildValType valType <> ")"
+        Immutable -> buildValType valType
+  in
+    parens $
+    "global "
+      <> buildGlobalId globalId <> " "
+      <> typeBuilder <> " "
+      <> valueBuilder
+
+
+buildDataSegment :: Int32 -> Builder -> Builder
+buildDataSegment dataOffset builder =
+  let
+    dataOffsetBuilder =
+      instrToBuilder "" $ i32_const dataOffset
+  in
+    parens $
+      "data "
         <> dataOffsetBuilder
         <> " \""
         <> builder
-        <> "\")"
+        <> "\""
 
 
-instance Declaration ElementSegment where
-  toBuilder (ElementSegment tableOffset functionIds) =
-    let
-      offsetBuilder =
-        instrToBuilder "" (i32_const tableOffset)
-    in
+buildElementSegment :: Int32 -> [FunctionId] -> Builder
+buildElementSegment tableOffset functionIds =
+  let
+    offsetBuilder =
+      instrToBuilder "" (i32_const tableOffset)
+  in
       case functionIds of
         [] ->
           ""
 
         [fid] ->
-          "(elem " <> offsetBuilder <> " " <> buildFunctionId fid <> ")"
+          parens $
+          "elem " <> offsetBuilder <> " " <> buildFunctionId fid
 
         fids -> 
-          "(elem " <> offsetBuilder <> "\n  "
+          parens $
+          "elem " <> offsetBuilder <> "\n  "
             <> (concatWith "\n  " $ map buildFunctionId fids)
-            <> ")"
-
-
-instance Declaration StartFunction where
-  toBuilder (Start functionId) =
-    "(start " <> buildFunctionId functionId <> ")"
 
 
 -- INSTRUCTIONS
@@ -211,10 +305,10 @@ instrToBuilder indent instr =
               instrToBuilder deeperIndent cond
 
             thenLabelList =
-              Maybe.maybeToList $ fmap buildLabelId mThenLabel
+              maybeToList $ fmap buildLabelId mThenLabel
 
             elseLabelList =
-              Maybe.maybeToList $ fmap buildLabelId mElseLabel
+              maybeToList $ fmap buildLabelId mElseLabel
 
             thenBuilder =
               concatLines $

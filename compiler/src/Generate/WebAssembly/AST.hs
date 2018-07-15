@@ -20,49 +20,37 @@ data Limits = Limits Int32 (Maybe Int32)
 data Mutability = Mutable | Immutable
 
 data ValType = I32 | I64 | F32 | F64
-data FuncType = FuncType (Maybe TypeId) [ValType] (Maybe ValType)
 data ElemType = AnyFunc
 
 
 data Module =
   Module
-    { _types :: [FuncType]
-    , _funcs :: [Function]
-    , _globals :: [Global]
-    , _tables :: Maybe Table
-    , _elem :: [ElementSegment]
+    { _imports :: [Import]
     , _mems :: Maybe Memory
-    , _data :: [DataSegment]
-    , _start :: Maybe StartFunction
-    , _imports :: [Import]
-    , _exports :: [Export]
+    , _tables :: Maybe Table
+    , _start :: Maybe FunctionId
+    , _decls :: [Declaration]
     }
 
 
-data Function =
-  Function
-    { _functionId :: FunctionId
-    , _params :: [(LocalId, ValType)]
-    , _locals :: [(LocalId, ValType)]
-    , _resultType :: Maybe ValType
-    , _body :: Expr
-    }
-
-
-data Global =
-  Global GlobalId Mutability ValType Instr
+-- General declarations. Can have any number in any order.
+data Declaration
+  = FuncType (Maybe TypeId) [ValType] (Maybe ValType)
+  | Global GlobalId Mutability ValType Instr
+  | ElementSegment Int32 [FunctionId]
+  | DataSegment Int32 Builder
+  | Export Builder ImportExportDesc
+  | Function
+      { _functionId :: FunctionId
+      , _params :: [(LocalId, ValType)]
+      , _locals :: [(LocalId, ValType)]
+      , _resultType :: Maybe ValType
+      , _body :: Expr
+      }
 
 
 data Memory =
   Memory MemId Limits
-    
-
-data DataSegment =
-  DataSegment
-    { _memIdx :: MemId
-    , _dataOffset :: Int32
-    , _bytes :: Builder
-    }
 
 
 data Table
@@ -70,23 +58,8 @@ data Table
   | TableInlineDef ElemType [FunctionId]
 
 
-data ElementSegment =
-  ElementSegment
-    { _tableOffset :: Int32
-    , _functionIds :: [FunctionId]
-    }
-  
-  
-data StartFunction =
-  Start FunctionId
-
-
 data Import =
   Import Builder Builder ImportExportDesc
-
-
-data Export =
-  Export Builder ImportExportDesc
 
 
 data ImportExportDesc
@@ -133,12 +106,12 @@ data Instr
       }
   | Op
       { _opCode :: Builder
-      , _subExprs :: [Instr]
+      , _operands :: [Instr]
       }
   | MemOp
       { _opCode :: Builder
       , _memarg :: MemArg
-      , _subExprs :: [Instr]
+      , _operands :: [Instr]
       }
 
 
@@ -157,31 +130,31 @@ data MemAlign
 -- Helper functions for Instructions DSL
 
 load :: Builder -> Int -> Instr -> Instr
-load opCode offset subExpr =
+load opCode offset operand =
   MemOp
     { _opCode = opCode
     , _memarg = MemArg offset AlignNatural
-    , _subExprs = [subExpr]
+    , _operands = [operand]
     }
 
 store :: Builder -> Int -> Instr -> Instr -> Instr
-store opCode offset addrExpr valExpr =
+store opCode offset address value =
   MemOp
     { _opCode = opCode
     , _memarg = MemArg offset AlignNatural
-    , _subExprs = [addrExpr, valExpr]
+    , _operands = [address, value]
     }
 
 unop :: Builder -> Instr -> Instr
-unop opCode subExpr =
+unop opCode operand =
   Op
     { _opCode = opCode
-    , _subExprs = [subExpr]
+    , _operands = [operand]
     }
 
 binop :: Builder -> Instr -> Instr -> Instr
-binop opCode subExpr1 subExpr2 =
+binop opCode operand1 operand2 =
   Op
     { _opCode = opCode
-    , _subExprs = [subExpr1, subExpr2]
+    , _operands = [operand1, operand2]
     }

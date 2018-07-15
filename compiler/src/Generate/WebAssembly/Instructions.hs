@@ -71,14 +71,14 @@ memory_size :: Instr
 memory_size =
   Op
     { _opCode = "memory.size"
-    , _subExprs = []
+    , _operands = []
     }
 
 memory_grow :: Instr -> Instr
-memory_grow subExpr =
+memory_grow operand =
   Op
     { _opCode = "memory.grow"
-    , _subExprs = [subExpr]
+    , _operands = [operand]
     }
   
 i32_const :: Int32 -> Instr
