@@ -41,7 +41,7 @@ module Generate.WebAssembly where
 
   data State =
     State
-      { _builder :: Builder
+      { _revDecl :: [WA.Declaration]
       , _revStartInstr :: [WA.Instr]
       , _exprState :: Expr.ExprState
       , _seenGlobals :: Set.Set Opt.Global  
@@ -51,7 +51,7 @@ module Generate.WebAssembly where
   emptyState :: State
   emptyState =
     State
-      { _builder = ""
+      { _revDecl = []
       , _revStartInstr = []
       , _exprState = Expr.initState 0 0
       , _seenGlobals = Set.empty
@@ -59,19 +59,9 @@ module Generate.WebAssembly where
 
 
   stateToBuilder :: State -> Builder
-  stateToBuilder (State builder revStart exprState _) =
-    let
-      (startDecl, startFunc) =
-        generateStart revStart
-      (table, mem) =
-        Expr.generateModuleFooter exprState
-    in
-      builder
-        <> "\n" <> WAB.toBuilder startFunc
-        <> "\n" <> WAB.toBuilder startDecl
-        <> "\n" <> WAB.toBuilder table
-        <> "\n" <> WAB.toBuilder mem
-
+  stateToBuilder state =
+    WAB.buildModule $ generateModule state
+        
 
   -- Generate code
 
@@ -117,10 +107,10 @@ module Generate.WebAssembly where
             gid@(WA.GlobalName uniqueId) =
               Identifier.fromGlobal moduleName name
 
-            (instr, exprBuilder, flushedExprState) =
+            (instr, exprDecls, flushedExprState) =
               Expr.flushState uniqueId $ Expr.generate expr (_exprState depState)
 
-            (decl, newRevStart) =
+            (globalDecl, newRevStart) =
               case instr of
                 WA.ConstOp _ _ ->
                   ( WA.Global gid WA.Immutable WA.I32 instr
@@ -132,7 +122,7 @@ module Generate.WebAssembly where
                   )
           in
             depState
-              { _builder = (_builder depState) <> exprBuilder <> WAB.toBuilder decl
+              { _revDecl = globalDecl : exprDecls ++ (_revDecl depState)
               , _revStartInstr = newRevStart
               , _exprState = flushedExprState
               }
@@ -199,15 +189,19 @@ module Generate.WebAssembly where
           --   generatePort mode global "outgoingPort" encoder
           -- )
           state
-    
 
 
-  generateStart :: [WA.Instr] -> (WA.StartFunction, WA.Function)
-  generateStart revBody =
+
+  generateModule :: State -> WA.Module
+  generateModule (State revDecl revStart exprState _) =
     let
       startId = WA.FunctionName "$start"
-      startDecl = WA.Start startId
-      startFunc =
-        WA.Function startId [] [] Nothing (reverse revBody)
+      startFuncDecl =
+        WA.Function startId [] [] Nothing (reverse revStart)
     in
-      (startDecl, startFunc)
+      WA.Module
+        []
+        (Just $ Expr.generateMemory exprState)
+        (Just $ Expr.generateTable exprState)
+        (Just startId)
+        (reverse $ startFuncDecl : revDecl)

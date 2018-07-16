@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Generate.WebAssembly.Builder (buildModule) where
+module Generate.WebAssembly.Builder (buildModule, buildValType) where
 
 import Prelude hiding (lines, id)
 import Data.Int (Int32)

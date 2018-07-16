@@ -4,7 +4,8 @@ module Generate.WebAssembly.Expression
   , generate
   , initState
   , flushState
-  , generateModuleFooter
+  , generateMemory
+  , generateTable
   )
   where
 
@@ -38,7 +39,7 @@ module Generate.WebAssembly.Expression
   data ExprState =
     ExprState
       { revInstr :: [Instr]
-      , revFunc :: [Function]
+      , revFunc :: [Declaration]
       , dataSegment :: B.Builder
       , dataOffset :: Int32
       , tableSize :: Int32
@@ -81,14 +82,12 @@ module Generate.WebAssembly.Expression
 
   -- Final state
 
-  -- Flush everything to a Builder, so it can be written to disk, freeing up memory
-  flushState :: B.Builder -> ExprState -> (Instr, B.Builder, ExprState)
+  flushState :: B.Builder -> ExprState -> (Instr, [Declaration], ExprState)
   flushState uniqueId state =
     let
       -- Initialised memory
-      dataBuilder =
-        WAB.toBuilder $
-          DataSegment MemIdxZero (dataOffset state) (dataSegment state)
+      dataDecl =
+        DataSegment (dataOffset state) (dataSegment state)
 
       -- Generated functions
       -- If we've created local vars, generate one more function
@@ -111,42 +110,44 @@ module Generate.WebAssembly.Expression
             )
 
       topLevelLocals = localNames $ currentScope state
-      thunkId = FunctionName ("$thunk" <> uniqueId)
+      thunkId = FunctionName ("$start" <> uniqueId)
       makeThunk body =
         Function
           { _functionId = thunkId
           , _params = []
           , _locals = nameSetToLocalsList topLevelLocals
-          , _resultType = Just I32
+          , _resultType = Nothing
           , _body = body
           }
 
-      funcsBuilder =
-        foldr (\f b -> b <> (WAB.toBuilder f)) "" finalRevFunc
-
-      -- Table elements (functions for dynamic dispatch)
+      -- Table elements
       (functionIds, elemOffset) =
         foldr
           (\fid (fids, offset) -> (fid : fids, offset - 1))
           ([], tableSize state)
           (revTableFuncIds state)
 
-      elemBuilder =
-        WAB.toBuilder $ ElementSegment elemOffset functionIds
+      elemDecl =
+        ElementSegment elemOffset functionIds
     in
       ( finalInstr
-      , dataBuilder <> elemBuilder <> funcsBuilder
+      , dataDecl : elemDecl : finalRevFunc
       , initState (dataOffset state) (tableSize state)
       )
 
 
-  generateModuleFooter :: ExprState -> (Table, Memory)
-  generateModuleFooter state =
+  generateTable :: ExprState -> Table
+  generateTable state =
+    TableDeclaration (Limits (tableSize state) Nothing) AnyFunc
+
+
+  generateMemory :: ExprState -> Memory
+  generateMemory state =
     let
-      table = TableDeclaration (Limits (tableSize state) Nothing) AnyFunc
-      mem = Memory MemIdxZero (Limits (dataOffset state) Nothing)
+      initPages = dataOffset state `quot` 65536
+      maxPages = Nothing
     in
-      (table, mem)
+      Memory MemIdxZero $ Limits initPages maxPages
 
 
   -- HELPERS
@@ -781,7 +782,7 @@ module Generate.WebAssembly.Expression
 -}
 
 
-  gcAllocate :: Function
+  gcAllocate :: Declaration
   gcAllocate =
     Function
       { _functionId = FunctionName "$gcAllocate"
@@ -792,7 +793,7 @@ module Generate.WebAssembly.Expression
       }
 
 
-  gcShallowCopy :: Function
+  gcShallowCopy :: Declaration
   gcShallowCopy =
     Function
       { _functionId = FunctionName "$gcShallowCopy"
