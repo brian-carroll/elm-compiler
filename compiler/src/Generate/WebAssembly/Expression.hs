@@ -487,7 +487,11 @@ module Generate.WebAssembly.Expression
           , _params = [(funcArgId, I32)]
           , _locals = funcLocals
           , _resultType = Just I32
-          , _body = closureDestructCode ++ (reverse $ revInstr bodyState)
+          , _body =
+                (comment "closureDestructCode") :
+                closureDestructCode
+                ++ [comment "function body"]
+                ++ (reverse $ revInstr bodyState)
           }
 
 
@@ -694,18 +698,21 @@ module Generate.WebAssembly.Expression
         generate funcExpr state
 
       ([closureLocalId, argPointerLocalId], updatedScope) =
-        createTempVars ["closure", "arg"] (currentScope funcState)
+        createTempVars ["closure", "argPtr"] (currentScope funcState)
 
       getClosureCopy :: Instr -> Instr
       getClosureCopy funcRefInstr =
+        commented "getClosureCopy" $
         set_local closureLocalId $
           call (_functionId gcShallowCopy) [funcRefInstr]
 
       getArity =
+        commented "getArity" $
         i32_load 4 $
           get_local closureLocalId
 
       getInitArgPointer =
+        commented "getInitArgPointer" $
         set_local argPointerLocalId $
           i32_add (get_local closureLocalId) $
           i32_add (i32_const 8) $
@@ -739,6 +746,7 @@ module Generate.WebAssembly.Expression
 
       insertArg :: Instr -> Instr
       insertArg argExpr =
+        commented "insertArg" $
         i32_store 0
           (tee_local argPointerLocalId
             (i32_sub
@@ -750,22 +758,24 @@ module Generate.WebAssembly.Expression
 
       -- If we're now pointing at the lowest arg in the closure, it's full
       isClosureFull =
-        (i32_eq (i32_const 8)
+        commented "isClosureFull" $
+        i32_eq (i32_const 8)
           (i32_sub
             (get_local argPointerLocalId)
             (get_local closureLocalId)
           )
-        )
 
       funcTableIndex =
         i32_load 0 (get_local closureLocalId)
 
       evaluateBody =
+        commented "evaluateBody" $
         call_indirect elmFuncTypeId
           funcTableIndex
           [get_local closureLocalId]
 
       resultInstr =
+        commented "resultInstr" $
         select
           (get_local closureLocalId)
           evaluateBody

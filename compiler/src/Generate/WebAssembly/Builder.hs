@@ -288,10 +288,19 @@ instrToBuilder indent instr =
       concatWith " " builders
 
     addParens body =
-      "(" <> body <> ")"
+      case instr of
+        Comment _ -> ";; " <> body
+        Commented _ _ -> ";; " <> body
+        _ -> "(" <> body <> ")"
   in
     addParens $
       case instr of
+        Comment b ->
+          b
+
+        Commented b i ->
+          b <> "\n" <> indent <> (instrToBuilder indent i)
+
         Unreachable ->
           "unreachable"
 

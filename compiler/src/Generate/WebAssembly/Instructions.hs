@@ -19,6 +19,8 @@ import Generate.WebAssembly.AST
   , binop
   )
 
+comment = Comment
+commented = Commented
 
 unreachable = Unreachable
 nop = Nop

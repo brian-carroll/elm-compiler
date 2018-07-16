@@ -113,6 +113,9 @@ data Instr
       , _memarg :: MemArg
       , _operands :: [Instr]
       }
+  | Comment Builder
+  | Commented Builder Instr
+  
 
 
 data MemArg = MemArg { _memOffset :: Int, _align :: MemAlign }
