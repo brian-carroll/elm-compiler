@@ -153,8 +153,8 @@ buildFunction functionId params locals resultType body =
         "func"
         : buildFunctionId functionId
         : (map (buildSignature "param") params)
+        ++ (map (buildSignatureType "result") $ maybeToList resultType)
         ++ (map (buildSignature "local") locals)
-        ++ (map (buildSignatureType "result ") $ maybeToList resultType)
 
     instrBuilders =
       map (instrToBuilder indent2) body
@@ -165,15 +165,22 @@ buildFunction functionId params locals resultType body =
 
 buildSignature :: Builder -> (LocalId, ValType) -> Builder
 buildSignature keyword (localId, valType) =
-  parens $
-    keyword <> " " <> buildLocalId localId
-      <> " " <> buildValType valType
+  let
+    localBuilderList =
+      case localId of
+        LocalIdx _ -> []
+        LocalName b -> [b]
+  in
+    parens $ concatWith " " $
+      keyword
+      : localBuilderList
+      ++ [buildValType valType]
 
 
 buildFuncType :: Maybe TypeId -> [ValType] -> Maybe ValType -> Builder
 buildFuncType maybeTypeId paramTypes maybeResultType =
   let
-    typeId = fromMaybe "" (fmap buildTypeId maybeTypeId)
+    typeId = maybeToList $ (fmap buildTypeId maybeTypeId)
 
     paramTypeBuilders =
       map (buildSignatureType "param") paramTypes
@@ -183,8 +190,9 @@ buildFuncType maybeTypeId paramTypes maybeResultType =
       fmap (buildSignatureType "result") maybeResultType
   in
     parens $ concatWith " " $
-      "func" : typeId : paramTypeBuilders ++ resultType
-
+      "type " : typeId ++
+      [parens $ concatWith " " $ "func" : paramTypeBuilders ++ resultType]
+      
 
 buildSignatureType :: Builder -> ValType -> Builder
 buildSignatureType keyword valType =
@@ -293,11 +301,11 @@ instrToBuilder indent instr =
 
         Block labelId valType instrList ->
             buildBlock "block" deeperIndent labelId valType instrList
-            <> indent <> "end"
+            <> indent
 
         Loop labelId valType instrList ->
             buildBlock "loop" deeperIndent labelId valType instrList
-            <> indent <> "end"
+            <> indent
 
         IfElse valType cond (mThenLabel, thenExpr) (mElseLabel, elseExpr) ->
           let
@@ -324,7 +332,7 @@ instrToBuilder indent instr =
               <> deeperIndent <> thenBuilder
               <> indent <> "else\n"
               <> deeperIndent <> elseBuilder
-              <> indent <> "end\n"
+              <> "\n"
               <> deeperIndent <> condBuilder
 
         Br labelId ->
@@ -359,7 +367,7 @@ instrToBuilder indent instr =
 
         CallIndirect typeId indexInstr args ->
           concatLines $
-            ("call_indirect " <> buildTypeId typeId)
+            ("call_indirect (type " <> buildTypeId typeId <> ")")
             : (map (instrToBuilder deeperIndent) (indexInstr : args))
 
 
@@ -423,8 +431,8 @@ buildBlock opcode deeperIndent labelId valType instrList =
   let
     firstLine =
       opcode
-        <> " " <> buildValType valType
         <> " " <> buildLabelId labelId
+        <> " " <> buildSignatureType "result" valType
         <> "\n"
 
     builders =

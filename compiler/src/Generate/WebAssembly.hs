@@ -198,10 +198,13 @@ module Generate.WebAssembly where
       startId = WA.FunctionName "$start"
       startFuncDecl =
         WA.Function startId [] [] Nothing (reverse revStart)
+      typeDecls =
+        [ WA.FuncType (Just $ WA.TypeName "$funcType$i32$i32") [WA.I32] (Just WA.I32)
+        ]
     in
       WA.Module
         []
         (Just $ Expr.generateMemory exprState)
         (Just $ Expr.generateTable exprState)
         (Just startId)
-        (reverse $ startFuncDecl : revDecl)
+        (reverse $ startFuncDecl : typeDecls ++ revDecl)

@@ -32,6 +32,7 @@ module Generate.WebAssembly.Expression
   import qualified Generate.WebAssembly.Builder as WAB
   import qualified Generate.WebAssembly.Identifier as Id
 
+  import Debug.Trace as Debug
 
 
   -- EXPRESSION GENERATOR STATE  
@@ -46,6 +47,16 @@ module Generate.WebAssembly.Expression
       , revTableFuncIds :: [FunctionId]
       , currentScope :: Scope
       }
+
+  
+  -- for debug
+  instance Show ExprState where
+    show state =
+      concat $ List.intersperse ", "
+        [ "tableSize: " ++ (show $ tableSize state)
+        , "dataOffset: " ++ (show $ dataOffset state)
+        , "dataSegment: " ++ (show $ B.toLazyByteString $ dataSegment state)
+        ]
 
 
   data Scope =
@@ -144,7 +155,7 @@ module Generate.WebAssembly.Expression
   generateMemory :: ExprState -> Memory
   generateMemory state =
     let
-      initPages = dataOffset state `quot` 65536
+      initPages = 1 + (dataOffset state `quot` 65536)
       maxPages = Nothing
     in
       Memory MemIdxZero $ Limits initPages maxPages
@@ -236,7 +247,10 @@ module Generate.WebAssembly.Expression
   -- EXPRESSION
 
   generate :: Opt.Expr -> ExprState -> ExprState
-  generate expression state =
+  generate expression untracedState =
+    let
+      state = Debug.trace (show untracedState) untracedState
+    in
     case expression of
       Opt.Bool bool ->
         addInstr state $
