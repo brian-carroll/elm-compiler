@@ -42,7 +42,8 @@ module Generate.WebAssembly.Expression
       { revInstr :: [Instr]
       , revFunc :: [Declaration]
       , dataSegment :: B.Builder
-      , dataOffset :: Int32
+      , dataStart :: Int32
+      , dataEnd :: Int32
       , tableSize :: Int32
       , revTableFuncIds :: [FunctionId]
       , currentScope :: Scope
@@ -54,8 +55,7 @@ module Generate.WebAssembly.Expression
     show state =
       concat $ List.intersperse ", "
         [ "tableSize: " ++ (show $ tableSize state)
-        , "dataOffset: " ++ (show $ dataOffset state)
-        , "dataSegment: " ++ (show $ BSL.toStrict $ B.toLazyByteString $ dataSegment state)
+        , "dataEnd: " ++ (show $ dataEnd state)
         ]
 
 
@@ -75,7 +75,8 @@ module Generate.WebAssembly.Expression
       { revInstr = []
       , revFunc = []
       , dataSegment = ""
-      , dataOffset = initDataOffset
+      , dataStart = initDataOffset
+      , dataEnd = initDataOffset
       , tableSize = initTableSize
       , revTableFuncIds = []
       , currentScope = emptyScope
@@ -128,8 +129,11 @@ module Generate.WebAssembly.Expression
           }
 
       -- Initialised memory
-      dataDecl =
-        DataSegment (dataOffset state) (dataSegment state)
+      dataDecls =
+        if (dataStart state) == (dataEnd state) then
+          []
+        else
+          [DataSegment (dataStart state) (dataSegment state)]
 
       -- Table elements
       (functionIds, elemOffset) =
@@ -144,8 +148,8 @@ module Generate.WebAssembly.Expression
           _ -> [ElementSegment elemOffset functionIds]
     in
       ( finalInstr
-      , dataDecl : elemDecls ++ finalRevFunc
-      , initState (dataOffset state) (tableSize state)
+      , dataDecls ++ elemDecls ++ finalRevFunc
+      , initState (dataEnd state) (tableSize state)
       )
 
 
@@ -157,7 +161,7 @@ module Generate.WebAssembly.Expression
   generateMemory :: ExprState -> Memory
   generateMemory state =
     let
-      initPages = 1 + (dataOffset state `quot` 65536)
+      initPages = 1 + (dataEnd state `quot` 65536)
       maxPages = Nothing
     in
       Memory MemIdxZero $ Limits initPages maxPages
@@ -174,12 +178,12 @@ module Generate.WebAssembly.Expression
   addDataLiteral state ctor payload =
     let
       unescaped = (encodeInt32 ctor) <> payload
-      offset = dataOffset state
+      offset = dataEnd state
     in
       state
         { dataSegment =
             (dataSegment state) <> escapeDataSegment unescaped
-        , dataOffset =
+        , dataEnd =
             offset + (fromIntegral $ BS.length unescaped)
         , revInstr =
             (i32_const offset) : (revInstr state)
