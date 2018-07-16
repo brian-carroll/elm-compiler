@@ -474,9 +474,12 @@ module Generate.WebAssembly.Expression
       (closureConstructCode, closureDestructCode) =
         generateClosure args closedOverSet closureLocalId funcArgId tableOffset
 
-      funcLocals = nameSetToLocalsList $
-          Set.union closedOverSet $
-          localNames bodyScope
+      funcLocals =
+        concatMap nameSetToLocalsList $
+          [ argNames bodyScope
+          , localNames bodyScope
+          , closedOverSet
+          ]
 
       func =
         Function
