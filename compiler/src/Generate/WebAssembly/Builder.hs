@@ -2,13 +2,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.WebAssembly.Builder (buildModule, buildValType) where
 
-import Prelude hiding (lines, id)
 import Data.Int (Int32)
-import qualified Data.List as List
-import Data.Maybe (fromMaybe, maybeToList)
-import qualified Data.ByteString.Builder as B
-import Data.ByteString.Builder (Builder)
+import Data.Maybe (maybeToList)
 import Data.Monoid ((<>))
+import Data.ByteString.Builder (Builder)
+import qualified Data.ByteString.Builder as B
+import qualified Data.List as List
 
 import Generate.WebAssembly.AST
 import Generate.WebAssembly.Instructions (i32_const)
@@ -301,11 +300,9 @@ instrToBuilder indent instr =
 
         Block labelId valType instrList ->
             buildBlock "block" deeperIndent labelId valType instrList
-            <> indent
 
         Loop labelId valType instrList ->
             buildBlock "loop" deeperIndent labelId valType instrList
-            <> indent
 
         IfElse valType cond (mThenLabel, thenExpr) (mElseLabel, elseExpr) ->
           let
@@ -433,13 +430,12 @@ buildBlock opcode deeperIndent labelId valType instrList =
       opcode
         <> " " <> buildLabelId labelId
         <> " " <> buildSignatureType "result" valType
-        <> "\n"
 
     builders =
       map (instrToBuilder deeperIndent) instrList
   in
-    firstLine <>
-      (concatWith ("\n" <> deeperIndent) builders)
+    concatWith ("\n" <> deeperIndent) $
+      firstLine : builders
 
 
 buildValType :: ValType -> Builder
@@ -452,37 +448,37 @@ buildValType valType =
 
 
 buildLabelId :: LabelId -> Builder
-buildLabelId id =
-  case id of
-    LabelIdx i -> B.intDec i
+buildLabelId i =
+  case i of
+    LabelIdx x -> B.intDec x
     LabelName b -> b
 
 
 buildLocalId :: LocalId -> Builder
-buildLocalId id =
-  case id of
-    LocalIdx i -> B.intDec i
+buildLocalId i =
+  case i of
+    LocalIdx x -> B.intDec x
     LocalName b -> b
 
 
 buildGlobalId :: GlobalId -> Builder
-buildGlobalId id =
-  case id of
-    GlobalIdx i -> B.intDec i
+buildGlobalId i =
+  case i of
+    GlobalIdx x -> B.intDec x
     GlobalName b -> b
 
 
 buildFunctionId :: FunctionId -> Builder
-buildFunctionId id =
-  case id of
-    FunctionIdx i -> B.intDec i
+buildFunctionId i =
+  case i of
+    FunctionIdx x -> B.intDec x
     FunctionName b -> b
 
 
 buildTypeId :: TypeId -> Builder
-buildTypeId id =
-  case id of
-    TypeIdx i -> B.intDec i
+buildTypeId i =
+  case i of
+    TypeIdx x -> B.intDec x
     TypeName b -> b
 
 

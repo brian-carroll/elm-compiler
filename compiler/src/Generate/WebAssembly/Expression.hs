@@ -55,7 +55,7 @@ module Generate.WebAssembly.Expression
       concat $ List.intersperse ", "
         [ "tableSize: " ++ (show $ tableSize state)
         , "dataOffset: " ++ (show $ dataOffset state)
-        , "dataSegment: " ++ (show $ B.toLazyByteString $ dataSegment state)
+        , "dataSegment: " ++ (show $ BSL.toStrict $ B.toLazyByteString $ dataSegment state)
         ]
 
 
@@ -96,10 +96,6 @@ module Generate.WebAssembly.Expression
   flushState :: B.Builder -> ExprState -> (Instr, [Declaration], ExprState)
   flushState uniqueId state =
     let
-      -- Initialised memory
-      dataDecl =
-        DataSegment (dataOffset state) (dataSegment state)
-
       -- Generated functions
       -- If we've created local vars, generate one more function
       (finalInstr, finalRevFunc) =
@@ -131,6 +127,10 @@ module Generate.WebAssembly.Expression
           , _body = body
           }
 
+      -- Initialised memory
+      dataDecl =
+        DataSegment (dataOffset state) (dataSegment state)
+
       -- Table elements
       (functionIds, elemOffset) =
         foldr
@@ -138,11 +138,13 @@ module Generate.WebAssembly.Expression
           ([], tableSize state)
           (revTableFuncIds state)
 
-      elemDecl =
-        ElementSegment elemOffset functionIds
+      elemDecls =
+        case functionIds of
+          [] -> []
+          _ -> [ElementSegment elemOffset functionIds]
     in
       ( finalInstr
-      , dataDecl : elemDecl : finalRevFunc
+      , dataDecl : elemDecls ++ finalRevFunc
       , initState (dataOffset state) (tableSize state)
       )
 

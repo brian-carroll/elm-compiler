@@ -66,12 +66,12 @@ module Generate.WebAssembly.Test (rootMap, graph) where
       , ( g "closure"
         , Opt.Define
             (Opt.Function
-              [N.fromText "arg1", N.fromText "arg2"]
+              [N.fromText "a", N.fromText "b"]
               (Opt.Call add
                 [ Opt.VarGlobal (g "outerScopeValue")
                 , Opt.Call add
-                    [ l "arg1"
-                    , l "arg2"
+                    [ l "a"
+                    , l "b"
                     ]
                 ]
               )
