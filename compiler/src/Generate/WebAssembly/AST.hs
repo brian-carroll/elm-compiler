@@ -78,10 +78,11 @@ data Instr
   | Block LabelId ValType [Instr]
   | Loop LabelId ValType [Instr]
   | IfElse
-      { ifElseType :: ValType
-      , if_ :: Instr
-      , then_ :: (Maybe LabelId, [Instr])
-      , else_ :: (Maybe LabelId, [Instr])
+      { _label :: Maybe LabelId
+      , _retType :: ValType
+      , _if :: Instr
+      , _then :: [Instr]
+      , _else :: [Instr]
       }
   | Br LabelId
   | BrIf LabelId Instr

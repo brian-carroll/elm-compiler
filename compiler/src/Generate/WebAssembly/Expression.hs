@@ -428,7 +428,6 @@ module Generate.WebAssembly.Expression
   maybeInsertLocalClosedOver state name =
     let
       scope = currentScope state
-
       isFromCurrentScope =
         Set.member name (argNames scope)
         || Set.member name (localNames scope)
@@ -461,13 +460,9 @@ module Generate.WebAssembly.Expression
             }
       
       bodyScope = currentScope bodyState
-
       closedOverSet = closedOverNames bodyScope
-      
       tableOffset = tableSize bodyState
-
       funcId = FunctionName ("$elmFunc" <> B.int32Dec tableOffset)
-
       funcArgId = LocalIdx 0
 
       -- Closure data structure to implement 'first-class functions'
@@ -490,10 +485,8 @@ module Generate.WebAssembly.Expression
           , _body =
                 (comment "closureDestructCode") :
                 closureDestructCode
-                ++ [comment "function body"]
                 ++ (reverse $ revInstr bodyState)
           }
-
 
       -- Update surrounding scope where the function is created
 
@@ -543,8 +536,8 @@ module Generate.WebAssembly.Expression
 
   createTempVars :: [String] -> Scope -> ([LocalId], Scope)
   createTempVars names scope =
-    List.foldl'
-      (\(accIds, accScope) name ->
+    List.foldr
+      (\name (accIds, accScope) ->
         let
           (thisId, nextScope) =
             createTempVar name accScope

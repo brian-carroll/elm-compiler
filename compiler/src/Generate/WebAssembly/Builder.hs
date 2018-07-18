@@ -226,14 +226,15 @@ buildGlobal globalId mut valType valueInstr =
 
     typeBuilder =
       case mut of
-        Mutable -> "(mut " <> buildValType valType <> ")"
+        Mutable -> parens $ "mut " <> buildValType valType
         Immutable -> buildValType valType
   in
-    parens $
-    "global "
-      <> buildGlobalId globalId <> " "
-      <> typeBuilder <> " "
-      <> valueBuilder
+    parens $ concatWith " "
+      [ "global"
+      , buildGlobalId globalId
+      , typeBuilder
+      , valueBuilder
+      ]
 
 
 buildDataSegment :: Int32 -> Builder -> Builder
@@ -308,38 +309,13 @@ instrToBuilder indent instr =
           "nop"
 
         Block labelId valType instrList ->
-            buildBlock "block" deeperIndent labelId valType instrList
+          buildBlock "block" deeperIndent labelId valType instrList
 
         Loop labelId valType instrList ->
-            buildBlock "loop" deeperIndent labelId valType instrList
+          buildBlock "loop" deeperIndent labelId valType instrList
 
-        IfElse valType cond (mThenLabel, thenExpr) (mElseLabel, elseExpr) ->
-          let
-            condBuilder =
-              instrToBuilder deeperIndent cond
-
-            thenLabelList =
-              maybeToList $ fmap buildLabelId mThenLabel
-
-            elseLabelList =
-              maybeToList $ fmap buildLabelId mElseLabel
-
-            thenBuilder =
-              concatLines $
-                thenLabelList ++ 
-                map (instrToBuilder deeperIndent) thenExpr
-
-            elseBuilder =
-              concatLines $
-                elseLabelList ++ 
-                map (instrToBuilder deeperIndent) elseExpr
-          in
-            "if " <> (buildValType valType) <> "\n"
-              <> deeperIndent <> thenBuilder
-              <> indent <> "else\n"
-              <> deeperIndent <> elseBuilder
-              <> "\n"
-              <> deeperIndent <> condBuilder
+        IfElse mLabel valType cond thenExpr elseExpr ->
+          buildIf indent mLabel valType cond thenExpr elseExpr
 
         Br labelId ->
           "br " <> (buildLabelId labelId)
@@ -430,6 +406,40 @@ instrToBuilder indent instr =
                 : (buildMemAlign memAlign)
           in
             concatLines $ firstLine : builders
+
+
+buildIf :: Builder ->  Maybe LabelId -> ValType -> Instr -> [Instr] -> [Instr] -> Builder
+buildIf indent mLabel valType cond thenExpr elseExpr =
+  let
+    deeperIndent = deeper indent
+    nIndent = "\n" <> indent
+    nDeeper = "\n" <> deeperIndent
+
+    resultTypeBuilder =
+      buildSignatureType "result" valType
+
+    labelList =
+      maybeToList $ fmap buildLabelId mLabel
+
+    ifBuilder =
+      (concatWith " " $ "if" : labelList ++ [resultTypeBuilder])
+        <> nDeeper <> instrToBuilder deeperIndent cond
+
+    thenBuilder =
+      parens $ "then\n" <> deeperIndent <>
+        (concatWith nDeeper $
+        map (instrToBuilder deeperIndent) thenExpr)
+
+    elseBuilder =
+      parens $ "else" <> nDeeper <>
+        (concatWith nDeeper $
+        map (instrToBuilder deeperIndent) elseExpr)
+  in
+    concatWith nIndent
+      [ ifBuilder
+      , thenBuilder
+      , elseBuilder
+      ]
 
 
 buildBlock :: Builder -> Builder -> LabelId -> ValType -> [Instr] -> Builder
