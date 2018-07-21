@@ -38,7 +38,7 @@ data Declaration
   = FuncType (Maybe TypeId) [ValType] (Maybe ValType)
   | Global GlobalId Mutability ValType Instr
   | ElementSegment Int32 [FunctionId]
-  | DataSegment Int32 Builder
+  | DataSegment Int32 ByteString
   | Export Builder ImportExportDesc
   | Function
       { _functionId :: FunctionId

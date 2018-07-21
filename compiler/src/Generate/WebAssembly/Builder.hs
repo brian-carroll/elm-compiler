@@ -5,7 +5,9 @@ module Generate.WebAssembly.Builder (buildModule, buildValType) where
 import Data.Int (Int32)
 import Data.Maybe (maybeToList)
 import Data.Monoid ((<>))
+import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as B
 import qualified Data.List as List
 
@@ -129,8 +131,8 @@ buildDeclaration decl =
     ElementSegment offset functionIds ->
       buildElementSegment offset functionIds
     
-    DataSegment offset builder ->
-      buildDataSegment offset builder
+    DataSegment offset bytes ->
+      buildDataSegment offset bytes
     
     Export jsName descriptor ->
       buildExport jsName descriptor
@@ -237,8 +239,8 @@ buildGlobal globalId mut valType valueInstr =
       ]
 
 
-buildDataSegment :: Int32 -> Builder -> Builder
-buildDataSegment dataOffset builder =
+buildDataSegment :: Int32 -> ByteString -> Builder
+buildDataSegment dataOffset bytes =
   let
     dataOffsetBuilder =
       instrToBuilder "" $ i32_const dataOffset
@@ -247,8 +249,27 @@ buildDataSegment dataOffset builder =
       "data "
         <> dataOffsetBuilder
         <> " \""
-        <> builder
+        <> escapeDataSegment bytes
         <> "\""
+
+
+-- Escape bytes for writing between double-quotes in a UTF-8 WAT file
+escapeDataSegment :: ByteString -> B.Builder
+escapeDataSegment bytes =
+  BS.foldl'
+    (\builder byte ->
+      let
+        isControlChar = byte < 32
+        isBackslash = byte == 92
+        isDoublequote = byte == 34
+      in
+        if isControlChar || isBackslash || isDoublequote then
+          builder <> "\\" <> B.word8HexFixed byte
+        else
+          builder <> B.word8 byte
+    )
+    ""
+    bytes
 
 
 buildElementSegment :: Int32 -> [FunctionId] -> Builder

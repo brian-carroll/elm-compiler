@@ -5,6 +5,7 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
 
   import Data.Int (Int32)
   import qualified Data.Binary.Put as Put
+  import qualified Data.ByteString.Lazy as BSL
 
   import qualified Elm.Name as N
 
@@ -43,7 +44,7 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
 
       body :: Instr
       body =
-        select
+        select   -- replace with 'if'
           (i32_store compCtor
             (call
               (_functionId gcShallowCopy)
@@ -84,15 +85,9 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
         ElementSegment tableOffset [fid]
 
 
-      {-
-        WRONG!!!!
-        NOT ESCAPED!!!
-        Refactor DataSegment to take a ByteString,
-        then escape it when converting to Builder
-      -}
       dataSegment =
         DataSegment dataOffset $ mconcat $
-          map (Put.execPut . Put.putInt32le)
+          map (BSL.toStrict . Put.runPut . Put.putInt32le)
             [tableOffset, 2, 0, 0]
     in
       KernelState

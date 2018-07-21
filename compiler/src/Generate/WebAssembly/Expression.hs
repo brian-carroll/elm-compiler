@@ -43,7 +43,7 @@ module Generate.WebAssembly.Expression
     ExprState
       { revInstr :: [Instr]
       , revFunc :: [Declaration]
-      , dataSegment :: B.Builder
+      , dataSegment :: ByteString
       , dataStart :: Int32
       , dataEnd :: Int32
       , tableSize :: Int32
@@ -189,31 +189,12 @@ module Generate.WebAssembly.Expression
     in
       state
         { dataSegment =
-            (dataSegment state) <> escapeDataSegment unescaped
+            (dataSegment state) <> unescaped
         , dataEnd =
             offset + (fromIntegral $ BS.length unescaped)
         , revInstr =
             (i32_const offset) : (revInstr state)
         }
-
-
-  -- Escape bytes for writing between quotes in a UTF-8 WAT file
-  escapeDataSegment :: ByteString -> B.Builder
-  escapeDataSegment bytes =
-    BS.foldl'
-      (\builder byte ->
-        let
-          isControlChar = byte < 32
-          isBackslash = byte == 92
-          isDoublequote = byte == 34
-        in
-          if isControlChar || isBackslash || isDoublequote then
-            builder <> "\\" <> B.word8HexFixed byte
-          else
-            builder <> B.word8 byte
-      )
-      ""
-      bytes
 
 
   encodeText :: Text.Text -> ByteString
@@ -776,7 +757,7 @@ module Generate.WebAssembly.Expression
 
       resultInstr =
         commented "resultInstr" $
-        select
+        select  -- replace with 'if', this evaluates both inputs!!
           (get_local closureLocalId)
           evaluateBody
           isClosureFull
