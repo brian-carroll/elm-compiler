@@ -430,11 +430,12 @@ instrToBuilder indent instr =
 
 
 buildIf :: Builder ->  Maybe LabelId -> ValType -> Instr -> [Instr] -> [Instr] -> Builder
-buildIf indent mLabel valType cond thenExpr elseExpr =
+buildIf indentL0 mLabel valType cond thenExpr elseExpr =
   let
-    deeperIndent = deeper indent
-    nIndent = "\n" <> indent
-    nDeeper = "\n" <> deeperIndent
+    indentL1 = deeper indentL0
+    indentL2 = deeper indentL1
+    nIndentL1 = "\n" <> indentL1
+    nIndentL2 = "\n" <> indentL2
 
     resultTypeBuilder =
       buildSignatureType "result" valType
@@ -444,19 +445,19 @@ buildIf indent mLabel valType cond thenExpr elseExpr =
 
     ifBuilder =
       (concatWith " " $ "if" : labelList ++ [resultTypeBuilder])
-        <> nDeeper <> instrToBuilder deeperIndent cond
+        <> nIndentL1 <> instrToBuilder indentL1 cond
 
     thenBuilder =
-      parens $ "then\n" <> deeperIndent <>
-        (concatWith nDeeper $
-        map (instrToBuilder deeperIndent) thenExpr)
+      parens $ "then" <> nIndentL2 <>
+        (concatWith nIndentL2 $
+        map (instrToBuilder indentL2) thenExpr)
 
     elseBuilder =
-      parens $ "else" <> nDeeper <>
-        (concatWith nDeeper $
-        map (instrToBuilder deeperIndent) elseExpr)
+      parens $ "else" <> nIndentL2 <>
+        (concatWith nIndentL2 $
+        map (instrToBuilder indentL2) elseExpr)
   in
-    concatWith nIndent
+    concatWith nIndentL1
       [ ifBuilder
       , thenBuilder
       , elseBuilder

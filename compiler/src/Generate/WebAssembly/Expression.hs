@@ -757,10 +757,13 @@ module Generate.WebAssembly.Expression
 
       resultInstr =
         commented "resultInstr" $
-        select  -- replace with 'if', this evaluates both inputs!!
-          (get_local closureLocalId)
-          evaluateBody
-          isClosureFull
+        IfElse
+          { _label = Nothing
+          , _retType = I32
+          , _if = isClosureFull
+          , _then = [evaluateBody]
+          , _else = [get_local closureLocalId]
+          }          
     in
       argsInsertedState
         { revInstr = resultInstr : (revInstr argsInsertedState)

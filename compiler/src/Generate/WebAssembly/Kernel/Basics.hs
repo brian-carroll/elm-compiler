@@ -42,35 +42,50 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
 
       floatCtor = 5
 
+      isFloat :: Instr
+      isFloat =
+        (i32_eq
+          (i32_const floatCtor)
+          (i32_load ctor0 $
+            get_local closureValue))
+
+      addFloat :: Instr
+      addFloat =
+        (f64_store compCtor
+          (call
+            (_functionId gcShallowCopy)
+            [i32_load argPtr0 $ get_local closureValue])
+          (f64_add
+            (f64_load compCtor
+              (i32_load argPtr0 $
+                get_local closureValue))
+            (f64_load compCtor
+              (i32_load argPtr1 $
+                get_local closureValue))))
+      
+      addInt :: Instr
+      addInt =
+        (i32_store compCtor
+          (call
+            (_functionId gcShallowCopy)
+            [i32_load argPtr0 $ get_local closureValue])
+          (i32_add
+            (i32_load compCtor
+              (i32_load argPtr0 $
+                get_local closureValue))
+            (i32_load compCtor
+              (i32_load argPtr1 $
+                get_local closureValue))))
+
       body :: Instr
       body =
-        select   -- replace with 'if'
-          (i32_store compCtor
-            (call
-              (_functionId gcShallowCopy)
-              [i32_load argPtr0 $ get_local closureValue])
-            (i32_add
-              (i32_load compCtor
-                (i32_load argPtr0 $
-                  get_local closureValue))
-              (i32_load compCtor
-                (i32_load argPtr1 $
-                  get_local closureValue))))
-          (f64_store compCtor
-            (call
-              (_functionId gcShallowCopy)
-              [i32_load argPtr0 $ get_local closureValue])
-            (f64_add
-              (f64_load compCtor
-                (i32_load argPtr0 $
-                  get_local closureValue))
-              (f64_load compCtor
-                (i32_load argPtr1 $
-                  get_local closureValue))))
-          (i32_eq
-            (i32_const floatCtor)
-            (i32_load ctor0 $
-              get_local closureValue))
+        IfElse
+          { _label = Nothing
+          , _retType = I32
+          , _if = isFloat
+          , _then = [addFloat]
+          , _else = [addInt]
+          }
 
       func =
         Function
@@ -83,7 +98,6 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
 
       element =
         ElementSegment tableOffset [fid]
-
 
       dataSegment =
         DataSegment dataOffset $ mconcat $
