@@ -17,6 +17,9 @@ module Generate.WebAssembly where
   import qualified Generate.WebAssembly.Identifier as Identifier
   import qualified Generate.WebAssembly.Builder as WAB
   import qualified Generate.WebAssembly.Test as Test
+  import qualified Generate.WebAssembly.Kernel as Kernel
+  import qualified Generate.WebAssembly.Kernel.State as KernelState
+
   import Generate.WebAssembly.Instructions
   import qualified Elm.Name as N
 
@@ -85,8 +88,6 @@ module Generate.WebAssembly where
     let
       addDeps deps someState =
         Set.foldl' (addGlobal mode graph) someState deps
-      
-      (Opt.Global moduleName name) = global
 
       tracedGlobal =
         Debug.trace ("global: " ++ 
@@ -155,16 +156,20 @@ module Generate.WebAssembly where
           state
     
         Opt.Kernel (Opt.KContent clientChunks clientDeps) maybeServer ->
-          -- if isDebugger global && not (Mode.isDebug mode) then
-          --   state
-          -- else
-          --   case maybeServer of
-          --     Just (Opt.KContent serverChunks serverDeps) | Mode.isServer mode ->
-          --       addKernel (addDeps serverDeps state) (generateKernel mode serverChunks)
-    
-          --     _ ->
-          --       addKernel (addDeps clientDeps state) (generateKernel mode clientChunks)
-          state
+          let
+            depState =
+              addDeps clientDeps state
+
+            (tableSize, dataOffset) =
+              Expr.getTableAndDataOffsets (_exprState state)
+
+            (KernelState.KernelState decls tableSize' dataOffset') =
+              Kernel.generate moduleName tableSize dataOffset
+          in
+            depState
+              { _revDecl = decls ++ (_revDecl depState)
+              , _exprState = Expr.initState dataOffset' tableSize'
+              }
     
         Opt.Enum index ->
           -- addStmt state (

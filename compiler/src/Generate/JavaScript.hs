@@ -158,8 +158,17 @@ addGlobalHelp mode graph global state =
   in
   case graph ! global of
     Opt.Define expr deps ->
+      let
+        depsBuilder =
+          mconcat $ List.intersperse ", " $
+          map
+            (\(Opt.Global home name) ->
+                Name.toBuilder $ Name.fromGlobal home name
+            )
+            (Set.toList deps)
+      in
       addStmt (addDeps deps state) (
-        wrapInComments "Define" $
+        wrapInComments ("Define, deps=" <> depsBuilder) $
         var global (Expr.generate mode expr)
       )
 
@@ -207,14 +216,20 @@ addGlobalHelp mode graph global state =
         case maybeServer of
           Just (Opt.KContent serverChunks serverDeps) | Mode.isServer mode ->
             addKernel (addDeps serverDeps state) (
-              "/* Kernel */" <>
               generateKernel mode serverChunks
             )
 
           _ ->
-            addKernel (addDeps clientDeps state) (
-              "/* Kernel */" <>
-              generateKernel mode clientChunks
+            let
+              (Opt.Global moduleName name) = global
+              comment =
+                "/* Kernel "
+                <> (Name.toBuilder $ Name.fromGlobal moduleName name)
+                <> " */"
+            in
+              addKernel (addDeps clientDeps state) (
+                comment <>
+                generateKernel mode clientChunks
               )
 
     Opt.Enum index ->

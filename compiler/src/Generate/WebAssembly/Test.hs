@@ -10,6 +10,7 @@ module Generate.WebAssembly.Test (rootMap, graph) where
   import qualified AST.Module.Name as ModuleName
   import qualified Elm.Package as Pkg
   import qualified Elm.Name as N
+  import qualified Generate.WebAssembly.Kernel.Basics as Basics
 
   {-
     outerScopeValue =
@@ -52,31 +53,69 @@ module Generate.WebAssembly.Test (rootMap, graph) where
     Opt.VarLocal (N.fromText name)
 
 
-  add :: Opt.Expr
-  add =
-    Opt.VarGlobal (g "add")
+  basicsGlobal :: Opt.Global
+  basicsGlobal =
+    Opt.Global ModuleName.basics (N.fromText "")
 
+
+  kernelNode :: Set.Set Opt.Global -> Opt.Node
+  kernelNode deps =
+    Opt.Kernel (Opt.KContent [] deps) Nothing
+
+
+  basicsNode :: Opt.Node
+  basicsNode =
+    kernelNode Set.empty
+
+
+
+  addGraphKeyDollars :: Opt.Global
+  addGraphKeyDollars =
+    Opt.Global ModuleName.basics (N.fromText "add")
+
+
+  addReferenceDollars :: Opt.Expr
+  addReferenceDollars =
+    Opt.VarGlobal addGraphKeyDollars
+
+
+  addReferenceUnderscores :: Opt.Expr
+  addReferenceUnderscores =
+    Opt.VarKernel N.basics (N.fromText "add")
+  
+      
 
   graph :: Map.Map Opt.Global Opt.Node
   graph =
     Map.fromList
-      [ ( g "outerScopeValue"
+      [ ( basicsGlobal
+        , basicsNode
+        )
+      , ( addGraphKeyDollars
+        , Opt.Define addReferenceUnderscores $
+            Set.singleton basicsGlobal
+        )
+      , ( g "outerScopeValue"
         , Opt.Define (Opt.Int 1) Set.empty
         )
       , ( g "closure"
         , Opt.Define
             (Opt.Function
               [N.fromText "a", N.fromText "b"]
-              (Opt.Call add
+              (Opt.Call addReferenceDollars
                 [ Opt.VarGlobal (g "outerScopeValue")
-                , Opt.Call add
+                , Opt.Call addReferenceDollars
                     [ l "a"
                     , l "b"
                     ]
                 ]
               )
             )
-            (Set.singleton $ g "outerScopeValue")
+            (Set.fromList
+              [ g "outerScopeValue"
+              , addGraphKeyDollars
+              , basicsGlobal
+              ])
         )
       , ( g "curried"
         , Opt.Define

@@ -6,6 +6,7 @@ module Generate.WebAssembly.Expression
   , flushState
   , generateMemory
   , generateTable
+  , getTableAndDataOffsets
   )
   where
 
@@ -31,6 +32,7 @@ module Generate.WebAssembly.Expression
   import Generate.WebAssembly.Instructions
   import qualified Generate.WebAssembly.Builder as WAB
   import qualified Generate.WebAssembly.Identifier as Id
+  import qualified Generate.WebAssembly.Kernel as Kernel
 
   import Debug.Trace as Debug
 
@@ -151,6 +153,11 @@ module Generate.WebAssembly.Expression
       , dataDecls ++ elemDecls ++ finalRevFunc
       , initState (dataEnd state) (tableSize state)
       )
+
+
+  getTableAndDataOffsets :: ExprState -> (Int32, Int32)
+  getTableAndDataOffsets state =
+    (tableSize state, dataEnd state)
 
 
   generateTable :: ExprState -> Table
@@ -314,9 +321,9 @@ module Generate.WebAssembly.Expression
         -- JsExpr $ generateDebug name home region unhandledValueName
   
       Opt.VarKernel home name ->
-        state
-        -- JsExpr $ JS.Ref (Name.fromKernel home name)
-  
+        addInstr state $
+          get_global $ Id.fromKernel home name
+
       Opt.List entries ->
         state
         -- case entries of

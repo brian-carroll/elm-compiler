@@ -9,7 +9,7 @@ module Generate.WebAssembly.Identifier
   -- , fromIndex
   -- , fromInt
 
-  -- , fromKernel
+  , fromKernel
   -- , makeF
   -- , makeA
   -- , makeLabel
@@ -49,6 +49,11 @@ module Generate.WebAssembly.Identifier
   fromCycle :: ModuleName.Canonical -> N.Name -> WA.GlobalId
   fromCycle moduleName name =
     WA.GlobalName $ "$" <> (JS.toBuilder $ JS.fromCycle moduleName name)
+
+
+  fromKernel :: N.Name -> N.Name -> WA.GlobalId
+  fromKernel moduleName name =
+    WA.GlobalName $ "$" <> (JS.toBuilder $ JS.fromKernel moduleName name)
 
 
   fromFuncType :: [WA.ValType] -> WA.ValType -> WA.TypeId
