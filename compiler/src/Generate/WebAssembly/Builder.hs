@@ -85,7 +85,7 @@ buildImport (Import level1 level2 descriptor) =
 buildMemory :: Memory -> Builder
 buildMemory (Memory MemIdxZero limits) =
   parens $
-    "memory 0 " <> buildLimits limits
+    "memory " <> buildLimits limits
 
 
 buildTable :: Table -> Builder
@@ -93,7 +93,7 @@ buildTable table =
   parens $
     case table of
       TableDeclaration limits AnyFunc ->
-        "table 0 " <> buildLimits limits <> " anyfunc"
+        "table " <> buildLimits limits <> " anyfunc"
 
       TableInlineDef AnyFunc functionIds ->
         "table anyfunc "
