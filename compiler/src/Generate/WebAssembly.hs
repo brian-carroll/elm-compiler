@@ -119,7 +119,7 @@ module Generate.WebAssembly where
                   )
                 _ ->
                   ( WA.Global gid WA.Mutable WA.I32 $ i32_const 0
-                  , instr : (_revStartInstr depState)
+                  , (set_global gid instr) : (_revStartInstr depState)
                   )
           in
             depState

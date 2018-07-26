@@ -42,7 +42,7 @@ get_local = GetLocal
 set_local = SetLocal
 tee_local = TeeLocal
 get_global = GetGlobal
-set_global = GetGlobal
+set_global = SetGlobal
 
 i32_load = load "i32.load"
 i64_load = load "i64.load"
