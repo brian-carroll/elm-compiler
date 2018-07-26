@@ -487,7 +487,7 @@ module Generate.WebAssembly.Expression
       closureConstructBlock =
         block 
           (LabelName $ "$createClosure" <> B.int32Dec tableOffset)
-          I32
+          (Just I32)
           (closureConstructCode ++ [get_local closureLocalId])
     in
       bodyState
@@ -759,7 +759,7 @@ module Generate.WebAssembly.Expression
         commented "resultInstr" $
         IfElse
           { _label = Nothing
-          , _retType = I32
+          , _retType = Just I32
           , _if = isClosureFull
           , _then = [evaluateBody]
           , _else = [get_local closureLocalId]

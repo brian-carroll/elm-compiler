@@ -329,14 +329,14 @@ instrToBuilder indent instr =
         Nop ->
           "nop"
 
-        Block labelId valType instrList ->
-          buildBlock "block" deeperIndent labelId valType instrList
+        Block labelId mValType instrList ->
+          buildBlock "block" deeperIndent labelId mValType instrList
 
-        Loop labelId valType instrList ->
-          buildBlock "loop" deeperIndent labelId valType instrList
+        Loop labelId mValType instrList ->
+          buildBlock "loop" deeperIndent labelId mValType instrList
 
-        IfElse mLabel valType cond thenExpr elseExpr ->
-          buildIf indent mLabel valType cond thenExpr elseExpr
+        IfElse mLabel mValType cond thenExpr elseExpr ->
+          buildIf indent mLabel mValType cond thenExpr elseExpr
 
         Br labelId ->
           "br " <> (buildLabelId labelId)
@@ -429,22 +429,22 @@ instrToBuilder indent instr =
             concatLines $ firstLine : builders
 
 
-buildIf :: Builder ->  Maybe LabelId -> ValType -> Instr -> [Instr] -> [Instr] -> Builder
-buildIf indentL0 mLabel valType cond thenExpr elseExpr =
+buildIf :: Builder ->  Maybe LabelId -> Maybe ValType -> Instr -> [Instr] -> [Instr] -> Builder
+buildIf indentL0 mLabel mValType cond thenExpr elseExpr =
   let
     indentL1 = deeper indentL0
     indentL2 = deeper indentL1
     nIndentL1 = "\n" <> indentL1
     nIndentL2 = "\n" <> indentL2
 
-    resultTypeBuilder =
-      buildSignatureType "result" valType
+    resultTypeAsList =
+      map (buildSignatureType "result") $ maybeToList mValType
 
-    labelList =
-      maybeToList $ fmap buildLabelId mLabel
+    labelAsList =
+      map buildLabelId $ maybeToList mLabel
 
     ifBuilder =
-      (concatWith " " $ "if" : labelList ++ [resultTypeBuilder])
+      (concatWith " " $ "if" : labelAsList ++ resultTypeAsList)
         <> nIndentL1 <> instrToBuilder indentL1 cond
 
     thenBuilder =
@@ -464,13 +464,14 @@ buildIf indentL0 mLabel valType cond thenExpr elseExpr =
       ]
 
 
-buildBlock :: Builder -> Builder -> LabelId -> ValType -> [Instr] -> Builder
-buildBlock opcode deeperIndent labelId valType instrList =
+buildBlock :: Builder -> Builder -> LabelId -> Maybe ValType -> [Instr] -> Builder
+buildBlock opcode deeperIndent labelId mValType instrList =
   let
     firstLine =
-      opcode
-        <> " " <> buildLabelId labelId
-        <> " " <> buildSignatureType "result" valType
+      concatWith " " $
+        opcode
+        : buildLabelId labelId
+        : (map (buildSignatureType "result") $ maybeToList mValType)
 
     builders =
       map (instrToBuilder deeperIndent) instrList

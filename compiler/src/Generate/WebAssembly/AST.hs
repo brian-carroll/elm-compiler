@@ -75,11 +75,11 @@ type Expr = [Instr]
 data Instr
   = Unreachable
   | Nop
-  | Block LabelId ValType [Instr]
-  | Loop LabelId ValType [Instr]
+  | Block LabelId (Maybe ValType) [Instr]
+  | Loop LabelId (Maybe ValType) [Instr]
   | IfElse
       { _label :: Maybe LabelId
-      , _retType :: ValType
+      , _retType :: Maybe ValType
       , _if :: Instr
       , _then :: [Instr]
       , _else :: [Instr]

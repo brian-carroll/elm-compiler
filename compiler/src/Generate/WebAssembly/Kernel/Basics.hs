@@ -81,7 +81,7 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
       body =
         IfElse
           { _label = Nothing
-          , _retType = I32
+          , _retType = Just I32
           , _if = isFloat
           , _then = [addFloat]
           , _else = [addInt]
