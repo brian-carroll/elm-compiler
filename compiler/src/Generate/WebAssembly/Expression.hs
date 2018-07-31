@@ -303,8 +303,8 @@ module Generate.WebAssembly.Expression
         addInstr state $
           call_indirect
             (Id.fromFuncType [] I32)
-            (get_global $ Id.fromCycle home name)
             []
+            (get_global $ Id.fromCycle home name)
   
       Opt.VarDebug name home region unhandledValueName ->
         state
@@ -712,8 +712,8 @@ module Generate.WebAssembly.Expression
       funcState =
         generate funcExpr state
 
-      ([closureLocalId, argPointerLocalId], updatedScope) =
-        createTempVars ["closure", "argPtr"] (currentScope funcState)
+      ([closureLocalId, argPointerLocalId, arityLocalId], updatedScope) =
+        createTempVars ["closure", "argPtr", "arity"] (currentScope funcState)
 
       getClosureCopy :: Instr -> Instr
       getClosureCopy funcRefInstr =
@@ -723,7 +723,8 @@ module Generate.WebAssembly.Expression
 
       getArity =
         commented "getArity" $
-        i32_load 12 $
+          tee_local arityLocalId $
+          i32_load 12 $
           get_local closureLocalId
 
       getInitArgPointer =
@@ -771,14 +772,22 @@ module Generate.WebAssembly.Expression
           )
           argExpr
 
+      updateArity =
+        commented "updateArity" $
+        i32_store 12
+          (get_local closureLocalId)
+          (tee_local arityLocalId $
+            i32_sub
+              (get_local arityLocalId)
+              (i32_const $ fromIntegral $ length args)
+          )
+
       -- If we're now pointing at the lowest arg in the closure, it's full
       isClosureFull =
         commented "isClosureFull" $
-        i32_eq (i32_const 8)
-          (i32_sub
-            (get_local argPointerLocalId)
-            (get_local closureLocalId)
-          )
+        i32_eqz 
+          (get_local arityLocalId)
+
 
       funcTableIndex =
         i32_load 8 (get_local closureLocalId)
@@ -786,13 +795,8 @@ module Generate.WebAssembly.Expression
       evaluateBody =
         commented "evaluateBody" $
         call_indirect elmFuncTypeId
-          funcTableIndex
           [get_local closureLocalId]
-
-      updateArity =
-        i32_store 12
-          (get_local closureLocalId)
-          (i32_const $ fromIntegral $ length args)
+          funcTableIndex
 
       resultInstr =
         commented "resultInstr" $

@@ -368,10 +368,12 @@ instrToBuilder indent instr =
             : (map (instrToBuilder deeperIndent) args)
 
 
-        CallIndirect typeId indexInstr args ->
+        CallIndirect typeId args indexInstr ->
           concatLines $
             ("call_indirect (type " <> buildTypeId typeId <> ")")
-            : (map (instrToBuilder deeperIndent) (indexInstr : args))
+            : (map (instrToBuilder deeperIndent)
+                (args ++ [indexInstr])
+              )
 
 
         GetLocal localId ->
