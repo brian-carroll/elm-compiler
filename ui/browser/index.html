@@ -62,7 +62,7 @@
             SETUP
         */
         const memory = wasm.instance.exports.memory;
-        const buf = new Uint8Array(memory.buffer);
+        const buf = new Uint32Array(memory.buffer);
 
         const beforeTmp = buf.slice();
 
@@ -80,6 +80,9 @@
         const addrToGlobalNames = globals.reduce(
           (addrMap, name) => {
             const addr = exp[name]();
+            if (addr % 4 !== 0) {
+              throw new Error(`misaligned: ${name}=${addr}`);
+            }
             addrMap[addr] = addrMap[addr] || [];
             addrMap[addr].push(name);
             return addrMap;
@@ -87,31 +90,32 @@
           {}
         );
 
-        let maxAddr = 1024;
-        while (buf[maxAddr] === 0) maxAddr--;
-        maxAddr += 4;
+        let maxIndex = 1024;
+        while (buf[maxIndex] === 0) maxIndex--;
+        maxIndex += 4;
 
-        const before = beforeTmp.slice(0, maxAddr);
-        const after = buf.slice(0, maxAddr);
+        const before = beforeTmp.slice(0, maxIndex);
+        const after = buf.slice(0, maxIndex);
 
 
         /*
             DISPLAY
         */
         let html = '';
-        for (let addr = 0; addr < maxAddr; addr++) {
+        for (let i = 0; i < maxIndex; i++) {
+          const addr = i * 4;
 
           // Globals at this address
           const globalNames = addrToGlobalNames[addr] || [];
 
           // Styling
           let rowClasses = [];
-          if (before[addr] !== after[addr]) {
+          if (before[i] !== after[i]) {
             rowClasses.push('changed');
           }
-          if (addr % 4 === 0) {
-            rowClasses.push('i32aligned')
-          }
+          // if (addr % 4 === 0) {
+          //   rowClasses.push('i32aligned')
+          // }
           let classStr = rowClasses.length
             ? `class="${rowClasses.join(' ')}"`
             : '';
@@ -119,8 +123,8 @@
 
           html += `<tr ${classStr}>
                     <td class="addr">${addr}</td>
-                    <td>${before[addr]}</td>
-                    <td>${after[addr]}</td>
+                    <td>${before[i]}</td>
+                    <td>${after[i]}</td>
                     <td>${globalNames.join(', ')}</td>
                   </tr>`;
         }
