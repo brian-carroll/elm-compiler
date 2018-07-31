@@ -4,7 +4,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Test Elm->Wasm compiler</title>
+  <title>Elm -> Wasm test</title>
   <style>
     body {
       background-color: #222;
@@ -23,12 +23,12 @@
       margin: auto;
     }
 
-    .emphasise {
-      color: darkred;
+    .changed {
+      color: red;
       font-weight: bold;
     }
 
-    .i32 {
+    .i32aligned {
       border-top: 2px solid;
     }
 
@@ -57,58 +57,70 @@
     WebAssembly
       .instantiateStreaming(fetch('elm.wasm'))
       .then(wasm => {
+
+        /*
+            SETUP
+        */
         const memory = wasm.instance.exports.memory;
         const buf = new Uint8Array(memory.buffer);
 
-        let beforeLength = 1024;
-        while (buf[beforeLength] === 0) beforeLength--;
-        beforeLength += 4;
-
         const beforeTmp = buf.slice();
 
+
+        /*
+            RUN
+        */
         const exp = wasm.instance.exports;
         exp.start();
 
-        const globalAddrs = globals.reduce(
+
+        /*
+            ANALYSE
+        */
+        const addrToGlobalNames = globals.reduce(
           (addrMap, name) => {
-            addrMap[name] = exp[name]();
+            const addr = exp[name]();
+            addrMap[addr] = addrMap[addr] || [];
+            addrMap[addr].push(name);
             return addrMap;
           },
           {}
         );
 
-        let afterLength = 1024;
-        while (buf[afterLength] === 0) afterLength--;
-        afterLength += 4;
+        let maxAddr = 1024;
+        while (buf[maxAddr] === 0) maxAddr--;
+        maxAddr += 4;
 
-        const before = beforeTmp.slice(0, afterLength);
-        const after = buf.slice(0, afterLength);
+        const before = beforeTmp.slice(0, maxAddr);
+        const after = buf.slice(0, maxAddr);
 
+
+        /*
+            DISPLAY
+        */
         let html = '';
-        for (let i in before) {
+        for (let addr = 0; addr < maxAddr; addr++) {
+
+          // Globals at this address
+          const globalNames = addrToGlobalNames[addr] || [];
+
+          // Styling
           let rowClasses = [];
-          if (before[i] !== after[i]) {
-            rowClasses.push("emphasise");
+          if (before[addr] !== after[addr]) {
+            rowClasses.push('changed');
           }
-          if (i % 4 === 0) {
-            rowClasses.push('i32')
+          if (addr % 4 === 0) {
+            rowClasses.push('i32aligned')
           }
-
-          let globalNames = [];
-          for (let name of globals) {
-            if (globalAddrs[name] == i) {
-              globalNames.push(name)
-            }
-          }
-
           let classStr = rowClasses.length
             ? `class="${rowClasses.join(' ')}"`
             : '';
 
+
           html += `<tr ${classStr}>
-                    <td class="addr">${i}</td>
-                    <td>${before[i]}</td>
-                    <td>${after[i]}</td>
+                    <td class="addr">${addr}</td>
+                    <td>${before[addr]}</td>
+                    <td>${after[addr]}</td>
                     <td>${globalNames.join(', ')}</td>
                   </tr>`;
         }
