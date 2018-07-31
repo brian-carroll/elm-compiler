@@ -99,8 +99,8 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
       func =
         Function
           { _functionId = fid
-          , _params = [(closureValue, I32), (returnValue, I32)]
-          , _locals = []
+          , _params = [(closureValue, I32)]
+          , _locals = [(returnValue, I32)]
           , _resultType = Just I32
           , _body = body
           }
