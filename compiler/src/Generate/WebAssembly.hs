@@ -200,16 +200,49 @@ module Generate.WebAssembly where
   generateModule :: State -> WA.Module
   generateModule (State revDecl revStart exprState _) =
     let
-      startId = WA.FunctionName "$start"
+      startId =
+        WA.FunctionName "$start"
+
+      (_, initMemSize) =
+        Expr.getTableAndDataOffsets exprState
+
       startFuncDecl =
-        WA.Function startId [] [] Nothing (reverse revStart)
+        WA.Function startId [] [] Nothing $
+          (set_global (WA.GlobalName "$_GC_heapTop") (i32_const initMemSize))
+          : reverse revStart
+
       typeDecls =
         [ WA.FuncType (Just $ WA.TypeName "$funcType$i32$i32") [WA.I32] (Just WA.I32)
         ]
+
+      debugGlobal jsName wasmName =
+        let
+          debugFuncId = WA.FunctionName ("$" <> jsName)
+        in
+          [ WA.Export jsName $ WA.ImpExpFunc $ debugFuncId
+          , WA.Function debugFuncId [] [] (Just WA.I32)
+            [get_global $ WA.GlobalName $ wasmName]
+          ]
+
+      debugExports =
+        [ WA.Export "start" (WA.ImpExpFunc startId)
+        , WA.Export "memory" (WA.ImpExpMem WA.MemIdxZero)
+        ]
+        ++ (debugGlobal "heapTop" "$_GC_heapTop")
+        ++ (debugGlobal "add"     "$_Basics_add")
+        ++ (debugGlobal "outerScopeValue" "$author$project$TestModule$outerScopeValue")
+        ++ (debugGlobal "closure" "$author$project$TestModule$closure")
+        ++ (debugGlobal "curried" "$author$project$TestModule$curried")
+        ++ (debugGlobal "main"    "$author$project$TestModule$main")
     in
       WA.Module
         []
         (Just $ Expr.generateMemory exprState)
         (Just $ Expr.generateTable exprState)
-        (Just startId)
-        (reverse $ startFuncDecl : typeDecls ++ revDecl)
+        Nothing -- (Just startId)
+        (reverse $
+          startFuncDecl
+          : typeDecls
+          ++ debugExports
+          ++ revDecl
+        )

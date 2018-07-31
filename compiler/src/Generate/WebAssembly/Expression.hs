@@ -33,6 +33,7 @@ module Generate.WebAssembly.Expression
   import qualified Generate.WebAssembly.Builder as WAB
   import qualified Generate.WebAssembly.Identifier as Id
   import qualified Generate.WebAssembly.Kernel as Kernel
+  import qualified Generate.WebAssembly.Kernel.GC as GC
 
   import Debug.Trace as Debug
 
@@ -126,7 +127,7 @@ module Generate.WebAssembly.Expression
           { _functionId = thunkId
           , _params = []
           , _locals = nameSetToLocalsList topLevelLocals
-          , _resultType = Nothing
+          , _resultType = Just I32
           , _body = body
           }
 
@@ -184,8 +185,16 @@ module Generate.WebAssembly.Expression
   addDataLiteral :: ExprState -> Int32 -> ByteString -> ExprState
   addDataLiteral state ctor payload =
     let
-      unescaped = (encodeInt32 ctor) <> payload
-      offset = dataEnd state
+      firstPointerOffset =
+        0
+      withoutSize =
+        (encodeInt32 firstPointerOffset) <> (encodeInt32 ctor) <> payload
+      size =
+        encodeInt32 $ fromIntegral $ BS.length withoutSize
+      unescaped =
+        size <> withoutSize
+      offset =
+        dataEnd state
     in
       state
         { dataSegment =
@@ -351,12 +360,16 @@ module Generate.WebAssembly.Expression
   
       Opt.Accessor field ->
         state
+        -- This is a function => only for records, like `.name`
+        -- Checked, it's not for Tuple/List '.a' type things, that's Destruct
+        --
         -- JsExpr $ JS.Function Nothing [Name.dollar]
         --   [ JS.Return $ Just $
         --       JS.Access (JS.Ref Name.dollar) (generateField mode field)
         --   ]
   
       Opt.Access record field ->
+        -- Dotting into a record directly, not a function
         state
         -- JsExpr $ JS.Access (generateJsExpr mode record) (generateField mode field)
   
@@ -557,6 +570,7 @@ module Generate.WebAssembly.Expression
         }
 
 
+  -- Move to Kernel
   generateClosure :: [N.Name] -> Set.Set N.Name -> LocalId -> LocalId -> Int32 -> ([Instr], [Instr])
   generateClosure args closedOverSet closureId funcArgId elemIdx =
     let
@@ -564,23 +578,38 @@ module Generate.WebAssembly.Expression
 
       i32size = 4
       pointersSize = (nArgs + Set.size closedOverSet) * i32size
+      sizeSize = i32size
+      firstPtrSize = i32size
       elemIndexSize = i32size
       aritySize = i32size
-      totalSize = elemIndexSize + aritySize + pointersSize
+      totalSize =
+        sizeSize + firstPtrSize + elemIndexSize + aritySize + pointersSize
 
       createNewClosure =
         set_local closureId
           (call
-            (_functionId gcAllocate)
+            (_functionId GC.allocate)
             [i32_const $ fromIntegral totalSize]
           )
 
+      storeGcSize =
+        i32_store 0
+          (get_local closureId)
+          (i32_const $ fromIntegral (totalSize - sizeSize))
+
+      storeFirstPtr =
+        i32_store i32size
+          (get_local closureId)
+          (i32_const 8)
+
       storeElemIndex =
-        i32_store 0 (get_local closureId) $
+        i32_store (2*i32size)
+          (get_local closureId)
           (i32_const elemIdx)
 
       storeArity =
-        i32_store 4 (get_local closureId) $
+        i32_store (3*i32size)
+          (get_local closureId)
           (i32_const $ fromIntegral $ length args)
 
       (storeClosedOvers, destructClosedOvers) =
@@ -588,6 +617,8 @@ module Generate.WebAssembly.Expression
 
       closureConstructCode =
         createNewClosure
+        : storeGcSize
+        : storeFirstPtr
         : storeElemIndex
         : storeArity
         : storeClosedOvers
@@ -612,15 +643,17 @@ module Generate.WebAssembly.Expression
       (closureConstructCode, closureDestructCode)
 
 
+  -- Move to Kernel (GC.index)
   closureIndexToOffset :: Int -> Int
   closureIndexToOffset pointerIdx =
     let
       pointerSize = 4
-      headerSize = 8 -- elemIdx + arity
+      headerSize = 16 -- gcSize + gcFirstPtr + elemIdx + arity
     in
       headerSize + (pointerSize * pointerIdx)
 
   
+  -- Move to Kernel
   generateClosedOverValues :: Int -> Set.Set N.Name -> LocalId -> LocalId -> ([Instr], [Instr])
   generateClosedOverValues nArgs closedOverSet closureId funcArgId =
     let
@@ -672,6 +705,7 @@ module Generate.WebAssembly.Expression
         undefined
 
 
+  -- Move to Kernel
   generateCall :: Opt.Expr -> [Opt.Expr] -> ExprState -> ExprState
   generateCall funcExpr args state =
     let
@@ -685,7 +719,7 @@ module Generate.WebAssembly.Expression
       getClosureCopy funcRefInstr =
         commented "getClosureCopy" $
         set_local closureLocalId $
-          call (_functionId gcShallowCopy) [funcRefInstr]
+          call (_functionId GC.shallowCopy) [funcRefInstr]
 
       getArity =
         commented "getArity" $
@@ -777,45 +811,3 @@ module Generate.WebAssembly.Expression
     Id.fromFuncType [I32] I32
 
 
-{-
-  TODO
-    - Test builder
-      - Take some manually written WAT files
-      - Manually translate to AST
-      - Run builder
-
-    - Test generator
-      - manually write some Elm AST and generate WAT
-        - read & debug
-      - implement allocate and copy
-        - ever-increasing heap with no actual GC
-        - need size headers for values (change pointer arithmetic)
-      - run it
-
-    - Add manual Wat code
-      - some kind of prelude
-      - start function?
-      - exports
--}
-
-
-  gcAllocate :: Declaration
-  gcAllocate =
-    Function
-      { _functionId = FunctionName "$gcAllocate"
-      , _params = [(LocalName "$size", I32)]
-      , _locals = []
-      , _resultType = Just I32
-      , _body = [unreachable] -- TODO
-      }
-
-
-  gcShallowCopy :: Declaration
-  gcShallowCopy =
-    Function
-      { _functionId = FunctionName "$gcShallowCopy"
-      , _params = [(LocalName "$from", I32)]
-      , _locals = []
-      , _resultType = Just I32
-      , _body = [unreachable] -- TODO
-      }

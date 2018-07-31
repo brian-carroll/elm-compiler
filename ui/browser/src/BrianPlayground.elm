@@ -35,7 +35,27 @@ view =
         , viewExtRecord exampleRecord2
         , ul [] <| List.repeat (tailCallWrapperFunc 0) (li [] [])
         , ul [] <| List.repeat (topLevelTailFunc 0) (li [] [])
+        , text (Tuple.first tuple)
+        , text (destructTuple tuple)
+        , text <| Maybe.withDefault "" <| List.head [ "things" ]
+        , text <|
+            if (\_ -> ()) == (\_ -> ()) then
+                "oh"
+            else
+                "dear"
         ]
+
+
+destructTuple t =
+    let
+        ( tupleDestructFirst, _ ) =
+            t
+    in
+        tupleDestructFirst
+
+
+tuple =
+    ( "this", "that" )
 
 
 type alias MyRecord1 =

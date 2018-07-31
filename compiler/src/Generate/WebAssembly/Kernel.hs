@@ -11,6 +11,7 @@ module Generate.WebAssembly.Kernel (generate) where
   import qualified AST.Module.Name as ModuleName
 
   import qualified Generate.WebAssembly.Kernel.Basics as Basics
+  import qualified Generate.WebAssembly.Kernel.GC as GC
   import Generate.WebAssembly.Kernel.State
 
 
@@ -18,6 +19,7 @@ module Generate.WebAssembly.Kernel (generate) where
   kernelModules =
     Map.fromList
       [ (ModuleName.basics, Basics.exports)
+      , (GC.moduleName, GC.exports)
       ]
 
 

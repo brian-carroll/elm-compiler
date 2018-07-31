@@ -11,6 +11,7 @@ module Generate.WebAssembly.Test (rootMap, graph) where
   import qualified Elm.Package as Pkg
   import qualified Elm.Name as N
   import qualified Generate.WebAssembly.Kernel.Basics as Basics
+  import qualified Generate.WebAssembly.Kernel.GC as GC
 
   {-
     outerScopeValue =
@@ -53,20 +54,19 @@ module Generate.WebAssembly.Test (rootMap, graph) where
     Opt.VarLocal (N.fromText name)
 
 
-  basicsGlobal :: Opt.Global
-  basicsGlobal =
-    Opt.Global ModuleName.basics (N.fromText "")
-
-
   kernelNode :: Set.Set Opt.Global -> Opt.Node
   kernelNode deps =
     Opt.Kernel (Opt.KContent [] deps) Nothing
 
 
+  basicsGlobal :: Opt.Global
+  basicsGlobal =
+    Opt.Global ModuleName.basics (N.fromText "")
+
+
   basicsNode :: Opt.Node
   basicsNode =
-    kernelNode Set.empty
-
+    kernelNode $ Set.singleton GC.global
 
 
   addGraphKeyDollars :: Opt.Global
@@ -90,6 +90,9 @@ module Generate.WebAssembly.Test (rootMap, graph) where
     Map.fromList
       [ ( basicsGlobal
         , basicsNode
+        )
+      , ( GC.global
+        , kernelNode Set.empty
         )
       , ( addGraphKeyDollars
         , Opt.Define addReferenceUnderscores $
@@ -115,6 +118,7 @@ module Generate.WebAssembly.Test (rootMap, graph) where
               [ g "outerScopeValue"
               , addGraphKeyDollars
               , basicsGlobal
+              , GC.global
               ])
         )
       , ( g "curried"

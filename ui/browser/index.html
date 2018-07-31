@@ -1,0 +1,123 @@
+<!doctype html>
+
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Test Elm->Wasm compiler</title>
+  <style>
+    body {
+      background-color: #222;
+      color: lightgrey;
+      font-family: courier;
+    }
+
+    table {
+      border-collapse: collapse;
+    }
+
+    td {
+      border: 1px gray solid;
+      padding: 4px;
+      text-align: center;
+      margin: auto;
+    }
+
+    .emphasise {
+      color: darkred;
+      font-weight: bold;
+    }
+
+    .i32 {
+      border-top: 2px solid;
+    }
+
+    .addr {
+      color: #666;
+    }
+  </style>
+</head>
+
+<body>
+  <table id="results">
+
+  </table>
+
+  <script>
+
+    const globals = [
+      "heapTop",
+      "add",
+      "outerScopeValue",
+      "closure",
+      "curried",
+      "main",
+    ];
+
+    WebAssembly
+      .instantiateStreaming(fetch('elm.wasm'))
+      .then(wasm => {
+        const memory = wasm.instance.exports.memory;
+        const buf = new Uint8Array(memory.buffer);
+
+        let beforeLength = 1024;
+        while (buf[beforeLength] === 0) beforeLength--;
+        beforeLength += 4;
+
+        const beforeTmp = buf.slice();
+
+        const exp = wasm.instance.exports;
+        exp.start();
+
+        const globalAddrs = globals.reduce(
+          (addrMap, name) => {
+            addrMap[name] = exp[name]();
+            return addrMap;
+          },
+          {}
+        );
+
+        let afterLength = 1024;
+        while (buf[afterLength] === 0) afterLength--;
+        afterLength += 4;
+
+        const before = beforeTmp.slice(0, afterLength);
+        const after = buf.slice(0, afterLength);
+
+        let html = '';
+        for (let i in before) {
+          let rowClasses = [];
+          if (before[i] !== after[i]) {
+            rowClasses.push("emphasise");
+          }
+          if (i % 4 === 0) {
+            rowClasses.push('i32')
+          }
+
+          let globalNames = [];
+          for (let name of globals) {
+            if (globalAddrs[name] == i) {
+              globalNames.push(name)
+            }
+          }
+
+          let classStr = rowClasses.length
+            ? `class="${rowClasses.join(' ')}"`
+            : '';
+
+          html += `<tr ${classStr}>
+                    <td class="addr">${i}</td>
+                    <td>${before[i]}</td>
+                    <td>${after[i]}</td>
+                    <td>${globalNames.join(', ')}</td>
+                  </tr>`;
+        }
+        const table = document.getElementById('results');
+        table.innerHTML = html;
+
+      });
+
+  </script>
+</body>
+
+</html>

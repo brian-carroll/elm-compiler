@@ -11,8 +11,9 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
 
   import Generate.WebAssembly.AST
   import Generate.WebAssembly.Instructions
-  import Generate.WebAssembly.Identifier as Id
+  import qualified Generate.WebAssembly.Identifier as Id
   import Generate.WebAssembly.Kernel.State
+  import qualified Generate.WebAssembly.Kernel.GC as GC
 
 
   exports :: [KernelState -> KernelState]
@@ -32,9 +33,12 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
         FunctionName nameBuilder
 
       closureValue = LocalIdx 0
+      returnValue = LocalName "$return"
 
       elemIdx = 0
-      arity = elemIdx + 4
+      size = elemIdx + 4
+      first_pointer = size + 4
+      arity = first_pointer + 4
       ctor0 = arity + 4
       argPtr0 = ctor0 + 4
       argPtr1 = argPtr0 + 4
@@ -51,49 +55,54 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
 
       addFloat :: Instr
       addFloat =
-        (f64_store compCtor
-          (call
-            (_functionId gcShallowCopy)
-            [i32_load argPtr0 $ get_local closureValue])
+        f64_store compCtor
+          (tee_local returnValue
+            (call
+              (_functionId GC.shallowCopy)
+              [i32_load argPtr0 $ get_local closureValue]))
           (f64_add
             (f64_load compCtor
               (i32_load argPtr0 $
                 get_local closureValue))
             (f64_load compCtor
               (i32_load argPtr1 $
-                get_local closureValue))))
+                get_local closureValue)))
+
       
       addInt :: Instr
       addInt =
-        (i32_store compCtor
-          (call
-            (_functionId gcShallowCopy)
-            [i32_load argPtr0 $ get_local closureValue])
+        i32_store compCtor
+          (tee_local returnValue
+            (call
+              (_functionId GC.shallowCopy)
+              [i32_load argPtr0 $ get_local closureValue]))
           (i32_add
             (i32_load compCtor
               (i32_load argPtr0 $
                 get_local closureValue))
             (i32_load compCtor
               (i32_load argPtr1 $
-                get_local closureValue))))
+                get_local closureValue)))
 
-      body :: Instr
+      body :: [Instr]
       body =
-        IfElse
-          { _label = Nothing
-          , _retType = Just I32
-          , _if = isFloat
-          , _then = [addFloat]
-          , _else = [addInt]
-          }
+        [ IfElse
+            { _label = Nothing
+            , _retType = Nothing
+            , _if = isFloat
+            , _then = [addFloat]
+            , _else = [addInt]
+            }
+        , get_local returnValue
+        ]
 
       func =
         Function
           { _functionId = fid
-          , _params = [(closureValue, I32)]
+          , _params = [(closureValue, I32), (returnValue, I32)]
           , _locals = []
           , _resultType = Just I32
-          , _body = [ body ]
+          , _body = body
           }
 
       element =
@@ -114,16 +123,6 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
         }
 
 
-  gcShallowCopy :: Declaration
-  gcShallowCopy =
-    Function
-      { _functionId = FunctionName "$gcShallowCopy"
-      , _params = [(LocalName "$from", I32)]
-      , _locals = []
-      , _resultType = Just I32
-      , _body = [unreachable] -- TODO
-      }
-
   {-
   
   need:
@@ -134,7 +133,7 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
       gcHeader, elemIdx, arity, arg1, arg2
 
   also GC stuff!!
-    gcShallowCopy
+    GC.shallowCopy
       get total bytesize
       allocate
       loop

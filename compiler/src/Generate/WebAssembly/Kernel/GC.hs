@@ -1,10 +1,55 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Generate.WebAssembly.Kernel.GC where
+module Generate.WebAssembly.Kernel.GC
+  ( moduleName
+  , global
+  , exports
+  , allocate
+  , sizeof
+  , shallowCopy
+  )
+  where
+
+  import qualified AST.Module.Name as ModuleName
+  import qualified Elm.Package as Pkg
+  import qualified AST.Optimized as Opt
+  import qualified Elm.Name as N
 
   import Generate.WebAssembly.Instructions
   import Generate.WebAssembly.AST
+  import Generate.WebAssembly.Kernel.State
 
+
+  -- ELM AST
+
+  moduleName :: ModuleName.Canonical
+  moduleName =
+    ModuleName.Canonical Pkg.core "GC"
+
+
+  global :: Opt.Global
+  global =
+      Opt.Global (ModuleName.Canonical Pkg.core "GC") (N.fromText "")
+
+
+  exports :: [KernelState -> KernelState]
+  exports =
+      [ gc ]
+
+
+  gc :: KernelState -> KernelState
+  gc state =
+    state
+      { _declarations =
+          [ heapTop
+          , allocate
+          , sizeof
+          , shallowCopy
+          ]
+      }
+
+
+  -- CONTENTS
 
   heapTopId :: GlobalId
   heapTopId =
