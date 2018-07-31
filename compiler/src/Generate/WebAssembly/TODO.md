@@ -1,3 +1,19 @@
+## Debug
+
+- 1+2+3=1, apparently
+- Time travel bugger
+  - Trying to apply `add` function to something that doesn't exist yet
+  - A full closure at 144 contains a reference to an arg at 192
+  - The value at address 192 makes no sense, what is it?
+
+## Test page
+
+- no need for 2 columns, just highlight what was initialised
+  - no need for red diff
+- Find a way to mark the beginning and end of each _value_
+  - maybe alternate striped colours
+  - maybe border thickness/colour
+
 ## Working prototype
 
 - Add GC header to all values!
