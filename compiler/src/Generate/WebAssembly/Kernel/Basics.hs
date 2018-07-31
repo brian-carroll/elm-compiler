@@ -107,11 +107,14 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
 
       element =
         ElementSegment tableOffset [fid]
+      
+      gcSize = 20
+      gcFirstPtr = 8
 
       dataSegment =
         DataSegment dataOffset $ mconcat $
           map (BSL.toStrict . Put.runPut . Put.putInt32le)
-            [tableOffset, 2, 0, 0]
+            [gcSize, gcFirstPtr, tableOffset, 2, 0, 0]
     in
       KernelState
         { _declarations =
@@ -119,7 +122,7 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
         , _tableSize =
             tableOffset + 1
         , _dataOffset =
-            dataOffset + 4
+            dataOffset + 4 + gcSize
         }
 
 

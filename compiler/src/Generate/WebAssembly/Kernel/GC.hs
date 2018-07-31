@@ -71,7 +71,7 @@ module Generate.WebAssembly.Kernel.GC
       , _body =
           [ set_global heapTopId $
               i32_add
-                (i32_const 1)
+                (get_local (LocalName "$size"))
                 (tee_local
                   (LocalName "$oldHeap")
                   (get_global heapTopId))
@@ -81,6 +81,8 @@ module Generate.WebAssembly.Kernel.GC
       }
 
 
+  -- size of the object excluding the size itself
+  -- (should really exclude whatever we consider the 'header')
   sizeof :: Declaration
   sizeof =
     Function
@@ -97,19 +99,20 @@ module Generate.WebAssembly.Kernel.GC
     let
       old = LocalName "$old"
       new = LocalName "$new"
-      size = LocalName "$size"
+      sizeWithHeader = LocalName "$sizeWithHeader"
       returnPtr = LocalName "$returnPtr"
     in
       Function
         { _functionId = FunctionName "$_GC_shallowCopy"
         , _params = [(old, I32)]
-        , _locals = [(new, I32), (size, I32), (returnPtr, I32)]
+        , _locals = [(new, I32), (sizeWithHeader, I32), (returnPtr, I32)]
         , _resultType = Just I32
         , _body =
             [ set_local new $
                 tee_local returnPtr $
                 call (_functionId allocate)
-                  [ tee_local size $
+                  [ tee_local sizeWithHeader $
+                      i32_add (i32_const 4) $ -- size of size
                       call (_functionId sizeof) [get_local old]
                   ]
             , loop (LabelName "$loop") Nothing
@@ -121,8 +124,8 @@ module Generate.WebAssembly.Kernel.GC
                     (i32_add (get_local new) (i32_const 4))
                 , br_if (LabelName "$loop") $
                     i32_gt_s
-                      (tee_local size
-                        (i32_sub (get_local size) (i32_const 4)))
+                      (tee_local sizeWithHeader
+                        (i32_sub (get_local sizeWithHeader) (i32_const 4)))
                       (i32_const 0)
                 ]
             , get_local returnPtr

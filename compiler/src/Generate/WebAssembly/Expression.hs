@@ -723,14 +723,14 @@ module Generate.WebAssembly.Expression
 
       getArity =
         commented "getArity" $
-        i32_load 4 $
+        i32_load 12 $
           get_local closureLocalId
 
       getInitArgPointer =
         commented "getInitArgPointer" $
         set_local argPointerLocalId $
           i32_add (get_local closureLocalId) $
-          i32_add (i32_const 8) $
+          i32_add (i32_const 16) $
           i32_mul (i32_const 4) $
           getArity
 
@@ -781,13 +781,18 @@ module Generate.WebAssembly.Expression
           )
 
       funcTableIndex =
-        i32_load 0 (get_local closureLocalId)
+        i32_load 8 (get_local closureLocalId)
 
       evaluateBody =
         commented "evaluateBody" $
         call_indirect elmFuncTypeId
           funcTableIndex
           [get_local closureLocalId]
+
+      updateArity =
+        i32_store 12
+          (get_local closureLocalId)
+          (i32_const $ fromIntegral $ length args)
 
       resultInstr =
         commented "resultInstr" $
@@ -800,7 +805,8 @@ module Generate.WebAssembly.Expression
           }          
     in
       argsInsertedState
-        { revInstr = resultInstr : (revInstr argsInsertedState)
+        { revInstr =
+            resultInstr : updateArity : (revInstr argsInsertedState)
         }
 
 
