@@ -23,12 +23,12 @@
       margin: auto;
     }
 
-    .changed {
+    .error {
       color: red;
       font-weight: bold;
     }
 
-    .i32aligned {
+    .header {
       border-top: 2px solid;
     }
 
@@ -64,7 +64,11 @@
         const memory = wasm.instance.exports.memory;
         const buf = new Uint32Array(memory.buffer);
 
-        const beforeTmp = buf.slice();
+        // Initialised memory
+        let memInitSize = 1024;
+        while (buf[memInitSize] === 0) memInitSize--;
+        memInitSize++;
+        const before = buf.slice(0, memInitSize);
 
 
         /*
@@ -92,9 +96,8 @@
 
         let maxIndex = 1024;
         while (buf[maxIndex] === 0) maxIndex--;
-        maxIndex += 4;
+        maxIndex += 2;
 
-        const before = beforeTmp.slice(0, maxIndex);
         const after = buf.slice(0, maxIndex);
 
 
@@ -102,6 +105,7 @@
             DISPLAY
         */
         let html = '';
+        let nextHeader = 0;
         for (let i = 0; i < maxIndex; i++) {
           const addr = i * 4;
 
@@ -110,12 +114,15 @@
 
           // Styling
           let rowClasses = [];
-          if (before[i] !== after[i]) {
-            rowClasses.push('changed');
+          if (i < memInitSize && (before[i] !== after[i])) {
+            rowClasses.push('error');
           }
-          // if (addr % 4 === 0) {
-          //   rowClasses.push('i32aligned')
-          // }
+          if (addr >= nextHeader) {
+            rowClasses.push('header');
+            if (after[i] % 4) rowClasses.push('error');
+            nextHeader += 4 + after[i];
+          }
+
           let classStr = rowClasses.length
             ? `class="${rowClasses.join(' ')}"`
             : '';
@@ -123,7 +130,6 @@
 
           html += `<tr ${classStr}>
                     <td class="addr">${addr}</td>
-                    <td>${before[i]}</td>
                     <td>${after[i]}</td>
                     <td>${globalNames.join(', ')}</td>
                   </tr>`;
