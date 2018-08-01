@@ -32,60 +32,73 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
       fid =
         FunctionName nameBuilder
 
-      closureValue = LocalIdx 0
-      returnValue = LocalName "$return"
+      closureAddr = LocalIdx 0
+      returnAddr = LocalName "$return"
+      a = LocalName "$a"
+      b = LocalName "$b"
 
-      elemIdx = 0
-      size = elemIdx + 4
-      first_pointer = size + 4
-      arity = first_pointer + 4
-      ctor0 = arity + 4
-      argPtr0 = ctor0 + 4
-      argPtr1 = argPtr0 + 4
-      compCtor = 4
+      -- Closure memory layout
+      sizeOffset = 0
+      firstPtrOffset = sizeOffset + 4
+      elemIdxOffset = firstPtrOffset + 4
+      arityOffset = elemIdxOffset + 4
+      closureArg0Offset = arityOffset + 4
+      closureArg1Offset = closureArg0Offset + 4
 
+      -- Number memory layout
+      ctorOffset = firstPtrOffset + 4
+      valueOffset = ctorOffset + 4
       floatCtor = 5
+
+      getLocals :: [Instr]
+      getLocals =
+        [ comment "getLocals"
+        , set_local a $
+            i32_load closureArg0Offset $
+              get_local closureAddr
+        , set_local returnAddr $
+            (call
+              (_functionId GC.shallowCopy)
+              [ tee_local b $
+                  i32_load closureArg1Offset $
+                    get_local closureAddr
+              ]
+            )
+        ]
 
       isFloat :: Instr
       isFloat =
-        (i32_eq
+        commented "isFloat" $
+        i32_eq
           (i32_const floatCtor)
-          (i32_load ctor0 $
-            get_local closureValue))
+          (i32_load ctorOffset $
+            get_local a)
 
       addFloat :: Instr
       addFloat =
-        f64_store compCtor
-          (tee_local returnValue
-            (call
-              (_functionId GC.shallowCopy)
-              [i32_load argPtr0 $ get_local closureValue]))
+        commented "addFloat" $
+        f64_store valueOffset
+          (get_local returnAddr)
           (f64_add
-            (f64_load compCtor
-              (i32_load argPtr0 $
-                get_local closureValue))
-            (f64_load compCtor
-              (i32_load argPtr1 $
-                get_local closureValue)))
-
+            (f64_load valueOffset $
+              get_local a)
+            (f64_load valueOffset $
+              get_local b))
       
       addInt :: Instr
       addInt =
-        i32_store compCtor
-          (tee_local returnValue
-            (call
-              (_functionId GC.shallowCopy)
-              [i32_load argPtr0 $ get_local closureValue]))
+        commented "addInt" $
+        i32_store valueOffset
+          (get_local returnAddr)
           (i32_add
-            (i32_load compCtor
-              (i32_load argPtr0 $
-                get_local closureValue))
-            (i32_load compCtor
-              (i32_load argPtr1 $
-                get_local closureValue)))
+            (i32_load valueOffset $
+              get_local a)
+            (i32_load valueOffset $
+              get_local b))
 
       body :: [Instr]
       body =
+        getLocals ++
         [ IfElse
             { _label = Nothing
             , _retType = Nothing
@@ -93,14 +106,18 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
             , _then = [addFloat]
             , _else = [addInt]
             }
-        , get_local returnValue
+        , get_local returnAddr
         ]
 
       func =
         Function
           { _functionId = fid
-          , _params = [(closureValue, I32)]
-          , _locals = [(returnValue, I32)]
+          , _params = [(closureAddr, I32)]
+          , _locals =
+              [ (returnAddr, I32)
+              , (a, I32)
+              , (b, I32)
+              ]
           , _resultType = Just I32
           , _body = body
           }
@@ -133,7 +150,7 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
     a table element  
     a global pointing to the closure
     a closure object in DataSegment
-      gcHeader, elemIdx, arity, arg1, arg2
+      gcHeader, elemIdxOffset, arity, arg1, arg2
 
   also GC stuff!!
     GC.shallowCopy
