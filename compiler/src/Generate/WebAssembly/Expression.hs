@@ -523,7 +523,7 @@ module Generate.WebAssembly.Expression
   createTempVar :: String -> Scope -> (LocalId, Scope)
   createTempVar name scope =
     let
-      noElmClashPrefix = "$"
+      noElmClashPrefix = "_"
       uniqueSuffix = show (Set.size $ localNames scope)
       tempName =
         N.fromString $ noElmClashPrefix ++ name ++ uniqueSuffix

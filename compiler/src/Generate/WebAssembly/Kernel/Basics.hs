@@ -32,10 +32,10 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
       fid =
         FunctionName nameBuilder
 
-      closureAddr = LocalIdx 0
-      returnAddr = LocalName "$return"
+      closure = LocalName "$closure"
       a = LocalName "$a"
       b = LocalName "$b"
+      result = LocalName "$result"
 
       -- Closure memory layout
       sizeOffset = 0
@@ -55,13 +55,13 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
         [ comment "getLocals"
         , set_local a $
             i32_load closureArg0Offset $
-              get_local closureAddr
-        , set_local returnAddr $
+              get_local closure
+        , set_local result $
             (call
               (_functionId GC.shallowCopy)
               [ tee_local b $
                   i32_load closureArg1Offset $
-                    get_local closureAddr
+                    get_local closure
               ]
             )
         ]
@@ -78,7 +78,7 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
       addFloat =
         commented "addFloat" $
         f64_store valueOffset
-          (get_local returnAddr)
+          (get_local result)
           (f64_add
             (f64_load valueOffset $
               get_local a)
@@ -89,7 +89,7 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
       addInt =
         commented "addInt" $
         i32_store valueOffset
-          (get_local returnAddr)
+          (get_local result)
           (i32_add
             (i32_load valueOffset $
               get_local a)
@@ -106,17 +106,17 @@ module Generate.WebAssembly.Kernel.Basics (exports) where
             , _then = [addFloat]
             , _else = [addInt]
             }
-        , get_local returnAddr
+        , get_local result
         ]
 
       func =
         Function
           { _functionId = fid
-          , _params = [(closureAddr, I32)]
+          , _params = [(closure, I32)]
           , _locals =
-              [ (returnAddr, I32)
-              , (a, I32)
+              [ (a, I32)
               , (b, I32)
+              , (result, I32)
               ]
           , _resultType = Just I32
           , _body = body

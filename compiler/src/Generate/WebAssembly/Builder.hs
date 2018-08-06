@@ -155,13 +155,18 @@ buildFunction functionId params locals resultType body =
         : buildFunctionId functionId
         : (map (buildSignature "param") params)
         ++ (map (buildSignatureType "result") $ maybeToList resultType)
-        ++ (map (buildSignature "local") locals)
 
+    localBuilders =
+      map (buildSignature "local") locals
+  
     instrBuilders =
       map (instrToBuilder indent2) body
   in
     parens $
-      concatWith newLineIndent2 (signature : instrBuilders)
+      concatWith newLineIndent2 $
+        signature
+        : localBuilders
+        ++ instrBuilders
 
 
 buildSignature :: Builder -> (LocalId, ValType) -> Builder
