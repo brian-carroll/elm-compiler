@@ -1,61 +1,114 @@
-## Debug
+## How do headers & constructors work?
 
-- 1+2+3=1, apparently
-- Time travel bugger
-  - Trying to apply `add` function to something that doesn't exist yet
-  - A full closure at 144 contains a reference to an arg at 192
-  - The value at address 192 makes no sense, what is it?
+- Header is only ever written by a constructor so they're linked
+- Inside a constructor function you can call the header constructor
+- Header constructor takes params:
+  - body size
+  - Layout = Closure | Container | Primitive
+  - constructor ID
+  - extra param if it's a closure
 
-## Test page
+## Move 'apply' to Closure module
 
-- no need for 2 columns, just highlight what was initialised
-  - no need for red diff
-- Find a way to mark the beginning and end of each _value_
-  - maybe alternate striped colours
-  - maybe border thickness/colour
+## Generalise Basics.add to Basics.numOp2
 
-## Working prototype
+## Preventing time travel
 
-- Add GC header to all values!
-- import GC into Basics, Test, etc.
-- always add GC to output Wasm
-  - Insert into input Graph?
-  - Doesn't matter if Kernel stuff doesn't declare dependencies on GC, since order doesn't matter
+- A full closure at 144 contains a reference to an arg at 192
 
-* GC header
+  - We're creating the closure and then populating it
+  - `generateCall` needs to be reordered to generate args first, then the call.
 
-  - Total size for Int is 16 bytes! Eek!
-  - size + first_pointer + ctor + value
-  - VLQ can cut header down to 3 bytes, but round up to 4
-    - => 8 bytes total for Int with VLQ, which is as good as it gets when boxing
-  - first_pointer is always a really small number and is known in advance
-    - Closure: 8 (ctor + arity)
-    - Record: 4 (ctor)
-    - Union: 4 (ctor)
-    - Tuple: 4 (ctor)
-    - Cons: 4 (ctor)
-    - Nil: 0
-    - Int: 0
-    - Float: 0
-    - Char: 0
-    - String: 0
-    - Bool: 0
-    - Unit: 0
-    - => 2 bits are enough!
-  - `size` is always a multiple of 4, could downshift it
-    - Containers need multiples of 4 for pointer alignment
-    - Int, float, bool, unit, nil => all just ctor
-    - Char: 1-4
-    - String: any number of bytes
-    - For generally making memory line up nicely, each individual value
-      should be a multiple of 4. Add padding to Char and String bodies.
-  - GC header can use bottom 2 bits for (first_pointer_jump/4) ! :)
-    - => Most common header size will be 1 byte, not 2
-    - Everything has a ctor, and it's normally small too
-    - => can happily squash GC header + ctor into 4 bytes, no hassle
-    - When does `size` burst out of its 1-byte range?
-      - 7 bits => size 128 => 32 integers. That's big for a Union or Record.
-      - 6 bits => size 64 => 16 integers. Still fairly big.
+- But what went wrong here? How much danger of this happening a lot?
+
+  - If I'd had a native `A2` then I'd have been forced to write the call as nested expressions, which would have been fine.
+  - Took imperative approach to building the closure
+  - Creating memory objects is a side-effect in this context! (Just like creating files would be in a normal program!)
+
+- Lesson: constructor functions in native code are probably a really good practice! They sometimes feel/look pointless but they encapsulate the side-effect of creating things and force nested expressions.
+
+## GC header
+
+- Total size for Int is 16 bytes! Eek!
+- size + first_pointer + ctor + value
+
+- VLQ can cut header down to 3 bytes, but round up to 4
+
+  - => 8 bytes total for Int with VLQ, which is as good as it gets when boxing
+
+- first_pointer is always a really small number and is known in advance
+  - 8: Closure `funcIdx, arity`
+  - 4: Record Union Tuple Cons `ctor`
+  - 0: Nil Int Float Char String Bool Unit
+- => 2 bits are enough!
+
+- `size` is always a multiple of 4, could downshift it
+  - Containers need multiples of 4 for pointer alignment
+  - Int, float, bool, unit, nil => all just ctor
+  - Char: 1-4
+  - String: any number of bytes
+  - For generally making memory line up nicely, each individual value
+    should be a multiple of 4. Add padding to Char and String bodies.
+- GC header can use bottom 2 bits for (first_pointer_jump/4) ! :)
+
+  - => Most common header size will be 1 byte, not 2
+  - Everything has a ctor, and it's normally small too
+  - => can happily squash GC header + ctor into 4 bytes, no hassle
+  - When does `size` burst out of its 1-byte range?
+    - 7 bits => size 128 => 32 integers. That's big for a Union or Record.
+    - 6 bits => size 64 => 16 integers. Still fairly big.
+
+- Closure header
+
+  - Contents
+    - Body size (i.e. evaluator arity)
+    - Layout = Closure | Container | Primitive
+    - Arity
+    - ElemIdx
+  - For small programs (<255 closures), this is 3 bytes!
+  - For big ones (<16384 closures), it's 4 bytes. Basically everything.
+  - **Can actually store pointers in ascending order**
+    - We now have the total arity in the header
+    - To calculate where to put the new args, just subtract current arity from total arity
+    - This can save space - only store the args we actually have now,
+      without any null pointers
+    - BUT then GC size is no longer correct
+    - **not actually practical**
+
+- Container header
+
+  - layout (2 bits)
+  - dead/alive (1 bit)
+  - ctor (1-3 bytes)
+  - size (1-3 bytes)
+
+- Primitive header
+
+  - layout (2 bits)
+  - dead/alive (1 bit)
+  - ctor (1 byte)
+  - size (1-3 bytes)
+    - string, 3 byte size => 4 + 7 + 7 = 18 bits = 256kB
+
+- Dead/Alive GC bit
+  - We need one!! I forgot.
+  - This is an independent bit
+  - Means that 'body size' shrinks by 1 bit
+  - Small values
+    - dead/alive = 1 bit
+    - layout = 2 bits
+    - LEB encoding = 1 bit
+    - size = 4 bits
+    - this is still fine for most things
+  - Extra processing
+    - Put the dead/alive in the 6th bit of the LSB of the header
+    - Then it just needs to be masked, not right-shifted
+    - Should be detectable by just reading once. (i.e. first 32 bits) and applying a mask. The more predictable, the better.
+    - Penalty: When decoding size, first byte is different
+      - But it was already different! Lower bits.
+    - Maybe the processing is easier with a bitshift. Treat the whole header as LEB, then apply some extra masks and downshift. Maybe that's better than having a missing bit in the middle of it.
+    - Separates the variable-length encoding from the extra data hidden in the LSB
+    - Reduces range of `size` by 1 bit down to 31 bits (2GB string)
 
 ## Refactoring
 
@@ -105,9 +158,8 @@
 - Wasm functions
 
   - apply
-  - call
-  - closure constructor
-  - destructure/execute
+  - exec
+  - constructor
 
 - shared code, more like A2, F2 from Elm JS
 
