@@ -310,7 +310,7 @@ addMatch :: String -> Bool -> N.Name -> v -> [Repl.Completion] -> [Repl.Completi
 addMatch string isFinished name _ completions =
   let suggestion = N.toString name in
   if List.isPrefixOf string suggestion then
-    Repl.Completion (drop (length string) suggestion) suggestion isFinished : completions
+    Repl.Completion suggestion suggestion isFinished : completions
   else
     completions
 
@@ -328,7 +328,7 @@ printWelcomeMessage =
   D.toAnsi IO.stdout $
     D.vcat
       [ D.black "----" <+> D.dullcyan title <+> D.black (D.fromString dashes)
-      , D.black $ D.fromString $ "Read " <> D.makeLink "repl" <> " to learn more: exit, help, imports, etc."
+      , D.black $ D.fromString $ "Say :help for help and :exit to exit! More at " <> D.makeLink "repl"
       , D.black "--------------------------------------------------------------------------------"
       , D.empty
       ]
