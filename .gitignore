@@ -4,5 +4,8 @@ cabal-dev
 .cabal-sandbox/
 cabal.sandbox.config
 .stack-work/
+/reactor/*.c
+/reactor/*.js
+/reactor/*.html
 .DS_Store
 *~
