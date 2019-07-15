@@ -59,6 +59,7 @@ data Expr
   | Assign LValue Expr
   | Call Expr [Expr]
   | Function (Maybe Name) [Name] [Stmt]
+  | CommentedExpr Builder Expr
 
 
 data LValue
@@ -336,141 +337,123 @@ parensFor grouping builder =
       builder
 
 
-exprNameComment :: Expr -> Builder
-exprNameComment expr =
-  case expr of
-    String _ -> "/*String*/"
-    Float _ -> "/*Float*/"
-    Int _ -> "/*Int*/"
-    Bool _ -> "/*Bool*/"
-    Null -> "/*Null*/"
-    Json _ -> "/*Json*/"
-    Array _ -> "/*Array*/"
-    Object _ -> "/*Object*/"
-    Ref _ -> "/*Ref*/"
-    Access _ _ -> "/*Access*/"
-    Index  _ _  -> "/*Index*/"
-    Prefix _ _ -> "/*Prefix*/"
-    Infix _ _ _ -> "/*Infix*/"
-    If _ _ _ -> "/*If*/"
-    Assign _ _ -> "/*Assign*/"
-    Call _ _  -> "/*Call*/"
-    Function _ _ _ -> "/*Function*/"
-
-
 fromExpr :: Level -> Grouping -> Expr -> (Lines, Builder)
 fromExpr level@(Level indent nextLevel@(Level deeperIndent _)) grouping expression =
-  (lines', (exprNameComment expression) <> rawExprBuilder)
-  where
-    (lines', rawExprBuilder) =
-      case expression of
-        String string ->
-          ( One, "'" <> string <> "'" )
+  case expression of
+    CommentedExpr comment expr ->
+      let
+        (lines, exprBuilder) = fromExpr level grouping expr
+      in
+      (,) lines $
+        "/* " <> comment <> " */" <> exprBuilder
 
-        Float float ->
-          ( One, float )
+    String string ->
+      ( One, "'" <> string <> "'" )
 
-        Int n ->
-          ( One, B.intDec n )
+    Float float ->
+      ( One, float )
 
-        Bool bool ->
-          ( One, if bool then "true" else "false" )
+    Int n ->
+      ( One, B.intDec n )
 
-        Null ->
-          ( One, "null" )
+    Bool bool ->
+      ( One, if bool then "true" else "false" )
 
-        Json json ->
-          ( One, Json.encodeUgly json )
+    Null ->
+      ( One, "null" )
 
-        Array exprs ->
-          (,) Many $
-            let
-              (anyMany, builders) = linesMap (fromExpr level Whatever) exprs
-            in
-            if anyMany then
-              "[\n"
-              <> deeperIndent
-              <> commaNewlineSep level builders
-              <> "\n" <> indent <> "]"
-            else
-              "[" <> commaSep builders <> "]"
+    Json json ->
+      ( One, Json.encodeUgly json )
 
-        Object fields ->
-          (,) Many $
-            let
-              (anyMany, builders) = linesMap (fromField nextLevel) fields
-            in
-            if anyMany then
-              "{\n"
-              <> deeperIndent
-              <> commaNewlineSep level builders
-              <> "\n" <> indent <> "}"
-            else
-              "{" <> commaSep builders <> "}"
+    Array exprs ->
+      (,) Many $
+        let
+          (anyMany, builders) = linesMap (fromExpr level Whatever) exprs
+        in
+        if anyMany then
+          "[\n"
+          <> deeperIndent
+          <> commaNewlineSep level builders
+          <> "\n" <> indent <> "]"
+        else
+          "[" <> commaSep builders <> "]"
 
-        Ref name ->
-          ( One, Name.toBuilder name )
+    Object fields ->
+      (,) Many $
+        let
+          (anyMany, builders) = linesMap (fromField nextLevel) fields
+        in
+        if anyMany then
+          "{\n"
+          <> deeperIndent
+          <> commaNewlineSep level builders
+          <> "\n" <> indent <> "}"
+        else
+          "{" <> commaSep builders <> "}"
 
-        Access expr field ->
-          makeDot level expr field
+    Ref name ->
+      ( One, Name.toBuilder name )
 
-        Index expr bracketedExpr ->
-          makeBracketed level expr bracketedExpr
+    Access expr field ->
+      makeDot level expr field
 
-        Prefix op expr ->
-          let
-            (lines, builder) = fromExpr level Atomic expr
-          in
-          ( lines
-          , parensFor grouping (fromPrefix op <> builder)
-          )
+    Index expr bracketedExpr ->
+      makeBracketed level expr bracketedExpr
 
-        Infix op leftExpr rightExpr ->
-          let
-            (leftLines , left ) = fromExpr level Atomic leftExpr
-            (rightLines, right) = fromExpr level Atomic rightExpr
-          in
-          ( merge leftLines rightLines
-          , parensFor grouping (left <> fromInfix op <> right)
-          )
+    Prefix op expr ->
+      let
+        (lines, builder) = fromExpr level Atomic expr
+      in
+      ( lines
+      , parensFor grouping (fromPrefix op <> builder)
+      )
 
-        If condExpr thenExpr elseExpr ->
-          let
-            condB = snd (fromExpr level Atomic condExpr)
-            thenB = snd (fromExpr level Atomic thenExpr)
-            elseB = snd (fromExpr level Atomic elseExpr)
-          in
-          ( Many
-          , parensFor grouping (condB <> " ? " <> thenB <> " : " <> elseB)
-          )
+    Infix op leftExpr rightExpr ->
+      let
+        (leftLines , left ) = fromExpr level Atomic leftExpr
+        (rightLines, right) = fromExpr level Atomic rightExpr
+      in
+      ( merge leftLines rightLines
+      , parensFor grouping (left <> fromInfix op <> right)
+      )
 
-        Assign lValue expr ->
-          let
-            (leftLines , left ) = fromLValue level lValue
-            (rightLines, right) = fromExpr level Whatever expr
-          in
-          ( merge leftLines rightLines
-          , parensFor grouping (left <> " = " <> right)
-          )
+    If condExpr thenExpr elseExpr ->
+      let
+        condB = snd (fromExpr level Atomic condExpr)
+        thenB = snd (fromExpr level Atomic thenExpr)
+        elseB = snd (fromExpr level Atomic elseExpr)
+      in
+      ( Many
+      , parensFor grouping (condB <> " ? " <> thenB <> " : " <> elseB)
+      )
 
-        Call function args ->
-          (,) Many $
-            let
-              (_      , funcB) = fromExpr level Atomic function
-              (anyMany, argsB) = linesMap (fromExpr nextLevel Whatever) args
-            in
-            if anyMany then
-              funcB <> "(\n" <> deeperIndent <> commaNewlineSep level argsB <> ")"
-            else
-              funcB <> "(" <> commaSep argsB <> ")"
+    Assign lValue expr ->
+      let
+        (leftLines , left ) = fromLValue level lValue
+        (rightLines, right) = fromExpr level Whatever expr
+      in
+      ( merge leftLines rightLines
+      , parensFor grouping (left <> " = " <> right)
+      )
 
-        Function maybeName args stmts ->
-          (,) Many $
-            "function " <> maybe mempty Name.toBuilder maybeName <> "(" <> commaSep (map Name.toBuilder args) <> ") {\n"
-            <>
-                fromStmtBlock nextLevel stmts
-            <>
-            indent <> "}"
+    Call function args ->
+      (,) Many $
+        let
+          (_      , funcB) = fromExpr level Atomic function
+          (anyMany, argsB) = linesMap (fromExpr nextLevel Whatever) args
+        in
+        if anyMany then
+          funcB <> "(\n" <> deeperIndent <> commaNewlineSep level argsB <> ")"
+        else
+          funcB <> "(" <> commaSep argsB <> ")"
+
+    Function maybeName args stmts ->
+      (,) Many $
+        "function " <> maybe mempty Name.toBuilder maybeName <> "(" <> commaSep (map Name.toBuilder args) <> ") {\n"
+        <>
+            fromStmtBlock nextLevel stmts
+        <>
+        indent <> "}"
 
 
 
