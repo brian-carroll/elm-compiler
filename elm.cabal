@@ -235,4 +235,7 @@ Executable elm
         unordered-containers,
         utf8-string,
         vector,
-        zip-archive
+        zip-archive,
+        language-c,
+        happy,
+        alex
