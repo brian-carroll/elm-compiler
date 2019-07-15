@@ -193,7 +193,7 @@ fromStmt :: Level -> Stmt -> Builder
 fromStmt level@(Level indent nextLevel) statement =
   case statement of
     CommentStmt comment ->
-      "// " <> comment <> "\n"
+      indent <> "// " <> comment <> "\n"
 
     Block stmts ->
       fromStmtBlock level stmts
