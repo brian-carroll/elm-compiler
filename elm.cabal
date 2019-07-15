@@ -237,5 +237,4 @@ Executable elm
         vector,
         zip-archive,
         language-c,
-        happy,
-        alex
+        pretty
