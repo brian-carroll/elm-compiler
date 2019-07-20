@@ -3,12 +3,14 @@
 module Elm.Compiler.Type.Extract
   ( fromAnnotation
   , fromType
+  , fromName
   , Types(..)
   , mergeMany
   , merge
   , fromInterface
   , fromDependencyInterface
   , fromMsg
+  , toBuilder
   )
   where
 
@@ -18,6 +20,7 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Name as Name
 import qualified Data.Set as Set
+import qualified Data.ByteString.Builder as B
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
@@ -25,6 +28,7 @@ import qualified AST.Utils.Type as Type
 import qualified Elm.Compiler.Type as T
 import qualified Elm.Interface as I
 import qualified Elm.ModuleName as ModuleName
+import qualified Generate.JavaScript.Name as JsName
 
 
 
@@ -96,6 +100,7 @@ data Types_ =
   Types_
     { _union_info :: Map.Map Name.Name Can.Union
     , _alias_info :: Map.Map Name.Name Can.Alias
+    , _value_info :: Map.Map Name.Name Can.Annotation
     }
 
 
@@ -112,24 +117,66 @@ merge (Types types1) (Types types2) =
 
 
 fromInterface :: ModuleName.Raw -> I.Interface -> Types
-fromInterface name (I.Interface pkg _ unions aliases _) =
+fromInterface name (I.Interface pkg values unions aliases _) =
   Types $ Map.singleton (ModuleName.Canonical pkg name) $
-    Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases)
+    Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases) values
 
 
 fromDependencyInterface :: ModuleName.Canonical -> I.DependencyInterface -> Types
 fromDependencyInterface home di =
   Types $ Map.singleton home $
     case di of
-      I.Public (I.Interface _ _ unions aliases _) ->
-        Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases)
+      I.Public (I.Interface _ values unions aliases _) ->
+        Types_ (Map.map I.extractUnion unions) (Map.map I.extractAlias aliases) values
 
       I.Private _ unions aliases ->
-        Types_ unions aliases
+        Types_ unions aliases Map.empty
 
 
 
 -- EXTRACT MODEL, MSG, AND ANY TRANSITIVE DEPENDENCIES
+
+toBuilder :: Types -> B.Builder
+toBuilder (types@(Types typemap)) =
+  Map.foldrWithKey
+  (\home (Types_ _ _ values) outerAcc ->
+    Map.foldrWithKey
+      (\name _ innerAcc ->
+        let
+          typeBuilder =
+            case fromName types home name of
+              Nothing ->
+                "?"
+              Just (Can.Forall _ t) ->
+                showType t
+          nameBuilder = JsName.toBuilder $ JsName.fromGlobal home name
+        in
+        innerAcc <> nameBuilder <> " : " <> typeBuilder <> "\n"
+      )
+      outerAcc
+      values
+  )
+  mempty
+  typemap
+
+
+showType :: Can.Type -> B.Builder
+showType tipe =
+  case tipe of
+      Can.TLambda _ _ -> "TLambda"
+      Can.TVar _ -> "TVar"
+      Can.TType _ _ _ -> "TType"
+      Can.TRecord _ _ -> "TRecord"
+      Can.TUnit -> "TUnit"
+      Can.TTuple _ _ _ -> "TTuple"
+      Can.TAlias _ _ _ _ -> "TAlias"
+
+
+fromName :: Types -> ModuleName.Canonical -> Name.Name -> Maybe Can.Annotation
+fromName (Types types) moduleName name =
+  do
+    (Types_ _ _ valueAnnotations) <- Map.lookup moduleName types
+    Map.lookup name valueAnnotations
 
 
 fromMsg :: Types -> Can.Type -> T.DebugMetadata

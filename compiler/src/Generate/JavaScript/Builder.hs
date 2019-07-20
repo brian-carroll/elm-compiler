@@ -345,7 +345,7 @@ fromExpr level@(Level indent nextLevel@(Level deeperIndent _)) grouping expressi
         (lines, exprBuilder) = fromExpr level grouping expr
       in
       (,) lines $
-        "/* " <> comment <> " */" <> exprBuilder
+        "/*" <> comment <> "*/" <> exprBuilder
 
     String string ->
       ( One, "'" <> string <> "'" )

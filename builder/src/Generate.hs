@@ -20,6 +20,7 @@ import qualified Data.Name as N
 import qualified Data.NonEmptyList as NE
 
 import qualified AST.Optimized as Opt
+import qualified AST.Canonical as Can
 import qualified Build
 import qualified Elm.Compiler.Type.Extract as Extract
 import qualified Elm.Details as Details
@@ -79,13 +80,15 @@ prod root details (Build.Artifacts pkg _ roots modules) =
       return $ JS.generate mode graph mains
 
 
-c  :: FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
-c root details (Build.Artifacts pkg _ roots modules) =
-  do  objects <- finalizeObjects =<< loadObjects root details modules
+c :: FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
+c root details (Build.Artifacts pkg ifaces roots modules) =
+  do  loading <- loadObjects root details modules
+      types   <- loadTypes root ifaces modules
+      objects <- finalizeObjects loading
       checkForDebugUses objects
       let graph = objectsToGlobalGraph objects
       let mains = gatherMains pkg objects roots
-      return $ C.generate graph mains
+      return $ C.generate graph mains types
 
 
 repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task B.Builder
@@ -220,3 +223,45 @@ loadTypesHelp root modul =
 
             Build.Corrupted ->
               newMVar Nothing
+
+
+-- -- LOAD TYPE ANNOTATIONS
+
+
+-- loadTypeAnnotations :: FilePath -> Map.Map ModuleName.Canonical I.DependencyInterface -> [Build.Module] -> Task Extract.Types
+-- loadTypeAnnotations root ifaces modules =
+--   Task.eio id $
+--   do  mvars <- traverse (loadTypeAnnHelp root) modules
+--       let !foreigns = Extract.mergeMany (Map.elems (Map.mapWithKey Extract.fromDependencyInterface ifaces))
+--       results <- traverse readMVar mvars
+--       case sequence results of
+--         Just ts -> return (Right (Extract.merge foreigns (Extract.mergeMany ts)))
+--         Nothing -> return (Left Exit.GenerateCannotLoadArtifacts)
+
+
+-- loadTypeAnnHelp :: FilePath -> Build.Module -> IO (MVar (Maybe (Map ModuleName.Canonical Can.Annotation)))
+-- loadTypeAnnHelp root modul =
+--   case modul of
+--     Build.Fresh name iface _ ->
+--       newMVar (Just $ extractAnnsFromIface name iface)
+
+--     Build.Cached name _ ciMVar ->
+--       do  cachedInterface <- readMVar ciMVar
+--           case cachedInterface of
+--             Build.Unneeded ->
+--               do  mvar <- newEmptyMVar
+--                   _ <- forkIO $
+--                     do  maybeIface <- File.readBinary (Stuff.elmi root name)
+--                         putMVar mvar (extractAnnsFromIface name <$> maybeIface)
+--                   return mvar
+
+--             Build.Loaded iface ->
+--               newMVar (Just (extractAnnsFromIface name iface))
+
+--             Build.Corrupted ->
+--               newMVar Nothing
+
+
+-- extractAnnsFromIface :: ModuleName.Canonical -> I.Interface -> Map ModuleName.Canonical Can.Annotation
+-- extractAnnsFromIface name (I.Interface _ values _ _ _) =
+--   Map.singleton name values

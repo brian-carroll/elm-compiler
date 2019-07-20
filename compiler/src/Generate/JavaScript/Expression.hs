@@ -19,6 +19,7 @@ import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
 import qualified Data.Utf8 as Utf8
+import qualified Data.ByteString.Builder as B
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
@@ -781,20 +782,25 @@ generatePath :: Mode.Mode -> Opt.Path -> JS.Expr
 generatePath mode path =
   case path of
     Opt.Index index subPath ->
+      JS.CommentedExpr ("path index " <> (B.stringUtf8 $ show $ Index.toMachine index)) $
       JS.Access (generatePath mode subPath) (JsName.fromIndex index)
 
     Opt.Root name ->
+      JS.CommentedExpr ("path root " <> (JsName.toBuilder $ JsName.fromLocal name)) $
       JS.Ref (JsName.fromLocal name)
 
     Opt.Field field subPath ->
+      JS.CommentedExpr "path field " $
       JS.Access (generatePath mode subPath) (generateField mode field)
 
     Opt.Unbox subPath ->
       case mode of
         Mode.Dev _ ->
+          JS.CommentedExpr "path Unbox " $
           JS.Access (generatePath mode subPath) (JsName.fromIndex Index.first)
 
         Mode.Prod _ ->
+          JS.CommentedExpr "path Unbox " $
           generatePath mode subPath
 
 
@@ -887,12 +893,15 @@ generateDecider :: Mode.Mode -> Name.Name -> Name.Name -> Opt.Decider Opt.Choice
 generateDecider mode label root decisionTree =
   case decisionTree of
     Opt.Leaf (Opt.Inline branch) ->
+      JS.CommentStmt "decider leaf inline" :
       codeToStmtList (generate mode branch)
 
     Opt.Leaf (Opt.Jump index) ->
+      JS.CommentStmt "decider leaf jump" :
       [ JS.Break (Just (JsName.makeLabel label index)) ]
 
     Opt.Chain testChain success failure ->
+      JS.CommentStmt "decider chain" :
       [ JS.IfStmt
           (List.foldl1' (JS.Infix JS.OpAnd) (map (generateIfTest mode root) testChain))
           (JS.Block $ generateDecider mode label root success)
@@ -900,6 +909,7 @@ generateDecider mode label root decisionTree =
       ]
 
     Opt.FanOut path edges fallback ->
+      JS.CommentStmt "decider fanout" :
       [ JS.Switch
           (generateCaseTest mode root path (fst (head edges)))
           ( foldr
@@ -927,6 +937,7 @@ generateIfTest mode root (path, test) =
                 Can.Enum   -> value
                 Can.Unbox  -> value
       in
+      JS.CommentedExpr "IsCtor" $
       strictEq tag $
         case mode of
           Mode.Dev _ -> JS.String (Name.toBuilder name)
