@@ -97,11 +97,19 @@ identFromCtor field =
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
+    fieldList1 :: Set.Set [Name.Name]
+    fieldList1 =
+      Set.singleton $ Map.keys $ Map.take 5 fieldFreqMap
+
+    fieldList2 :: Set.Set [Name.Name]
+    fieldList2 =
+      Set.singleton $ Map.keys $ Map.take 5 $ Map.drop 3 fieldFreqMap
+  
     fieldLists :: Set.Set [Name.Name]
-    fieldLists = Set.singleton $ Map.keys fieldFreqMap
+    fieldLists = Set.union fieldList1 fieldList2
 
     ctors :: Set.Set Name.Name
-    ctors = Map.keysSet fieldFreqMap -- any old names will do for now
+    ctors = Set.map Name.fromChars $ Set.fromList ["Red", "Green", "Blue"]
 
     state :: State
     state =
@@ -123,11 +131,6 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
       C.CTranslUnit (fieldEnumDecl : ctorEnumDecl : []) C.undefNode
   in
     B.stringUtf8 $ PP.render $ C.pretty cFileContent
-
-
-predeclareFieldLists :: Set.Set [Name.Name] -> [C.CExternalDeclaration C.NodeInfo]
-predeclareFieldLists fieldLists =
-  []
 
 
 predeclareEnum :: [Char] -> Set.Set C.Ident -> C.CExternalDeclaration C.NodeInfo
@@ -160,6 +163,12 @@ predeclareEnum enumName memberIds =
     C.CDeclExt cDeclaration
 
 
+predeclareCtorEnum :: Set.Set Name.Name -> C.CExternalDeclaration C.NodeInfo
+predeclareCtorEnum ctors =
+  predeclareEnum "ElmCustomCtor" $
+    Set.map identFromCtor ctors
+
+
 predeclareFieldEnum :: Set.Set [Name.Name] -> C.CExternalDeclaration C.NodeInfo
 predeclareFieldEnum fieldLists =
   let    
@@ -176,7 +185,6 @@ predeclareFieldEnum fieldLists =
     predeclareEnum "ElmRecordField" fieldIds
 
 
-predeclareCtorEnum :: Set.Set Name.Name -> C.CExternalDeclaration C.NodeInfo
-predeclareCtorEnum ctors =
-  predeclareEnum "ElmCustomCtor" $
-    Set.map identFromCtor ctors
+predeclareFieldLists :: Set.Set [Name.Name] -> [C.CExternalDeclaration C.NodeInfo]
+predeclareFieldLists fieldLists =
+  []
