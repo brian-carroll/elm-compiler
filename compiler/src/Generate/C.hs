@@ -50,7 +50,7 @@ data State =
     , _revKernels :: [B.Builder]
     , _revBuildersJS :: [B.Builder]
     , _revBuildersC :: [B.Builder]
-    , _fields :: Set.Set Name.Name
+    , _fieldLists :: Set.Set [Name.Name]
     , _ctors :: Set.Set Name.Name
     }
 
@@ -62,7 +62,7 @@ emptyState =
     , _revKernels = []
     , _revBuildersJS = []
     , _revBuildersC = []
-    , _fields = Set.empty
+    , _fieldLists = Set.empty
     , _ctors = Set.empty
     }
 
@@ -97,67 +97,86 @@ identFromCtor field =
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
-    fields :: Set.Set Name.Name
-    fields = Map.keysSet fieldFreqMap
+    fieldLists :: Set.Set [Name.Name]
+    fieldLists = Set.singleton $ Map.keys fieldFreqMap
+
+    ctors :: Set.Set Name.Name
+    ctors = Map.keysSet fieldFreqMap -- any old names will do for now
 
     state :: State
-    state = emptyState { _fields = fields, _ctors = fields }
+    state =
+      emptyState
+        { _fieldLists = fieldLists
+        , _ctors = ctors
+        }
+    
+    fieldEnumDecl :: C.CExternalDeclaration C.NodeInfo
+    fieldEnumDecl =
+      predeclareFieldEnum fieldLists
+
+    ctorEnumDecl :: C.CExternalDeclaration C.NodeInfo
+    ctorEnumDecl =
+      predeclareCtorEnum ctors
+
+    cFileContent :: C.CTranslUnit
+    cFileContent =
+      C.CTranslUnit (fieldEnumDecl : ctorEnumDecl : []) C.undefNode
   in
-    generateFieldEnum state <> "\n\n" <> generateCtorEnum state <> "\n"
+    B.stringUtf8 $ PP.render $ C.pretty cFileContent
 
 
-generateFieldEnum :: State -> B.Builder
-generateFieldEnum state =
+predeclareFieldLists :: Set.Set [Name.Name] -> [C.CExternalDeclaration C.NodeInfo]
+predeclareFieldLists fieldLists =
+  []
+
+
+predeclareEnum :: [Char] -> Set.Set C.Ident -> C.CExternalDeclaration C.NodeInfo
+predeclareEnum enumName memberIds =
   let
-    fields :: Set.Set Name.Name
-    fields = _fields state
-
-    identsAndValues :: [(C.Ident, Maybe (C.CExpression C.NodeInfo))]
-    identsAndValues =
+    enumMembers :: [(C.Ident, Maybe (C.CExpression C.NodeInfo))]
+    enumMembers =
       Set.foldr
-        (\f idsAndVals -> (identFromField f, Nothing) : idsAndVals)
+        (\memberId idsAndVals -> (memberId, Nothing) : idsAndVals)
         []
-        fields
+        memberIds
 
     fieldEnum :: C.CEnumeration C.NodeInfo
     fieldEnum =
       C.CEnum
-        (Just $ identFromChars "ElmRecordField")
-        (Just $ identsAndValues)
+        (Just $ identFromChars enumName)
+        (Just $ enumMembers)
         []
         C.undefNode
 
-    prettyEnum :: String
-    prettyEnum =
-      PP.render $ C.pretty fieldEnum
+    typeSpecifier :: C.CTypeSpecifier C.NodeInfo
+    typeSpecifier = C.CEnumType fieldEnum C.undefNode
+
+    cDeclarationSpecifier :: C.CDeclarationSpecifier C.NodeInfo
+    cDeclarationSpecifier = C.CTypeSpec typeSpecifier
+
+    cDeclaration :: C.CDeclaration C.NodeInfo
+    cDeclaration = C.CDecl [cDeclarationSpecifier] [] C.undefNode
   in
-    B.stringUtf8 prettyEnum
+    C.CDeclExt cDeclaration
 
 
-generateCtorEnum :: State -> B.Builder
-generateCtorEnum state =
-  let
-    ctors :: Set.Set Name.Name
-    ctors = _ctors state
+predeclareFieldEnum :: Set.Set [Name.Name] -> C.CExternalDeclaration C.NodeInfo
+predeclareFieldEnum fieldLists =
+  let    
+    fieldNames :: Set.Set Name.Name
+    fieldNames =
+      Set.foldl
+        (\acc fieldList -> Set.union acc $ Set.fromList fieldList)
+        Set.empty
+        fieldLists
 
-    identsAndValues :: [(C.Ident, Maybe (C.CExpression C.NodeInfo))]
-    identsAndValues =
-      Set.foldr
-        (\ctor idsAndVals -> (identFromCtor ctor, Nothing) : idsAndVals)
-        []
-        ctors
-
-    ctorEnum :: C.CEnumeration C.NodeInfo
-    ctorEnum =
-      C.CEnum
-        (Just $ identFromChars "ElmCustomCtor")
-        (Just $ identsAndValues)
-        []
-        C.undefNode
-
-    prettyEnum :: String
-    prettyEnum =
-      PP.render $ C.pretty ctorEnum
+    fieldIds :: Set.Set C.Ident
+    fieldIds = Set.map identFromField fieldNames
   in
-    B.stringUtf8 prettyEnum
-    
+    predeclareEnum "ElmRecordField" fieldIds
+
+
+predeclareCtorEnum :: Set.Set Name.Name -> C.CExternalDeclaration C.NodeInfo
+predeclareCtorEnum ctors =
+  predeclareEnum "ElmCustomCtor" $
+    Set.map identFromCtor ctors
