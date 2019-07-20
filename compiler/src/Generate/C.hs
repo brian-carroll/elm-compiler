@@ -84,9 +84,14 @@ identWithPrefix prefix name =
   identFromChars (prefix ++ Name.toChars name)
 
 
-identFromFieldName :: Name.Name -> C.Ident
-identFromFieldName field =
+identFromField :: Name.Name -> C.Ident
+identFromField field =
   identWithPrefix "Field_" field
+
+
+identFromCtor :: Name.Name -> C.Ident
+identFromCtor field =
+  identWithPrefix "Ctor" field
 
 
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
@@ -95,10 +100,10 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
     fields :: Set.Set Name.Name
     fields = Map.keysSet fieldFreqMap
 
-    stateWithFields :: State
-    stateWithFields = emptyState { _fields = fields }
+    state :: State
+    state = emptyState { _fields = fields, _ctors = fields }
   in
-    generateFieldEnum stateWithFields
+    generateFieldEnum state <> "\n\n" <> generateCtorEnum state <> "\n"
 
 
 generateFieldEnum :: State -> B.Builder
@@ -110,7 +115,7 @@ generateFieldEnum state =
     identsAndValues :: [(C.Ident, Maybe (C.CExpression C.NodeInfo))]
     identsAndValues =
       Set.foldr
-        (\f idsAndVals -> (identFromFieldName f, Nothing) : idsAndVals)
+        (\f idsAndVals -> (identFromField f, Nothing) : idsAndVals)
         []
         fields
 
@@ -127,3 +132,32 @@ generateFieldEnum state =
       PP.render $ C.pretty fieldEnum
   in
     B.stringUtf8 prettyEnum
+
+
+generateCtorEnum :: State -> B.Builder
+generateCtorEnum state =
+  let
+    ctors :: Set.Set Name.Name
+    ctors = _ctors state
+
+    identsAndValues :: [(C.Ident, Maybe (C.CExpression C.NodeInfo))]
+    identsAndValues =
+      Set.foldr
+        (\ctor idsAndVals -> (identFromCtor ctor, Nothing) : idsAndVals)
+        []
+        ctors
+
+    ctorEnum :: C.CEnumeration C.NodeInfo
+    ctorEnum =
+      C.CEnum
+        (Just $ identFromChars "ElmCustomCtor")
+        (Just $ identsAndValues)
+        []
+        C.undefNode
+
+    prettyEnum :: String
+    prettyEnum =
+      PP.render $ C.pretty ctorEnum
+  in
+    B.stringUtf8 prettyEnum
+    
