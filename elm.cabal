@@ -145,6 +145,8 @@ Executable elm
         Compile
         Generate.Html
         Generate.C
+        Generate.C.Builder
+        Generate.C.Name
         Generate.JavaScript
         Generate.JavaScript.Builder
         Generate.JavaScript.Expression
