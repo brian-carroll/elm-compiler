@@ -123,13 +123,13 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
         , _ctors = ctors
         }
     
-    fieldEnumDecl :: CExternalDeclaration C.NodeInfo
+    fieldEnumDecl :: CExtDecl
     fieldEnumDecl = predeclareFieldEnum fieldGroupNames
 
-    fieldGroupDecls :: [CExternalDeclaration C.NodeInfo]
+    fieldGroupDecls :: [CExtDecl]
     fieldGroupDecls = predeclareFieldGroups fieldGroupNames
 
-    ctorEnumDecl :: CExternalDeclaration C.NodeInfo
+    ctorEnumDecl :: CExtDecl
     ctorEnumDecl = predeclareCtorEnum ctors
 
     cFileContent :: CTranslUnit
@@ -141,17 +141,17 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
     B.stringUtf8 $ PP.render $ C.pretty cFileContent
 
 
-predeclareEnum :: [Char] -> Set.Set C.Ident -> CExternalDeclaration C.NodeInfo
+predeclareEnum :: [Char] -> Set.Set C.Ident -> CExtDecl
 predeclareEnum enumName memberIds =
   let
-    enumMembers :: [(C.Ident, Maybe (CExpression C.NodeInfo))]
+    enumMembers :: [(C.Ident, Maybe CExpr)]
     enumMembers =
       Set.foldr
         (\memberId idsAndVals -> (memberId, Nothing) : idsAndVals)
         []
         memberIds
 
-    fieldEnum :: CEnumeration C.NodeInfo
+    fieldEnum :: CEnum
     fieldEnum =
       CEnum
         (Just $ identFromChars enumName)
@@ -159,13 +159,13 @@ predeclareEnum enumName memberIds =
         []
         undefNode
 
-    typeSpecifier :: CTypeSpecifier C.NodeInfo
+    typeSpecifier :: CTypeSpec
     typeSpecifier = CEnumType fieldEnum undefNode
 
-    cDeclarationSpecifier :: CDeclarationSpecifier C.NodeInfo
+    cDeclarationSpecifier :: CDeclSpec
     cDeclarationSpecifier = CTypeSpec typeSpecifier
 
-    cDeclaration :: CDeclaration C.NodeInfo
+    cDeclaration :: CDecl
     cDeclaration = CDecl [cDeclarationSpecifier] [] undefNode
   in
     CDeclExt cDeclaration
@@ -181,25 +181,25 @@ const FieldGroup fg1 = {
 idFieldGroup :: C.Ident
 idFieldGroup = (identFromChars "FieldGroup")
 
-intLiteral :: Int -> CExpression NodeInfo
+intLiteral :: Int -> CExpr
 intLiteral i =
   CConst $ CIntConst (CInteger (fromIntegral i) C.DecRepr C.noFlags) undefNode
 
 
-predeclareFieldGroup :: [Name.Name] -> C.Ident -> CExternalDeclaration C.NodeInfo
+predeclareFieldGroup :: [Name.Name] -> C.Ident -> CExtDecl
 predeclareFieldGroup fields fieldGroupName =
   let
-    fieldGroupDeclSpec :: CDeclarationSpecifier C.NodeInfo
+    fieldGroupDeclSpec :: CDeclSpec
     fieldGroupDeclSpec =
       CTypeSpec $ CTypeDef idFieldGroup undefNode
 
-    declarationSpecifiers :: [CDeclarationSpecifier C.NodeInfo]
+    declarationSpecifiers :: [CDeclSpec]
     declarationSpecifiers =
       [ CTypeQual $ CConstQual undefNode
       , fieldGroupDeclSpec
       ]
 
-    declarator :: CDeclarator C.NodeInfo
+    declarator :: CDeclr
     declarator =
       CDeclr (Just fieldGroupName) [] Nothing [] undefNode
 
@@ -215,7 +215,7 @@ predeclareFieldGroup fields fieldGroupName =
         fields
         [0..]
 
-    exprFieldGroup :: CExpression C.NodeInfo
+    exprFieldGroup :: CExpr
     exprFieldGroup =
       CCompoundLit
         (CDecl [fieldGroupDeclSpec] [] undefNode)
@@ -226,10 +226,10 @@ predeclareFieldGroup fields fieldGroupName =
         )
         undefNode
 
-    initializer :: CInitializer C.NodeInfo
+    initializer :: CInit
     initializer = CInitExpr exprFieldGroup undefNode
 
-    declaration :: CDeclaration C.NodeInfo
+    declaration :: CDecl
     declaration = CDecl
       declarationSpecifiers
       [(Just declarator, Just initializer, Nothing)]
@@ -238,7 +238,7 @@ predeclareFieldGroup fields fieldGroupName =
     CDeclExt declaration
     
 
-predeclareFieldGroups :: Map.Map [Name.Name] C.Ident -> [CExternalDeclaration C.NodeInfo]
+predeclareFieldGroups :: Map.Map [Name.Name] C.Ident -> [CExtDecl]
 predeclareFieldGroups fieldGroups =
   Map.foldrWithKey
     (\k v acc -> predeclareFieldGroup k v : acc)
@@ -246,13 +246,13 @@ predeclareFieldGroups fieldGroups =
     fieldGroups
 
 
-predeclareCtorEnum :: Set.Set Name.Name -> CExternalDeclaration C.NodeInfo
+predeclareCtorEnum :: Set.Set Name.Name -> CExtDecl
 predeclareCtorEnum ctors =
   predeclareEnum "ElmCustomCtor" $
     Set.map identFromCtor ctors
 
 
-predeclareFieldEnum :: Map.Map [Name.Name] C.Ident -> CExternalDeclaration C.NodeInfo
+predeclareFieldEnum :: Map.Map [Name.Name] C.Ident -> CExtDecl
 predeclareFieldEnum fieldGroupNames =
   let    
     fieldNames :: Set.Set Name.Name
