@@ -74,25 +74,47 @@ dummyNodeId =
   C.Name 0
 
 
-identFromChars :: [Char] -> C.Ident
+identFromChars :: String -> C.Ident
 identFromChars chars =
   C.mkIdent C.nopos chars dummyNodeId
 
 
-identWithPrefix :: [Char] -> Name.Name -> C.Ident
+identWithPrefix :: String -> Name.Name -> C.Ident
 identWithPrefix prefix name =
   identFromChars (prefix ++ Name.toChars name)
 
 
+identFromName :: Name.Name -> C.Ident
+identFromName name =
+  identFromChars (Name.toChars name)
+
+
+ctorPrefix :: String
+ctorPrefix = "Ctor"
+
+
+fieldPrefix :: String
+fieldPrefix = "Field_"
+
+
 identFromField :: Name.Name -> C.Ident
 identFromField field =
-  identWithPrefix "Field_" field
-
+  identWithPrefix fieldPrefix field
+      
 
 identFromCtor :: Name.Name -> C.Ident
 identFromCtor field =
-  identWithPrefix "Ctor" field
+  identWithPrefix ctorPrefix field
 
+
+idFieldGroup :: C.Ident
+idFieldGroup = identFromChars "FieldGroup"
+
+
+intLiteral :: Int -> CExpr
+intLiteral i =
+  CConst $ CIntConst (CInteger (fromIntegral i) C.DecRepr C.noFlags) undefNode
+  
 
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
@@ -122,32 +144,38 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
         { _fieldGroupNames = fieldGroupNames
         , _ctors = ctors
         }
-    
+
+    ctorEnumDecl :: CExtDecl
+    ctorEnumDecl = predeclareCtorEnum ctors
+        
     fieldEnumDecl :: CExtDecl
     fieldEnumDecl = predeclareFieldEnum fieldGroupNames
 
     fieldGroupDecls :: [CExtDecl]
     fieldGroupDecls = predeclareFieldGroups fieldGroupNames
 
-    ctorEnumDecl :: CExtDecl
-    ctorEnumDecl = predeclareCtorEnum ctors
-
-    cFileContent :: CTranslUnit
-    cFileContent =
+    topLevelAST :: CTranslUnit
+    topLevelAST =
       CTranslUnit
         (ctorEnumDecl : fieldEnumDecl : fieldGroupDecls)
         undefNode
+
+    cFileContent :: String
+    cFileContent =
+      PP.render $ C.pretty topLevelAST
   in
-    B.stringUtf8 $ PP.render $ C.pretty cFileContent
+    B.stringUtf8 $ cFileContent ++ "\n"
 
 
-predeclareEnum :: [Char] -> Set.Set C.Ident -> CExtDecl
-predeclareEnum enumName memberIds =
+predeclareEnum :: String -> String -> Set.Set Name.Name -> CExtDecl
+predeclareEnum enumName memberPrefix memberIds =
   let
     enumMembers :: [(C.Ident, Maybe CExpr)]
     enumMembers =
       Set.foldr
-        (\memberId idsAndVals -> (memberId, Nothing) : idsAndVals)
+        (\memberId idsAndVals ->
+          (identWithPrefix memberPrefix memberId, Nothing) : idsAndVals
+        )
         []
         memberIds
 
@@ -170,27 +198,21 @@ predeclareEnum enumName memberIds =
   in
     CDeclExt cDeclaration
 
-{-
 
-const FieldGroup fg1 = {
-  .size = 2,
-  .fields = {Field_abc, Field_def}
-};
+predeclareCtorEnum :: Set.Set Name.Name -> CExtDecl
+predeclareCtorEnum ctors =
+  predeclareEnum "ElmCustomCtor" ctorPrefix ctors
 
--}
-idFieldGroup :: C.Ident
-idFieldGroup = (identFromChars "FieldGroup")
 
-intLiteral :: Int -> CExpr
-intLiteral i =
-  CConst $ CIntConst (CInteger (fromIntegral i) C.DecRepr C.noFlags) undefNode
+predeclareFieldEnum :: Map.Map [Name.Name] C.Ident -> CExtDecl
+predeclareFieldEnum fieldGroupNames =
+  predeclareEnum "ElmRecordField" fieldPrefix $
+    Map.foldlWithKey
+      (\acc fieldGroup _ -> Set.union acc $ Set.fromList fieldGroup)
+      Set.empty
+      fieldGroupNames
 
-{-
- const FieldGroup fg3 = {
-     5,
-     {Field_args, Field_argsMatch, Field_associativity, Field_binary, Field_binops},
- };
--}
+
 predeclareFieldGroup :: [Name.Name] -> C.Ident -> CExtDecl
 predeclareFieldGroup fields fieldGroupName =
   let
@@ -206,44 +228,23 @@ predeclareFieldGroup fields fieldGroupName =
     declarator =
       CDeclr (Just fieldGroupName) [] Nothing [] undefNode
 
+    -- {Field_aardvaark, Field_banana}
     fieldsInitList :: CInitList
     fieldsInitList =
         map
           (\f -> ([], CInitExpr (CVar (identFromField f) undefNode) undefNode))
           fields
   
-    fgInitList :: CInitList
-    fgInitList =
+    -- { 2, {Field_aardvaark, Field_banana} }
+    initializer :: CInit
+    initializer =
+      CInitList
         [ ([], CInitExpr (intLiteral $ length fields) undefNode)
         , ([], CInitList fieldsInitList undefNode)
         ]
-        -- undefNode
+        undefNode
 
-    -- fieldInits :: CInitList
-    -- fieldInits =
-    --   zipWith
-    --     (\f i ->
-    --       ( [CMemberDesig (identFromChars "field") undefNode, CArrDesig (intLiteral i) undefNode]
-    --       , CInitExpr (CVar (identFromField f) undefNode) undefNode
-    --       )
-    --     )
-    --     fields
-    --     [0..]
-
-    -- exprFieldGroup :: CExpr
-    -- exprFieldGroup =
-    --   CCompoundLit
-    --     (CDecl [fieldGroupDeclSpec] [] undefNode)
-    --     ( ( [CMemberDesig (identFromChars "size") undefNode]
-    --       , CInitExpr (CConst $ CIntConst (CInteger (fromIntegral $ length fields) C.DecRepr C.noFlags) undefNode) undefNode
-    --       )
-    --       : fieldInits 
-    --     )
-    --     undefNode
-
-    initializer :: CInit
-    initializer = CInitList fgInitList undefNode
-
+    -- const FieldGroup fg3 = { 2, {Field_aardvaark, Field_banana} }
     declaration :: CDecl
     declaration = CDecl
       declarationSpecifiers
@@ -259,25 +260,3 @@ predeclareFieldGroups fieldGroups =
     (\k v acc -> predeclareFieldGroup k v : acc)
     []
     fieldGroups
-
-
-predeclareCtorEnum :: Set.Set Name.Name -> CExtDecl
-predeclareCtorEnum ctors =
-  predeclareEnum "ElmCustomCtor" $
-    Set.map identFromCtor ctors
-
-
-predeclareFieldEnum :: Map.Map [Name.Name] C.Ident -> CExtDecl
-predeclareFieldEnum fieldGroupNames =
-  let    
-    fieldNames :: Set.Set Name.Name
-    fieldNames =
-      Map.foldlWithKey
-        (\acc fieldGroup _ -> Set.union acc $ Set.fromList fieldGroup)
-        Set.empty
-        fieldGroupNames
-
-    fieldIds :: Set.Set C.Ident
-    fieldIds = Set.map identFromField fieldNames
-  in
-    predeclareEnum "ElmRecordField" fieldIds
