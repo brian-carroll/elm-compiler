@@ -114,7 +114,15 @@ idFieldGroup = identFromChars "FieldGroup"
 intLiteral :: Int -> CExpr
 intLiteral i =
   CConst $ CIntConst (CInteger (fromIntegral i) C.DecRepr C.noFlags) undefNode
-  
+
+
+intDeclSpec :: CDeclSpec
+intDeclSpec = CTypeSpec $ CIntType undefNode
+
+
+voidDeclSpec :: CDeclSpec
+voidDeclSpec = CTypeSpec $ CVoidType undefNode
+
 
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
@@ -154,10 +162,41 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
     fieldGroupDecls :: [CExtDecl]
     fieldGroupDecls = predeclareFieldGroups fieldGroupNames
 
+    -- void main() {}
+    cMain :: CExtDecl
+    cMain =
+      let
+        nonVariadic = False
+
+        declarator :: CDeclarator NodeInfo
+        declarator = CDeclr
+          (Just $ identFromChars "main")
+          [CFunDeclr (Right ([], nonVariadic)) [] undefNode]
+          Nothing
+          []
+          undefNode
+
+        compoundStatement :: CStatement NodeInfo
+        compoundStatement =
+          let
+            labels = []
+            bodyStatements = []
+          in
+          CCompound labels bodyStatements undefNode
+
+        emptyOldStyleDeclList = []
+      in
+      CFDefExt $ CFunDef
+        [voidDeclSpec]
+        declarator
+        emptyOldStyleDeclList
+        compoundStatement
+        undefNode
+
     topLevelAST :: CTranslUnit
     topLevelAST =
       CTranslUnit
-        (ctorEnumDecl : fieldEnumDecl : fieldGroupDecls)
+        (ctorEnumDecl : fieldEnumDecl : fieldGroupDecls ++ [cMain])
         undefNode
 
     cFileContent :: String
@@ -201,12 +240,12 @@ predeclareEnum enumName memberPrefix memberIds =
 
 predeclareCtorEnum :: Set.Set Name.Name -> CExtDecl
 predeclareCtorEnum ctors =
-  predeclareEnum "ElmCustomCtor" ctorPrefix ctors
+  predeclareEnum "AppCustomCtor" ctorPrefix ctors
 
 
 predeclareFieldEnum :: Map.Map [Name.Name] C.Ident -> CExtDecl
 predeclareFieldEnum fieldGroupNames =
-  predeclareEnum "ElmRecordField" fieldPrefix $
+  predeclareEnum "AppRecordField" fieldPrefix $
     Map.foldlWithKey
       (\acc fieldGroup _ -> Set.union acc $ Set.fromList fieldGroup)
       Set.empty
