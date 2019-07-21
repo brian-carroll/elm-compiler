@@ -103,7 +103,7 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 
     fieldGroup2 :: [Name.Name]
     fieldGroup2 =
-      Map.keys $ Map.take 5 $ Map.drop 3 fieldFreqMap
+      Map.keys $ Map.take 7 $ Map.drop 3 fieldFreqMap
   
     fieldGroupNames :: Map.Map [Name.Name] C.Ident
     fieldGroupNames = Map.fromList
@@ -135,7 +135,7 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
     cFileContent :: CTranslUnit
     cFileContent =
       CTranslUnit
-        (fieldEnumDecl : ctorEnumDecl : fieldGroupDecls)
+        (ctorEnumDecl : fieldEnumDecl : fieldGroupDecls)
         undefNode
   in
     B.stringUtf8 $ PP.render $ C.pretty cFileContent
@@ -185,49 +185,64 @@ intLiteral :: Int -> CExpr
 intLiteral i =
   CConst $ CIntConst (CInteger (fromIntegral i) C.DecRepr C.noFlags) undefNode
 
-
+{-
+ const FieldGroup fg3 = {
+     5,
+     {Field_args, Field_argsMatch, Field_associativity, Field_binary, Field_binops},
+ };
+-}
 predeclareFieldGroup :: [Name.Name] -> C.Ident -> CExtDecl
 predeclareFieldGroup fields fieldGroupName =
   let
-    fieldGroupDeclSpec :: CDeclSpec
-    fieldGroupDeclSpec =
-      CTypeSpec $ CTypeDef idFieldGroup undefNode
-
+    -- const FieldGroup
     declarationSpecifiers :: [CDeclSpec]
     declarationSpecifiers =
       [ CTypeQual $ CConstQual undefNode
-      , fieldGroupDeclSpec
+      , CTypeSpec $ CTypeDef idFieldGroup undefNode
       ]
 
+    -- fg3
     declarator :: CDeclr
     declarator =
       CDeclr (Just fieldGroupName) [] Nothing [] undefNode
 
+    fieldsInitList :: CInitList
+    fieldsInitList =
+        map
+          (\f -> ([], CInitExpr (CVar (identFromField f) undefNode) undefNode))
+          fields
+  
+    fgInitList :: CInitList
+    fgInitList =
+        [ ([], CInitExpr (intLiteral $ length fields) undefNode)
+        , ([], CInitList fieldsInitList undefNode)
+        ]
+        -- undefNode
 
-    fieldInits :: CInitList
-    fieldInits =
-      zipWith
-        (\f i ->
-          ( [CMemberDesig (identFromChars "field") undefNode, CArrDesig (intLiteral i) undefNode]
-          , CInitExpr (CVar (identFromField f) undefNode) undefNode
-          )
-        )
-        fields
-        [0..]
+    -- fieldInits :: CInitList
+    -- fieldInits =
+    --   zipWith
+    --     (\f i ->
+    --       ( [CMemberDesig (identFromChars "field") undefNode, CArrDesig (intLiteral i) undefNode]
+    --       , CInitExpr (CVar (identFromField f) undefNode) undefNode
+    --       )
+    --     )
+    --     fields
+    --     [0..]
 
-    exprFieldGroup :: CExpr
-    exprFieldGroup =
-      CCompoundLit
-        (CDecl [fieldGroupDeclSpec] [] undefNode)
-        ( ( [CMemberDesig (identFromChars "size") undefNode]
-          , CInitExpr (CConst $ CIntConst (CInteger (fromIntegral $ length fields) C.DecRepr C.noFlags) undefNode) undefNode
-          )
-          : fieldInits 
-        )
-        undefNode
+    -- exprFieldGroup :: CExpr
+    -- exprFieldGroup =
+    --   CCompoundLit
+    --     (CDecl [fieldGroupDeclSpec] [] undefNode)
+    --     ( ( [CMemberDesig (identFromChars "size") undefNode]
+    --       , CInitExpr (CConst $ CIntConst (CInteger (fromIntegral $ length fields) C.DecRepr C.noFlags) undefNode) undefNode
+    --       )
+    --       : fieldInits 
+    --     )
+    --     undefNode
 
     initializer :: CInit
-    initializer = CInitExpr exprFieldGroup undefNode
+    initializer = CInitList fgInitList undefNode
 
     declaration :: CDecl
     declaration = CDecl
