@@ -1,3 +1,46 @@
+# Initialization
+
+- What to put in `main` and what to put in the global scope?
+- All evaluator function defs in global scope
+- All of what code gen calls "globals" must at least be _declared_ globally so code inside functions has them in scope if needed.
+
+- Global scope can have
+
+  - Evaluator functions
+  - Closure definitions
+  - Constructor definitions
+    - with params => evaluator + Closure
+    - without params => const
+
+- Can't have
+  - Function calls as the expression in an `Opt.Define`
+  - Cycles
+
+| Node           | OK in global scope?   | OK in main? |
+| -------------- | --------------------- | ----------- |
+| Define         | fn or value, not expr | not eval fn |
+| DefineTailFunc | Ok                    | not eval fn |
+| Ctor           | OK                    | y           |
+| Link           | -                     | y           |
+| Cycle          | Not OK                | y           |
+| Manager        | -                     | y           |
+| Kernel         | OK                    | y           |
+| Enum           | OK                    | y           |
+| Box            | -                     | y           |
+| PortIncoming   | OK                    | y           |
+| PortOutgoing   | Ok                    | y           |
+
+Approach: two fields in state: one for `main` and one for global scope
+Every `Define` at least gets a declaration in global scope but may be initialized in `main`
+`main` is really a fallback, only if needed.
+
+# Closing over values
+
+- pull out closed-over values as extra args and curry them in
+- need to keep track of scopes as we descend into the AST
+- **I did this before in Wasm, find it!**
+- There were Sets of vars used, args and locals. Diff the sets to get what's left over, those are outer scope
+
 # Fields
 
 Approaches

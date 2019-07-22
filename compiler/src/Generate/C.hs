@@ -8,7 +8,7 @@ import Prelude hiding (cycle, print)
 import qualified Data.ByteString.Builder as B
 import Data.Monoid ((<>))
 -- import qualified Data.List as List
--- import Data.Map ((!))
+import Data.Map ((!))
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
@@ -51,7 +51,8 @@ data State =
     { _seenGlobals :: Set.Set Opt.Global
     , _revKernels :: [B.Builder]
     , _revBuildersJS :: [B.Builder]
-    , _revBuildersC :: [B.Builder]
+    , _revGlobalsC :: [CExtDecl]
+    , _revInitC :: [CBlockItem]
     , _fieldGroupNames :: Map.Map [Name.Name] C.Ident
     , _ctors :: Set.Set Name.Name
     }
@@ -63,7 +64,8 @@ emptyState =
     { _seenGlobals = Set.empty
     , _revKernels = []
     , _revBuildersJS = []
-    , _revBuildersC = []
+    , _revGlobalsC = []
+    , _revInitC = []
     , _fieldGroupNames = Map.empty
     , _ctors = Set.empty
     }
@@ -72,41 +74,15 @@ emptyState =
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
-    fieldGroup1 :: [Name.Name]
-    fieldGroup1 =
-      Map.keys $ Map.take 5 fieldFreqMap
-
-    fieldGroup2 :: [Name.Name]
-    fieldGroup2 =
-      Map.keys $ Map.take 7 $ Map.drop 3 fieldFreqMap
-  
-    fieldGroupNames :: Map.Map [Name.Name] C.Ident
-    fieldGroupNames = Map.fromList
-      [ (fieldGroup1, CB.identFromChars "fg1")
-      , (fieldGroup2, CB.identFromChars "fg2")
-      ]
-
-    ctors :: Set.Set Name.Name
-    ctors =
-      Set.map Name.fromChars $
-        Set.fromList ["Red", "Green", "Blue"]
-
-    state :: State
-    state =
-      emptyState
-        { _fieldGroupNames = fieldGroupNames
-        , _ctors = ctors
-        }
-
-    mainStatements :: [CBlockItem]
-    mainStatements = []
+    state = Map.foldrWithKey (addMain graph) emptyState mains
 
     topLevelDecls :: [CExtDecl]
     topLevelDecls =
-      (generateCtorEnum ctors)
-      : (generateFieldEnum fieldGroupNames)
-      : (generateFieldGroups fieldGroupNames)
-      ++ [generateCMain mainStatements]
+      (generateCtorEnum $ _ctors state)
+      : (generateFieldEnum $ _fieldGroupNames state)
+      : (generateFieldGroups $ _fieldGroupNames state)
+      ++ (_revGlobalsC state)
+      ++ [generateCMain $ _revInitC state]
 
     topLevelAST :: CTranslUnit
     topLevelAST =
@@ -119,8 +95,12 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
     B.stringUtf8 $ cFileContent ++ "\n"
 
 
+{-
+                FINAL STATE
+-}
+
 generateCMain :: [CBlockItem] -> CExtDecl
-generateCMain bodyDeclsAndStmts =
+generateCMain revInitStmts =
   let
     nonVariadic = False
 
@@ -135,7 +115,7 @@ generateCMain bodyDeclsAndStmts =
     compoundStatement :: CStatement NodeInfo
     compoundStatement =
       let labels = [] in
-      CCompound labels bodyDeclsAndStmts undefNode
+      CCompound labels (reverse revInitStmts) undefNode
 
     emptyOldStyleDeclList = []
   in
@@ -208,3 +188,44 @@ generateFieldGroup fields fieldGroupName =
       undefNode
   in
     CDeclExt declaration
+
+
+{-
+                ELM 'MAIN' VALUES
+-}
+
+addMain :: Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
+addMain graph home _ state =
+  addGlobal graph state (Opt.Global home "main")
+
+
+addGlobal :: Graph -> State -> Opt.Global -> State
+addGlobal graph state global =
+  let
+    seen = _seenGlobals state
+  in
+  if Set.member global seen then
+    state
+  else
+    addGlobalHelp graph global $
+      state { _seenGlobals = Set.insert global seen }
+
+
+addGlobalHelp :: Graph -> Opt.Global -> State -> State
+addGlobalHelp graph global state =
+  let
+    addDeps deps someState =
+      Set.foldl' (addGlobal graph) someState deps
+  in
+  case graph ! global of
+    Opt.Define expr deps -> state
+    Opt.DefineTailFunc argNames body deps -> state
+    Opt.Ctor index arity -> state
+    Opt.Link (Opt.Global moduleName name) -> state
+    Opt.Cycle names values functions deps -> state
+    Opt.Manager effectsType -> state
+    Opt.Kernel chunks deps -> state
+    Opt.Enum index -> state
+    Opt.Box -> state
+    Opt.PortIncoming decoder deps -> state
+    Opt.PortOutgoing encoder deps -> state
