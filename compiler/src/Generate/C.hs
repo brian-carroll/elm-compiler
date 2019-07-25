@@ -49,12 +49,11 @@ type Mains = Map.Map ModuleName.Canonical Opt.Main
 data State =
   State
     { _seenGlobals :: Set.Set Opt.Global
-    , _revKernels :: [B.Builder]
+    , _revKernelsJS :: [B.Builder]
     , _revBuildersJS :: [B.Builder]
-    , _revGlobalsC :: [CExtDecl]
-    , _revInitC :: [CBlockItem]
-    , _fieldGroupNames :: Map.Map [Name.Name] C.Ident
-    , _ctors :: Set.Set Name.Name
+    , _revKernelsC :: [B.Builder]
+    , _revBuildersC :: [B.Builder]
+    , _revInitGlobals :: [Opt.Global]
     }
 
 
@@ -62,12 +61,11 @@ emptyState :: State
 emptyState =
   State
     { _seenGlobals = Set.empty
-    , _revKernels = []
+    , _revKernelsJS = []
     , _revBuildersJS = []
-    , _revGlobalsC = []
-    , _revInitC = []
-    , _fieldGroupNames = Map.empty
-    , _ctors = Set.empty
+    , _revKernelsC = []
+    , _revBuildersC = []
+    , _revInitGlobals = []
     }
 
 
@@ -79,11 +77,7 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 
     topLevelDecls :: [CExtDecl]
     topLevelDecls =
-      (generateCtorEnum $ _ctors state)
-      : (generateFieldEnum $ _fieldGroupNames state)
-      : (generateFieldGroups $ _fieldGroupNames state)
-      ++ (_revGlobalsC state)
-      ++ [generateCMain $ _revInitC state]
+      []
 
     topLevelAST :: CTranslUnit
     topLevelAST =
@@ -94,101 +88,6 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
       PP.render $ C.pretty topLevelAST
   in
     B.stringUtf8 $ cFileContent ++ "\n"
-
-
-{-
-                FINAL STATE
--}
-
-generateCMain :: [CBlockItem] -> CExtDecl
-generateCMain revInitStmts =
-  let
-    nonVariadic = False
-
-    declarator :: CDeclarator NodeInfo
-    declarator = CDeclr
-      (Just $ CB.identFromChars "main")
-      [CFunDeclr (Right ([], nonVariadic)) [] undefNode]
-      Nothing
-      []
-      undefNode
-
-    compoundStatement :: CStatement NodeInfo
-    compoundStatement =
-      let labels = [] in
-      CCompound labels (reverse revInitStmts) undefNode
-
-    emptyOldStyleDeclList = []
-  in
-  CFDefExt $ CFunDef
-    [CB.voidDeclSpec]
-    declarator
-    emptyOldStyleDeclList
-    compoundStatement
-    undefNode
-
-
-generateCtorEnum :: Set.Set Name.Name -> CExtDecl
-generateCtorEnum ctors =
-  CB.declareEnum "AppCustomCtor" CName.ctorPrefix ctors
-
-
-generateFieldEnum :: Map.Map [Name.Name] C.Ident -> CExtDecl
-generateFieldEnum fieldGroupNames =
-  CB.declareEnum "AppRecordField" CName.fieldPrefix $
-    Map.foldlWithKey
-      (\acc fieldGroup _ -> Set.union acc $ Set.fromList fieldGroup)
-      Set.empty
-      fieldGroupNames
-
-
-generateFieldGroups :: Map.Map [Name.Name] C.Ident -> [CExtDecl]
-generateFieldGroups fieldGroups =
-  Map.foldrWithKey
-    (\k v acc -> generateFieldGroup k v : acc)
-    []
-    fieldGroups
-      
-
-generateFieldGroup :: [Name.Name] -> C.Ident -> CExtDecl
-generateFieldGroup fields fieldGroupName =
-  let
-    -- const FieldGroup
-    declarationSpecifiers :: [CDeclSpec]
-    declarationSpecifiers =
-      [ CTypeQual $ CConstQual undefNode
-      , CTypeSpec $ CTypeDef CName.idFieldGroup undefNode
-      ]
-
-    -- fg3
-    declarator :: CDeclr
-    declarator =
-      CDeclr (Just fieldGroupName) [] Nothing [] undefNode
-
-    -- {Field_aardvaark, Field_banana}
-    fieldsInitList :: CInitList
-    fieldsInitList =
-        map
-          (\f -> ([], CInitExpr (CVar (CB.identWithPrefix CName.fieldPrefix f) undefNode) undefNode))
-          fields
-  
-    -- { 2, {Field_aardvaark, Field_banana} }
-    initializer :: CInit
-    initializer =
-      CInitList
-        [ ([], CInitExpr (CB.intLiteral $ length fields) undefNode)
-        , ([], CInitList fieldsInitList undefNode)
-        ]
-        undefNode
-
-    -- const FieldGroup fg3 = { 2, {Field_aardvaark, Field_banana} }
-    declaration :: CDecl
-    declaration = CDecl
-      declarationSpecifiers
-      [(Just declarator, Just initializer, Nothing)]
-      undefNode
-  in
-    CDeclExt declaration
 
 
 {-
@@ -251,3 +150,45 @@ addGlobalHelp graph global state =
 
     Opt.PortOutgoing encoder deps ->
       addDeps deps state
+
+
+
+generateFieldGroup :: [Name.Name] -> C.Ident -> CExtDecl
+generateFieldGroup fields fieldGroupName =
+  let
+    -- const FieldGroup
+    declarationSpecifiers :: [CDeclSpec]
+    declarationSpecifiers =
+      [ CTypeQual $ CConstQual undefNode
+      , CTypeSpec $ CTypeDef CName.idFieldGroup undefNode
+      ]
+
+    -- fg3
+    declarator :: CDeclr
+    declarator =
+      CDeclr (Just fieldGroupName) [] Nothing [] undefNode
+
+    -- {Field_aardvaark, Field_banana}
+    fieldsInitList :: CInitList
+    fieldsInitList =
+        map
+          (\f -> ([], CInitExpr (CVar (CB.identWithPrefix CName.fieldPrefix f) undefNode) undefNode))
+          fields
+  
+    -- { 2, {Field_aardvaark, Field_banana} }
+    initializer :: CInit
+    initializer =
+      CInitList
+        [ ([], CInitExpr (CB.intLiteral $ length fields) undefNode)
+        , ([], CInitList fieldsInitList undefNode)
+        ]
+        undefNode
+
+    -- const FieldGroup fg3 = { 2, {Field_aardvaark, Field_banana} }
+    declaration :: CDecl
+    declaration = CDecl
+      declarationSpecifiers
+      [(Just declarator, Just initializer, Nothing)]
+      undefNode
+  in
+    CDeclExt declaration
