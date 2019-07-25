@@ -33,7 +33,7 @@ import qualified Elm.ModuleName as ModuleName
 -- import qualified Reporting.Doc as D
 -- import qualified Reporting.Render.Type as RT
 -- import qualified Reporting.Render.Type.Localizer as L
-
+import qualified Generate.C.FakeAST as FakeAST
 
 
 
@@ -74,7 +74,8 @@ emptyState =
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
-    state = Map.foldrWithKey (addMain graph) emptyState mains
+    -- state = Map.foldrWithKey (addMain graph) emptyState mains
+    state = Map.foldrWithKey (addMain FakeAST.graph) emptyState FakeAST.mains
 
     topLevelDecls :: [CExtDecl]
     topLevelDecls =
@@ -218,14 +219,35 @@ addGlobalHelp graph global state =
       Set.foldl' (addGlobal graph) someState deps
   in
   case graph ! global of
-    Opt.Define expr deps -> state
-    Opt.DefineTailFunc argNames body deps -> state
-    Opt.Ctor index arity -> state
-    Opt.Link (Opt.Global moduleName name) -> state
-    Opt.Cycle names values functions deps -> state
-    Opt.Manager effectsType -> state
-    Opt.Kernel chunks deps -> state
-    Opt.Enum index -> state
-    Opt.Box -> state
-    Opt.PortIncoming decoder deps -> state
-    Opt.PortOutgoing encoder deps -> state
+    Opt.Define expr deps ->
+      addDeps deps state
+
+    Opt.DefineTailFunc argNames body deps ->
+      addDeps deps state
+
+    Opt.Ctor index arity ->
+      state
+
+    Opt.Link (Opt.Global moduleName name) ->
+      state
+
+    Opt.Cycle names values functions deps ->
+      addDeps deps state
+
+    Opt.Manager effectsType ->
+      state
+
+    Opt.Kernel chunks deps ->
+      addDeps deps state
+
+    Opt.Enum index ->
+      state
+
+    Opt.Box ->
+      state
+
+    Opt.PortIncoming decoder deps ->
+      addDeps deps state
+
+    Opt.PortOutgoing encoder deps ->
+      addDeps deps state
