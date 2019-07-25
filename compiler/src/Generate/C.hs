@@ -7,7 +7,7 @@ module Generate.C
 import Prelude hiding (cycle, print)
 import qualified Data.ByteString.Builder as B
 import Data.Monoid ((<>))
--- import qualified Data.List as List
+import qualified Data.List as List
 import Data.Map ((!))
 import qualified Data.Map as Map
 import qualified Data.Name as Name
@@ -25,6 +25,7 @@ import qualified AST.Optimized as Opt
 -- import qualified Data.Index as Index
 -- import qualified Elm.Kernel as K
 import qualified Elm.ModuleName as ModuleName
+import qualified Elm.Package as Pkg
 -- import qualified Generate.JavaScript.Builder as JS
 -- import qualified Generate.JavaScript.Expression as Expr
 -- import qualified Generate.JavaScript.Functions as Functions
@@ -54,6 +55,7 @@ data State =
     , _revKernelsC :: [B.Builder]
     , _revBuildersC :: [B.Builder]
     , _revInitGlobals :: [Opt.Global]
+    , _seenFieldGroups :: Map.Map [Name.Name] Int
     }
 
 
@@ -63,10 +65,18 @@ emptyState =
     { _seenGlobals = Set.empty
     , _revKernelsJS = []
     , _revBuildersJS = []
-    , _revKernelsC = []
+    , _revKernelsC = cRequiredKernels
     , _revBuildersC = []
     , _revInitGlobals = []
+    , _seenFieldGroups = Map.empty
     }
+
+
+cRequiredKernels :: [B.Builder]
+cRequiredKernels =
+  map
+    (\f -> generateInclude $ CName.kernelIncludeDir <> f)
+    ["types.h", "gc.h"]
 
 
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
@@ -74,20 +84,29 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
     -- state = Map.foldrWithKey (addMain graph) emptyState mains
     state = Map.foldrWithKey (addMain FakeAST.graph) emptyState FakeAST.mains
-
-    topLevelDecls :: [CExtDecl]
-    topLevelDecls =
-      []
-
-    topLevelAST :: CTranslUnit
-    topLevelAST =
-      CTranslUnit topLevelDecls undefNode
-
-    cFileContent :: String
-    cFileContent =
-      PP.render $ C.pretty topLevelAST
   in
-    B.stringUtf8 $ cFileContent ++ "\n"
+    stateToBuilder state
+
+
+stateToBuilder :: State -> B.Builder
+stateToBuilder state =
+  let
+    cMain =
+      generateCMain (_revInitGlobals state)
+  in
+  prependBuilders (_revKernelsC state) $
+    prependBuilders (_revBuildersC state) $
+    cMain 
+
+
+prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
+prependBuilders revBuilders monolith =
+  List.foldl' (\m b -> b <> m) monolith revBuilders
+
+
+generateCMain :: [Opt.Global] -> B.Builder
+generateCMain initGlobals =
+  "void main() {}\n"
 
 
 {-
@@ -137,7 +156,8 @@ addGlobalHelp graph global state =
       state
 
     Opt.Kernel chunks deps ->
-      addDeps deps state
+      addKernel (addDeps deps state) $
+        generateKernel global
 
     Opt.Enum index ->
       state
@@ -152,6 +172,30 @@ addGlobalHelp graph global state =
       addDeps deps state
 
 
+
+addKernel :: State -> B.Builder -> State
+addKernel state kernel =
+  state { _revKernelsC = kernel : _revKernelsC state }
+
+
+generateKernel :: Opt.Global -> B.Builder
+generateKernel (Opt.Global home _) =
+  generateInclude $
+    CName.kernelIncludeDir <> CName.kernelBaseFilename home
+
+
+generateInclude :: B.Builder -> B.Builder
+generateInclude headerFilePath =
+  "#include \"" <> headerFilePath <> "\"\n"
+
+
+
+
+
+
+{-
+                RECORD FIELDGROUP
+-}
 
 generateFieldGroup :: [Name.Name] -> C.Ident -> CExtDecl
 generateFieldGroup fields fieldGroupName =
