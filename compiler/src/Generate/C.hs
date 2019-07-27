@@ -74,9 +74,7 @@ emptyState =
 
 cRequiredKernels :: [B.Builder]
 cRequiredKernels =
-  map
-    (\f -> generateInclude $ CName.kernelIncludeDir <> f)
-    ["types.h", "gc.h"]
+  map generateKernelInclude ["types.h", "gc.h"]
 
 
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
@@ -90,23 +88,32 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 
 stateToBuilder :: State -> B.Builder
 stateToBuilder state =
-  let
-    cMain =
-      generateCMain (_revInitGlobals state)
-  in
   prependBuilders (_revKernelsC state) $
     prependBuilders (_revBuildersC state) $
-    cMain 
+    generateCMain (_revInitGlobals state)
 
 
 prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
 prependBuilders revBuilders monolith =
   List.foldl' (\m b -> b <> m) monolith revBuilders
 
-
+{-
+int main() {
+  GC_init();
+  GC_register_root(&ptr_author_project_TestModule_curried);
+  GC_register_root(&ptr_author_project_TestModule_main);
+  init_author_project_TestModule_curried();
+  init_author_project_TestModule_main();
+  return ((ElmInt*)&author_project_TestModule_main)->value;
+}
+-}
 generateCMain :: [Opt.Global] -> B.Builder
 generateCMain initGlobals =
-  "void main() {}\n"
+  let
+    gcRegisterRoots = []
+
+  in
+  "int main() {}\n"
 
 
 {-
@@ -180,17 +187,14 @@ addKernel state kernel =
 
 generateKernel :: Opt.Global -> B.Builder
 generateKernel (Opt.Global home _) =
-  generateInclude $
-    CName.kernelIncludeDir <> CName.kernelBaseFilename home
+  generateKernelInclude $
+  CName.toBuilder $
+  CName.kernelHeaderFile home
 
 
-generateInclude :: B.Builder -> B.Builder
-generateInclude headerFilePath =
-  "#include \"" <> headerFilePath <> "\"\n"
-
-
-
-
+generateKernelInclude :: B.Builder -> B.Builder
+generateKernelInclude filename =
+  "#include \"../kernel/" <> filename <> "\"\n"
 
 
 {-
@@ -204,7 +208,7 @@ generateFieldGroup fields fieldGroupName =
     declarationSpecifiers :: [CDeclSpec]
     declarationSpecifiers =
       [ CTypeQual $ CConstQual undefNode
-      , CTypeSpec $ CTypeDef CName.idFieldGroup undefNode
+      , CTypeSpec $ CTypeDef (CName.toIdent CName.typeFieldGroup) undefNode
       ]
 
     -- fg3
@@ -216,7 +220,9 @@ generateFieldGroup fields fieldGroupName =
     fieldsInitList :: CInitList
     fieldsInitList =
         map
-          (\f -> ([], CInitExpr (CVar (CB.identWithPrefix CName.fieldPrefix f) undefNode) undefNode))
+          (\f ->
+            let ident = CName.toIdent $ CName.asField $ CName.fromLocal f in
+            ([] , CInitExpr (CVar ident undefNode) undefNode))
           fields
   
     -- { 2, {Field_aardvaark, Field_banana} }
