@@ -15,6 +15,7 @@ import qualified Data.Name as Name
 import qualified Generate.C.Builder as CB
 import qualified Elm.Package as Pkg
 import qualified Elm.ModuleName as ModuleName
+import qualified AST.Optimized as Opt
 
 
 type CName =
@@ -69,14 +70,14 @@ fromLocal name =
     else name
 
 
-fromGlobal :: ModuleName.Canonical -> Name.Name -> CName
-fromGlobal home name =
+fromGlobal :: Opt.Global -> CName
+fromGlobal (Opt.Global home name) =
   Utf8.join underscore $
     (homeToList home) ++ [fromLocal name]
 
 
-fromCycle :: ModuleName.Canonical -> Name.Name -> CName
-fromCycle home name =
+fromCycle :: Opt.Global -> CName
+fromCycle (Opt.Global home name) =
   Utf8.join underscore $
     (homeToList home) ++ [fromChars "cyclic", fromLocal name]
 
@@ -151,7 +152,7 @@ elmReservedWords =
     ]
 
 
--- CONSTRUCTOR AND FIELD IDs
+-- DERIVED NAMES
 
 
 asCtor :: CName -> CName
@@ -162,6 +163,17 @@ asCtor name =
 asField :: CName -> CName
 asField name =
   Utf8.join underscore [fromChars "Field", name]
+
+
+globalInitPtr :: CName -> CName
+globalInitPtr name =
+  Utf8.join underscore [fromChars "ptr", name]
+
+
+globalInitFn :: CName -> CName
+globalInitFn name =
+  Utf8.join underscore [fromChars "init", name]
+
 
 
 -- KERNEL TYPES

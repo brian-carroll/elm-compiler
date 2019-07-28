@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Generate.C.FakeAST (mains, graph) where
+module Generate.C.FakeAST (mains, graph, g) where
   import qualified Data.Map as Map
   import qualified Data.Set as Set
 

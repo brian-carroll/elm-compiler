@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Generate.C.Builder
 where
 
@@ -6,6 +7,8 @@ import Data.Monoid ((<>))
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Data.Set as Set
+import qualified Data.List as List
+
 -- import qualified Data.Utf8 as Utf8
 import Language.C as C
 import Language.C.Data.Name as C
@@ -78,3 +81,16 @@ declareEnum enumName memberPrefix memberIds =
     cDeclaration = CDecl [cDeclarationSpecifier] [] undefNode
   in
     CDeclExt cDeclaration
+
+
+join :: B.Builder -> [B.Builder] -> B.Builder
+join sep builders =
+  mconcat $ List.intersperse sep builders
+
+
+indent1 :: B.Builder
+indent1 = "    "
+
+
+nIndent1 :: B.Builder
+nIndent1 = "\n" <> indent1

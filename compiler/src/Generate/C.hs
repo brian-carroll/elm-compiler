@@ -19,7 +19,7 @@ import Language.C.Pretty as C
 import qualified Text.PrettyPrint as PP
 
 import qualified Generate.C.Builder as CB
-import qualified Generate.C.Name as CName
+import qualified Generate.C.Name as CN
 -- import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 -- import qualified Data.Index as Index
@@ -97,23 +97,25 @@ prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
 prependBuilders revBuilders monolith =
   List.foldl' (\m b -> b <> m) monolith revBuilders
 
-{-
-int main() {
-  GC_init();
-  GC_register_root(&ptr_author_project_TestModule_curried);
-  GC_register_root(&ptr_author_project_TestModule_main);
-  init_author_project_TestModule_curried();
-  init_author_project_TestModule_main();
-  return ((ElmInt*)&author_project_TestModule_main)->value;
-}
--}
-generateCMain :: [Opt.Global] -> B.Builder
-generateCMain initGlobals =
-  let
-    gcRegisterRoots = []
 
+generateCMain :: [Opt.Global] -> B.Builder
+generateCMain revInitGlobals =
+  let
+    globalNames =
+      map CN.fromGlobal revInitGlobals
+    registrations = map
+      (\g -> CB.nIndent1 <> "GC_register_root(&" <> (CN.toBuilder $ CN.globalInitPtr g) <> ");")
+      globalNames
+    inits = map
+      (\g -> CB.nIndent1 <> (CN.toBuilder $ CN.globalInitFn g) <> "();")
+      globalNames
+    body =
+      CB.nIndent1 <> "GC_init();" <>
+      (prependBuilders registrations $
+        prependBuilders inits $
+        "\n")
   in
-  "int main() {}\n"
+  "int main() {" <> body <> "}\n"
 
 
 {-
@@ -188,8 +190,8 @@ addKernel state kernel =
 generateKernel :: Opt.Global -> B.Builder
 generateKernel (Opt.Global home _) =
   generateKernelInclude $
-  CName.toBuilder $
-  CName.kernelHeaderFile home
+  CN.toBuilder $
+  CN.kernelHeaderFile home
 
 
 generateKernelInclude :: B.Builder -> B.Builder
@@ -208,7 +210,7 @@ generateFieldGroup fields fieldGroupName =
     declarationSpecifiers :: [CDeclSpec]
     declarationSpecifiers =
       [ CTypeQual $ CConstQual undefNode
-      , CTypeSpec $ CTypeDef (CName.toIdent CName.typeFieldGroup) undefNode
+      , CTypeSpec $ CTypeDef (CN.toIdent CN.typeFieldGroup) undefNode
       ]
 
     -- fg3
@@ -221,7 +223,7 @@ generateFieldGroup fields fieldGroupName =
     fieldsInitList =
         map
           (\f ->
-            let ident = CName.toIdent $ CName.asField $ CName.fromLocal f in
+            let ident = CN.toIdent $ CN.asField $ CN.fromLocal f in
             ([] , CInitExpr (CVar ident undefNode) undefNode))
           fields
   
