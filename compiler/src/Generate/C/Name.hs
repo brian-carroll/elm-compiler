@@ -70,14 +70,14 @@ fromLocal name =
     else name
 
 
-fromGlobal :: Opt.Global -> CName
-fromGlobal (Opt.Global home name) =
+fromGlobal :: ModuleName.Canonical -> Name.Name -> CName
+fromGlobal home name =
   Utf8.join underscore $
     (homeToList home) ++ [fromLocal name]
 
 
-fromCycle :: Opt.Global -> CName
-fromCycle (Opt.Global home name) =
+fromCycle :: ModuleName.Canonical -> Name.Name -> CName
+fromCycle home name =
   Utf8.join underscore $
     (homeToList home) ++ [fromChars "cyclic", fromLocal name]
 
@@ -176,8 +176,23 @@ globalInitFn name =
 
 
 
+-- KERNEL CONSTANTS
+
+unit :: CName
+unit = fromChars "Unit"
+
+true :: CName
+true = fromChars "True"
+
+false :: CName
+false = fromChars "False"
+
+
 -- KERNEL TYPES
 
 
 typeFieldGroup :: CName
 typeFieldGroup = fromChars "FieldGroup"
+
+typeElmValue :: CName
+typeElmValue = fromChars "ElmValue"

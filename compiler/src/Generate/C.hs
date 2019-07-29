@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, QuasiQuotes #-}
 module Generate.C
   ( generate
   )
@@ -17,6 +17,7 @@ import Language.C as C
 import Language.C.Data.Name as C
 import Language.C.Pretty as C
 import qualified Text.PrettyPrint as PP
+import Text.RawString.QQ (r)
 
 import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
@@ -102,7 +103,7 @@ generateCMain :: [Opt.Global] -> B.Builder
 generateCMain revInitGlobals =
   let
     globalNames =
-      map CN.fromGlobal revInitGlobals
+      map (\(Opt.Global home name) -> CN.fromGlobal home name) revInitGlobals
     registrations = map
       (\g -> CB.nIndent1 <> "GC_register_root(&" <> (CN.toBuilder $ CN.globalInitPtr g) <> ");")
       globalNames
@@ -147,7 +148,8 @@ addGlobalHelp graph global state =
   in
   case graph ! global of
     Opt.Define expr deps ->
-      addDeps deps state
+      addDef global expr $
+      (addDeps deps state)
 
     Opt.DefineTailFunc argNames body deps ->
       addDeps deps state
@@ -181,7 +183,6 @@ addGlobalHelp graph global state =
       addDeps deps state
 
 
-
 addKernel :: State -> B.Builder -> State
 addKernel state kernel =
   state { _revKernelsC = kernel : _revKernelsC state }
@@ -197,6 +198,94 @@ generateKernel (Opt.Global home _) =
 generateKernelInclude :: B.Builder -> B.Builder
 generateKernelInclude filename =
   "#include \"../kernel/" <> filename <> "\"\n"
+
+
+{-
+                GLOBAL DEFINITION
+-}
+
+
+addDef :: Opt.Global -> Opt.Expr -> State -> State
+addDef global@(Opt.Global home' name') expr state =
+  let
+    textMacro otherGlobal =
+      defineTextMacro state (CN.fromGlobal home' name') otherGlobal
+    runtimeInit =
+      defineRuntimeInit global expr state
+  in
+  case expr of
+    Opt.Function args body -> runtimeInit
+    -- defineConst body
+
+    Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)
+    Opt.Unit -> textMacro CN.unit
+    Opt.VarGlobal (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
+    Opt.VarEnum (Opt.Global home name) _ -> textMacro (CN.fromGlobal home name)
+    Opt.VarBox (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
+    Opt.VarCycle home name -> textMacro (CN.fromGlobal home name)
+    Opt.VarDebug name home _ _ -> textMacro (CN.fromGlobal home name)
+    Opt.VarKernel home name -> textMacro (CN.fromKernel home name)
+
+    Opt.List _ -> runtimeInit
+    Opt.Call _ _ -> runtimeInit
+    Opt.If _ _ -> runtimeInit
+    Opt.Let _ _ -> runtimeInit
+    Opt.Destruct _ _ -> runtimeInit
+    Opt.Case _ _ _ _ -> runtimeInit
+    Opt.Access _ _ -> runtimeInit
+    Opt.Record _ -> runtimeInit
+    Opt.Update _ _ -> runtimeInit
+    Opt.Tuple _ _ _ -> runtimeInit
+    Opt.Shader _ _ _ -> runtimeInit
+
+    -- TODO: create these at compile time rather than runtime (global const)
+    Opt.Chr _ -> runtimeInit
+    Opt.Str _ -> runtimeInit
+    Opt.Int _ -> runtimeInit
+    Opt.Float _ -> runtimeInit
+    Opt.Accessor _ -> runtimeInit
+
+    -- impossible in global scope
+    Opt.VarLocal _ -> undefined
+    Opt.TailCall _ _ -> undefined
+
+
+defineTextMacro :: State -> CN.CName -> CN.CName -> State
+defineTextMacro state lvalue rvalue =
+  state {
+    _revBuildersC =
+      ("#define " <> (CN.toBuilder lvalue) <> " " <> (CN.toBuilder rvalue) <> "\n")
+      : _revBuildersC state
+  }
+
+
+defineRuntimeInit :: Opt.Global -> Opt.Expr -> State -> State
+defineRuntimeInit global@(Opt.Global home name) expr state =
+  let
+    globalName = CN.fromGlobal home name
+    g = CN.toBuilder globalName
+    initPtr = CN.toBuilder $ CN.globalInitPtr globalName
+    initFn = CN.toBuilder $ CN.globalInitFn globalName
+
+    generateExpr expr = "/* stuff */"
+        
+    builder :: B.Builder
+    builder =
+      mconcat $ List.intersperse "\n"
+        [ ""
+        , "#define " <> g <> " (*" <> initPtr <> ")"
+        , "ElmValue* " <> initPtr <> ";"
+        , "void* " <> initFn <> "() {"
+        , "    " <> initPtr <> " = " <> (generateExpr expr) <> ";"
+        , "    return NULL;"
+        , "}"
+        , ""
+        ]
+  in
+  state
+    { _revBuildersC = builder : _revBuildersC state
+    , _revInitGlobals = global : _revInitGlobals state
+    }
 
 
 {-
