@@ -21,6 +21,8 @@ import Text.RawString.QQ (r)
 
 import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
+import qualified Generate.C.Expression as CE
+import qualified Generate.C.AST as AST
 -- import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 -- import qualified Data.Index as Index
@@ -267,7 +269,7 @@ defineRuntimeInit global@(Opt.Global home name) expr state =
     initPtr = CN.toBuilder $ CN.globalInitPtr globalName
     initFn = CN.toBuilder $ CN.globalInitFn globalName
 
-    generateExpr expr = "/* stuff */"
+    exprBuilder = CB.fromExpr $ CE.generate expr
         
     builder :: B.Builder
     builder =
@@ -276,11 +278,12 @@ defineRuntimeInit global@(Opt.Global home name) expr state =
         , "#define " <> g <> " (*" <> initPtr <> ")"
         , "ElmValue* " <> initPtr <> ";"
         , "void* " <> initFn <> "() {"
-        , "    " <> initPtr <> " = " <> (generateExpr expr) <> ";"
+        , "    " <> initPtr <> " = " <> exprBuilder <> ";"
         , "    return NULL;"
         , "}"
         , ""
         ]
+    -- TODO: init function could in theory throw a heap overflow, should catch it
   in
   state
     { _revBuildersC = builder : _revBuildersC state

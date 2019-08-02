@@ -148,6 +148,7 @@ Executable elm
         Generate.C.Builder
         Generate.C.Name
         Generate.C.FakeAST
+        Generate.C.AST
         Generate.C.Expression
         Generate.JavaScript
         Generate.JavaScript.Builder
