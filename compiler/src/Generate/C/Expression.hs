@@ -3,6 +3,7 @@ module Generate.C.Expression
 ( generate
 , generateEvalFn
 , generateConstClosure
+, generateConstInt
 -- , generateCtor
 -- , generateField
 -- , generateTailDef
@@ -153,6 +154,16 @@ generateLiteralInt value =
     [ ( [MemberDesig $ Ident "header"] , InitExpr m_HEADER_INT )
     , ( [MemberDesig $ Ident "value"] , InitExpr $ Const $ IntConst value )
     ]
+
+
+generateConstInt :: CN.CName -> Int -> Declaration
+generateConstInt name value =
+  let
+    declSpecs = [TypeQual ConstQual, TypeSpec ElmInt]
+    declarator = Declr (Just $ CN.toIdentAST name) []
+    init = generateLiteralInt value
+  in
+  Decl declSpecs (Just declarator) (Just $ InitExpr init)
 
 
 generateLiteralClosure :: Int -> Ident -> Expression

@@ -229,18 +229,21 @@ addDef global@(Opt.Global home' name') expr state =
           : (CB.fromExtDecl $ CE.generateEvalFn evalFnName args body)
           : _revBuildersC state
       }
+
+    Opt.Int value ->
+      state {
+        _revBuildersC =
+          (CB.fromExtDecl $ AST.DeclExt $ CE.generateConstInt globalName value)
+          : _revBuildersC state
+      }
+
+    -- TODO: create these at compile time rather than runtime (global const)
+    Opt.Chr _ -> runtimeInit
+    Opt.Str _ -> runtimeInit
+    Opt.Float _ -> runtimeInit
+    Opt.Accessor _ -> runtimeInit
     
     -- defineConst body
-
-    Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)
-    Opt.Unit -> textMacro CN.unit
-    Opt.VarGlobal (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
-    Opt.VarEnum (Opt.Global home name) _ -> textMacro (CN.fromGlobal home name)
-    Opt.VarBox (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
-    Opt.VarCycle home name -> textMacro (CN.fromGlobal home name)
-    Opt.VarDebug name home _ _ -> textMacro (CN.fromGlobal home name)
-    Opt.VarKernel home name -> textMacro (CN.fromKernel home name)
-
     Opt.List _ -> runtimeInit
     Opt.Call _ _ -> runtimeInit
     Opt.If _ _ -> runtimeInit
@@ -253,12 +256,15 @@ addDef global@(Opt.Global home' name') expr state =
     Opt.Tuple _ _ _ -> runtimeInit
     Opt.Shader _ _ _ -> runtimeInit
 
-    -- TODO: create these at compile time rather than runtime (global const)
-    Opt.Chr _ -> runtimeInit
-    Opt.Str _ -> runtimeInit
-    Opt.Int _ -> runtimeInit
-    Opt.Float _ -> runtimeInit
-    Opt.Accessor _ -> runtimeInit
+    Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)
+    Opt.Unit -> textMacro CN.unit
+    Opt.VarGlobal (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
+    Opt.VarEnum (Opt.Global home name) _ -> textMacro (CN.fromGlobal home name)
+    Opt.VarBox (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
+    Opt.VarCycle home name -> textMacro (CN.fromGlobal home name)
+    Opt.VarDebug name home _ _ -> textMacro (CN.fromGlobal home name)
+    Opt.VarKernel home name -> textMacro (CN.fromKernel home name)
+
 
     -- impossible in global scope
     Opt.VarLocal _ -> undefined
