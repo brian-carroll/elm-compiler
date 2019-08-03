@@ -145,7 +145,9 @@ fromExpr expression =
         FloatConst builder -> builder
         StrConst builder -> "\"" <> builder <> "\""
 
-    CompoundLit typeNameDecl initList -> "/*CompoundLit*/"
+    CompoundLit initList ->
+      fromInitList initList
+
     StatExpr statement -> "/*StatExpr*/"
     CommentExpr builder -> "/* " <> builder <> " */" 
 
@@ -204,6 +206,7 @@ fromBlockItem indent item =
 fromDeclaration :: Declaration -> B.Builder
 fromDeclaration (Decl declSpecs maybeDeclarator maybeInitializer) =
   (join " " (map fromDeclSpec declSpecs))
+  <> " "
   <> (join " = " $
       (map fromDeclarator $ maybeToList maybeDeclarator)
        ++ (map fromInitializer $ maybeToList maybeInitializer)
@@ -214,8 +217,32 @@ fromInitializer :: Initializer -> B.Builder
 fromInitializer init =
   case init of
     InitExpr expr -> fromExpr expr
-    InitList initList ->
-      "/* InitList */"
+    InitList initList -> fromInitList initList
+
+
+fromInitList :: InitializerList -> B.Builder
+fromInitList initList =
+  "{"
+  <> (join ", " $ map fromInitListItem initList)
+  <> "}"
+
+
+fromInitListItem :: ([PartDesignator], Initializer) -> B.Builder
+fromInitListItem (parts, init) =
+  (mconcat $ map fromPartDesignator parts)
+  <> " = "
+  <> fromInitializer init
+
+
+fromPartDesignator :: PartDesignator -> B.Builder
+fromPartDesignator part =
+  case part of
+    ArrDesig expression ->
+      "[" <> fromExpr expression <> "]" -- not sure of this, but prob won't use
+    MemberDesig (Ident ident) ->
+      "." <> ident
+    RangeDesig from to ->
+      "[" <> fromExpr from <> "..." <> fromExpr to <> "]" -- not sure of this, but prob won't use
 
 
 fromDeclSpec :: DeclarationSpecifier -> B.Builder
@@ -270,6 +297,7 @@ fromDerivedDeclr declrBuilder derivedDeclr =
         "*" : (map fromTypeQualifier typeQualifiers) ++ [declrBuilder]
 
     ArrDeclr typeQualifiers arraySize ->
+      -- TODO: deal with typeQualifiers? Do I care?
       declrBuilder
         <> "["
         <> (case arraySize of
@@ -288,9 +316,10 @@ fromDerivedDeclr declrBuilder derivedDeclr =
 fromExtDecl :: ExternalDeclaration -> B.Builder
 fromExtDecl extDecl =
   case extDecl of
-    DeclExt decl -> "/* DeclExt */"
+    DeclExt decl ->
+      (fromDeclaration decl) <> ";\n"
     FDefExt (FunDef declSpecs declarator statement) ->
       mconcat $
         (map fromDeclSpec declSpecs)
         ++ [fromDeclarator declarator]
-        ++ [" ", fromStatement "" statement]
+        ++ [" ", fromStatement "" statement, "\n"]

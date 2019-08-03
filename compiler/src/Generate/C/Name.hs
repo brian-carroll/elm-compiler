@@ -181,6 +181,10 @@ globalInitFn name =
   Utf8.join underscore [fromChars "init", name]
 
 
+evalFn :: CName -> CName
+evalFn name =
+  Utf8.join underscore [fromChars "eval", name]
+
 
 -- KERNEL CONSTANTS
 

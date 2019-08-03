@@ -218,16 +218,15 @@ addDef global@(Opt.Global home' name') expr state =
       defineRuntimeInit global expr state
   in
   case expr of
-    {- TO FIX:
-    - Braces around function body
-    - Declarations for param names
-    - Return statement
-    - semicolon
-    -}
     Opt.Function args body ->
+      let
+        evalFnName = CN.evalFn globalName
+        arity = length args -- TODO: add free variables
+      in
       state {
         _revBuildersC =
-          (CB.fromExtDecl $ CE.generateEvalFunc globalName args body)
+          (CB.fromExtDecl $ AST.DeclExt $ CE.generateConstClosure globalName evalFnName arity)
+          : (CB.fromExtDecl $ CE.generateEvalFn evalFnName args body)
           : _revBuildersC state
       }
     

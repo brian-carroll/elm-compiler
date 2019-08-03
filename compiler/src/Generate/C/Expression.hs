@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.C.Expression
 ( generate
-, generateEvalFunc
+, generateEvalFn
+, generateConstClosure
 -- , generateCtor
 -- , generateField
 -- , generateTailDef
@@ -54,9 +55,9 @@ import qualified AST.Optimized as Opt
 
 
 -- C Macros from Kernel
-m_NEW_ELM_INT = Ident "NEW_ELM_INT"
-m_A1 = Ident "A1"
-m_A2 = Ident "A2"
+m_NEW_ELM_INT = Var $ Ident "NEW_ELM_INT"
+m_HEADER_CLOSURE = Var $ Ident "HEADER_CLOSURE"
+m_HEADER_INT = Var $ Ident "HEADER_INT"
 
 
 generate :: Opt.Expr -> Expression
@@ -72,7 +73,7 @@ generate expr =
       CommentExpr "Str"
 
     Opt.Int int ->
-      Call (Var m_NEW_ELM_INT) [Const $ IntConst $ int]
+      Call (m_NEW_ELM_INT) [Const $ IntConst $ int]
 
     Opt.Float float ->
       CommentExpr "Float"
@@ -146,13 +147,36 @@ generate expr =
       CommentExpr "Shader"
 
 
+generateLiteralInt :: Int -> Expression
+generateLiteralInt value =
+  CompoundLit
+    [ ( [MemberDesig $ Ident "header"] , InitExpr m_HEADER_INT )
+    , ( [MemberDesig $ Ident "value"] , InitExpr $ Const $ IntConst value )
+    ]
 
-generateLiteralClosure arity args evaluator =
-  ""
-      
 
-generateEvalFunc :: CN.CName -> [Name.Name] -> Opt.Expr -> ExternalDeclaration
-generateEvalFunc fname params bodyExpr =
+generateLiteralClosure :: Int -> Ident -> Expression
+generateLiteralClosure maxValues evaluator =
+  CompoundLit
+    [ ( [MemberDesig $ Ident "header"] , InitExpr $ Call m_HEADER_CLOSURE [Const $ IntConst 0] )
+    , ( [MemberDesig $ Ident "evaluator"] , InitExpr $ Unary AddrOp $ Var $ evaluator )
+    , ( [MemberDesig $ Ident "max_values"] , InitExpr $ Const $ IntConst maxValues )
+    ]
+
+
+generateConstClosure :: CN.CName -> CN.CName -> Int -> Declaration
+generateConstClosure closureName evalName maxValues =
+  let
+    declSpecs = [TypeQual ConstQual, TypeSpec Closure]
+    declarator = Declr (Just $ CN.toIdentAST closureName) []
+    init = generateLiteralClosure maxValues $ CN.toIdentAST evalName
+  in
+  Decl declSpecs (Just declarator) (Just $ InitExpr init)
+
+
+
+generateEvalFn :: CN.CName -> [Name.Name] -> Opt.Expr -> ExternalDeclaration
+generateEvalFn fname params bodyExpr =
   let
     nparams = length params
 
@@ -164,7 +188,7 @@ generateEvalFunc fname params bodyExpr =
     argsArrayDeclarator =
       Declr (Just argsArray)
         [ ArrDeclr
-            [ConstQual]
+            [ConstQual] -- TODO: needed?
             (ArrSize $ Const $ IntConst nparams)
         , PtrDeclr []
         ]
@@ -204,13 +228,8 @@ generateEvalFunc fname params bodyExpr =
 generateParamRename :: Ident -> Name.Name -> Int -> Declaration
 generateParamRename argsArray name index =
   let
-    id :: Ident
     id = CN.toIdentAST $ CN.fromLocal name
-
-    declr :: Declarator
-    declr = Declr (Just id) [PtrDeclr []]
-
-    init :: Initializer
-    init = InitExpr $ Index (Var argsArray) (Const $ IntConst index)
+    declarator = Declr (Just id) [PtrDeclr []]
+    init = Index (Var argsArray) (Const $ IntConst index)
   in
-    Decl [TypeSpec Void] (Just declr) (Just init)
+    Decl [TypeSpec Void] (Just declarator) (Just $ InitExpr init)

@@ -54,8 +54,7 @@ data Expression
                  Bool                    -- deref structure? (True for `->')
   | Var         Ident                   -- identifier (incl. enumeration const)
   | Const       Constant           -- ^ integer, character, floating point and string constants
-  | CompoundLit Declaration
-                 InitializerList    -- type name & initialiser list
+  | CompoundLit InitializerList    -- initialiser list
   | StatExpr    Statement        -- ^ GNU C compound statement as expr
   | CommentExpr B.Builder
 
@@ -109,6 +108,7 @@ data DeclarationSpecifier
   -- | FunSpec     FunctionSpecifier -- ^ function specifier (inline or noreturn)
   -- | AlignSpec   AlignmentSpecifier -- ^ alignment specifier
 
+-- Note: this is mixing concerns really...
 data TypeSpecifier
   = ElmValue
   | ElmInt
