@@ -5,6 +5,7 @@ where
 import qualified Data.ByteString.Builder as B
 import Data.Monoid ((<>))
 import qualified Data.Map as Map
+import Data.Maybe (maybe, maybeToList)
 import qualified Data.Name as Name
 import qualified Data.Set as Set
 import qualified Data.List as List
@@ -102,11 +103,11 @@ nIndent1 = "\n" <> indent1
 fromExpr :: Expression -> B.Builder
 fromExpr expression =
   case expression of
-    Comma exprList -> ""
-    Assign op lval rval -> ""
-    Cond condition expr1 expr0 -> ""
-    Binary op lhs rhs -> ""
-    Cast typeNameDecl expr -> ""
+    Comma exprList -> "/*Comma*/"
+    Assign op lval rval -> "/*Assign*/"
+    Cond condition expr1 expr0 -> "/*Cond*/"
+    Binary op lhs rhs -> "/*Binary*/"
+    Cast typeNameDecl expr -> "/*Cast*/"
 
     Unary op expr ->
       let e = fromExpr expr in
@@ -122,9 +123,10 @@ fromExpr expression =
         CompOp -> "~" <> e
         NegOp -> "!" <> e
 
-    SizeofExpr expr -> ""
-    SizeofType typeNameDecl -> ""
-    Index array index -> ""
+    SizeofExpr expr -> "/*SizeofExpr*/"
+    SizeofType typeNameDecl -> "/*SizeofType*/"
+    Index array index ->
+      (fromExpr array) <> "[" <> (fromExpr index) <> "]"
 
     Call funcExpr argExprs ->
       (fromExpr funcExpr)
@@ -132,7 +134,7 @@ fromExpr expression =
       <> join ", " (map fromExpr argExprs)
       <> ")"
 
-    Member structure member shouldUseArrow -> ""
+    Member structure member shouldUseArrow -> "/*Member*/"
 
     Var (Ident builder) -> builder
 
@@ -143,6 +145,152 @@ fromExpr expression =
         FloatConst builder -> builder
         StrConst builder -> "\"" <> builder <> "\""
 
-    CompoundLit typeNameDecl initList -> ""
-    StatExpr statement -> ""
+    CompoundLit typeNameDecl initList -> "/*CompoundLit*/"
+    StatExpr statement -> "/*StatExpr*/"
     CommentExpr builder -> "/* " <> builder <> " */" 
+
+
+fromStatement :: B.Builder -> Statement -> B.Builder
+fromStatement indent statement =
+  let
+    nIndent = "\n" <> indent
+    deeper = indent <> indent1
+    nDeeper = nIndent <> indent1
+  in
+  case statement of
+    Label (Ident ident) statement ->
+      ident <> ":" <> nIndent <> (fromStatement deeper statement)
+
+    Case expression statement -> "/* Case */"
+
+    Cases from to statement -> "/* Cases */"
+
+    Default statement ->
+      "default:" <> deeper <> fromStatement deeper statement
+
+    Expr maybeExpression -> 
+      maybe "" fromExpr maybeExpression
+
+    Compound blockItems ->
+      "{" <> nIndent
+      <> (join (";\n") $
+        map (fromBlockItem deeper) blockItems)
+      <> ";" <> nIndent <> "}"
+
+    If condition thenStmt maybeElseStmt  -> "/* If */"
+    Switch expression statement  -> "/* Switch */"
+    While guardExpr statement isDoWhile -> "/* While */"
+    For init guardExpr iterExpr statement -> "/* For */"
+    Goto (Ident ident) -> "goto" <> ident
+    Cont -> "continue"
+    Break -> "break"
+
+    Return maybeExpr ->
+      indent <> (join " " $
+        "return" : (map fromExpr $ maybeToList maybeExpr)
+      )
+
+    CommentStatement builder ->
+      "// " <> builder <> ""
+
+
+fromBlockItem :: B.Builder -> CompoundBlockItem -> B.Builder
+fromBlockItem indent item =
+  case item of
+    BlockStmt statement -> fromStatement indent statement
+    BlockDecl declaration -> indent <> (fromDeclaration declaration)
+
+
+fromDeclaration :: Declaration -> B.Builder
+fromDeclaration (Decl declSpecs maybeDeclarator maybeInitializer) =
+  (join " " (map fromDeclSpec declSpecs))
+  <> (join " = " $
+      (map fromDeclarator $ maybeToList maybeDeclarator)
+       ++ (map fromInitializer $ maybeToList maybeInitializer)
+      )
+
+
+fromInitializer :: Initializer -> B.Builder
+fromInitializer init =
+  case init of
+    InitExpr expr -> fromExpr expr
+    InitList initList ->
+      "/* InitList */"
+
+
+fromDeclSpec :: DeclarationSpecifier -> B.Builder
+fromDeclSpec declSpec =
+  case declSpec of
+    TypeSpec typeSpec -> fromTypeSpecifier typeSpec
+    TypeQual typeQual -> fromTypeQualifier typeQual
+
+
+fromTypeSpecifier :: TypeSpecifier -> B.Builder
+fromTypeSpecifier typeSpec =
+  case typeSpec of
+    ElmValue -> "ElmValue"
+    ElmInt -> "ElmInt"
+    ElmFloat -> "ElmFloat"
+    ElmChar -> "ElmChar"
+    ElmString -> "ElmString"
+    Cons -> "Cons"
+    Tuple2 -> "Tuple2"
+    Tuple3 -> "Tuple3"
+    Custom -> "Custom"
+    Record -> "Record"
+    FieldSet -> "FieldSet"
+    Closure -> "Closure"
+    I32 -> "i32"
+    F64 -> "f64"
+    Void -> "void"
+
+
+fromTypeQualifier :: TypeQualifier -> B.Builder
+fromTypeQualifier typeQual =
+  case typeQual of
+    ConstQual -> "const"
+
+
+fromDeclarator :: Declarator -> B.Builder
+fromDeclarator (Declr maybeIdent derivedDeclrs) =
+  let
+    identBuilder =
+      case maybeIdent of
+        Nothing -> ""
+        Just (Ident ident) -> ident
+  in
+    List.foldl' fromDerivedDeclr identBuilder derivedDeclrs
+
+
+fromDerivedDeclr :: B.Builder -> DerivedDeclarator -> B.Builder
+fromDerivedDeclr declrBuilder derivedDeclr =
+  case derivedDeclr of
+    PtrDeclr typeQualifiers ->
+      join " " $
+        "*" : (map fromTypeQualifier typeQualifiers) ++ [declrBuilder]
+
+    ArrDeclr typeQualifiers arraySize ->
+      declrBuilder
+        <> "["
+        <> (case arraySize of
+              NoArrSize -> ""
+              ArrSize expr -> fromExpr expr
+            )
+        <> "]"
+
+    FunDeclr paramDeclarations ->
+      declrBuilder
+      <> "("
+      <> (join ", " $ map fromDeclaration paramDeclarations)
+      <> ")"
+
+
+fromExtDecl :: ExternalDeclaration -> B.Builder
+fromExtDecl extDecl =
+  case extDecl of
+    DeclExt decl -> "/* DeclExt */"
+    FDefExt (FunDef declSpecs declarator statement) ->
+      mconcat $
+        (map fromDeclSpec declSpecs)
+        ++ [fromDeclarator declarator]
+        ++ [" ", fromStatement "" statement]

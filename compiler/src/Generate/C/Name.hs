@@ -12,6 +12,7 @@ import qualified Language.C as C
 
 import qualified Data.Utf8 as Utf8
 import qualified Data.Name as Name
+import qualified Generate.C.AST as AST
 import qualified Generate.C.Builder as CB
 import qualified Elm.Package as Pkg
 import qualified Elm.ModuleName as ModuleName
@@ -46,6 +47,11 @@ toBuilder =
 toIdent :: CName -> C.Ident
 toIdent name =
   C.mkIdent C.nopos (toChars name) (C.Name 0)
+
+
+toIdentAST:: CName -> AST.Ident
+toIdentAST name =
+  AST.Ident $ toBuilder name
 
 
 -- FROM

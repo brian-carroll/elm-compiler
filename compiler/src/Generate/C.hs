@@ -210,13 +210,27 @@ generateKernelInclude filename =
 addDef :: Opt.Global -> Opt.Expr -> State -> State
 addDef global@(Opt.Global home' name') expr state =
   let
+    globalName =
+      CN.fromGlobal home' name'
     textMacro otherGlobal =
-      defineTextMacro state (CN.fromGlobal home' name') otherGlobal
+      defineTextMacro state globalName otherGlobal
     runtimeInit =
       defineRuntimeInit global expr state
   in
   case expr of
-    Opt.Function args body -> runtimeInit
+    {- TO FIX:
+    - Braces around function body
+    - Declarations for param names
+    - Return statement
+    - semicolon
+    -}
+    Opt.Function args body ->
+      state {
+        _revBuildersC =
+          (CB.fromExtDecl $ CE.generateEvalFunc globalName args body)
+          : _revBuildersC state
+      }
+    
     -- defineConst body
 
     Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)

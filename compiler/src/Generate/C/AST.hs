@@ -12,14 +12,14 @@ data Statement
   | Cases Expression Expression Statement
   | Default Statement
   | Expr (Maybe Expression)
-  | Compound [Ident] [CompoundBlockItem]
+  | Compound [CompoundBlockItem]
   | If Expression Statement (Maybe Statement)
   | Switch Expression Statement
   | While Expression Statement Bool
   | For (Either (Maybe Expression) Declaration)
-    (Maybe Expression)
-    (Maybe Expression)
-    Statement
+      (Maybe Expression)
+      (Maybe Expression)
+      Statement
   | Goto Ident
   -- | GotoPtr Expression
   | Cont
@@ -90,10 +90,9 @@ data Constant
 
 data Declaration
   = Decl
-    [DeclarationSpecifier] -- type specifier and qualifier, __attribute__
-    [(Maybe Declarator,  -- declarator (may be omitted)
-      Maybe Initializer, -- optional initialize
-      Maybe Expression)] -- optional size (const expr)
+    [DeclarationSpecifier] -- type specifier and qualifier
+    (Maybe Declarator)  -- declarator (may be omitted)
+    (Maybe Initializer) -- optional initialize
                             -- annotation
     -- | StaticAssert
     --   Expression         -- assert expression
@@ -146,8 +145,8 @@ data DerivedDeclarator
   | FunDeclr [Declaration] -- params
 
 data ArraySize
-  = NoArrSize Bool               -- ^ @UnknownSize isCompleteType@
-  | ArrSize Bool Expression -- ^ @ArrSize isStatic expr@
+  = NoArrSize               -- ^ @UnknownSize isCompleteType@
+  | ArrSize Expression
   
 data CompoundBlockItem
   = BlockStmt Statement    -- ^ A statement
@@ -198,8 +197,12 @@ data AssignOp
   | XorAssOp
   | OrAssOp
 
-data FunctionDef
-  = FunDef
+data FunctionDef =
+  FunDef
     [DeclarationSpecifier] -- type specifier and qualifier
     Declarator           -- declarator
     Statement            -- compound statement
+
+data ExternalDeclaration
+  = DeclExt Declaration
+  | FDefExt FunctionDef

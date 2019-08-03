@@ -1,3 +1,21 @@
+# Functions code gen
+
+- Global
+
+  - function: definition in global scope
+  - Closure: const definition in global scope
+
+- Local
+  - function: definition in global scope (needs globally unique name)
+  - Closure: allocate & assign
+
+Ok so expression generation should return a tuple
+(function def, compound literal)
+And surrounding context decides where to assign the compound literal?
+Might need to typecast the compound literal in the local case
+In `addDef` can separately call internal pieces of function generation and tie them together differently
+Local functions are generated in Expression.hs and global ones in C.hs
+
 # Initialization
 
 - What to put in `main` and what to put in the global scope?

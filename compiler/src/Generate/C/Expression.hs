@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.C.Expression
 ( generate
+, generateEvalFunc
 -- , generateCtor
 -- , generateField
 -- , generateTailDef
@@ -145,3 +146,71 @@ generate expr =
       CommentExpr "Shader"
 
 
+
+generateLiteralClosure arity args evaluator =
+  ""
+      
+
+generateEvalFunc :: CN.CName -> [Name.Name] -> Opt.Expr -> ExternalDeclaration
+generateEvalFunc fname params bodyExpr =
+  let
+    nparams = length params
+
+    argsArray :: Ident
+    argsArray = Ident "args"
+
+    -- *args[2]
+    argsArrayDeclarator :: Declarator
+    argsArrayDeclarator =
+      Declr (Just argsArray)
+        [ ArrDeclr
+            [ConstQual]
+            (ArrSize $ Const $ IntConst nparams)
+        , PtrDeclr []
+        ]
+
+    -- void *args[2]
+    argsArrayDeclaration :: Declaration
+    argsArrayDeclaration =
+      Decl
+        [TypeSpec Void]
+        (Just argsArrayDeclarator)  -- declarator (may be omitted)
+        Nothing -- optional initialize
+
+    -- *fname(void *args[2])
+    funcDeclarator :: Declarator
+    funcDeclarator =
+      Declr
+        (Just $ CN.toIdentAST fname)
+        [ FunDeclr [argsArrayDeclaration]
+        , PtrDeclr []
+        ]
+
+    paramRenames :: [CompoundBlockItem]
+    paramRenames =
+      zipWith
+        (\name idx -> BlockDecl $ generateParamRename argsArray name idx)
+        params [0..]
+    
+    body :: [CompoundBlockItem]
+    body = [BlockStmt $ Return $ Just $ generate bodyExpr]
+  in
+  FDefExt $ FunDef
+    [TypeSpec Void]
+    funcDeclarator
+    (Compound $ paramRenames ++ body)
+
+
+generateParamRename :: Ident -> Name.Name -> Int -> Declaration
+generateParamRename argsArray name index =
+  let
+    id :: Ident
+    id = CN.toIdentAST $ CN.fromLocal name
+
+    declr :: Declarator
+    declr = Declr (Just id) [PtrDeclr []]
+
+    init :: Initializer
+    init = InitExpr $ Index (Var argsArray) (Const $ IntConst index)
+  in
+    Decl [TypeSpec Void] (Just declr) (Just init)
