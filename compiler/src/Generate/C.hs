@@ -77,7 +77,7 @@ emptyState =
 
 cRequiredKernels :: [B.Builder]
 cRequiredKernels =
-  map generateKernelInclude ["types.h", "gc.h"]
+  map generateKernelInclude ["types.h", "gc.h", "utils.h"]
 
 
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
