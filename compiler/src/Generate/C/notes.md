@@ -1,3 +1,55 @@
+# TODO 4 Aug 2019
+
+## GC demo
+
+- Long but not infinite counter. Return control to browser occasionally by returning a `Cmd Msg` continuation
+- Use C printf to log to console. See if I can call JS perf timer.
+- Find some way of comparing to a JS-only version with browser GC
+- Find a way of comparing speed?
+  - Kinda competing against V8/SpiderMonkey optimisations. Scary.
+  - Boxed integers
+    - All my Wasm integers are boxed
+    - To make it fair, JS version should use boxed integers without `--optimize` and Wasm version should just use Int directly
+    - Also measure JS unboxed though, for completeness
+      - Just run unmodified Elm compiler with `--optimize`
+    - Compile it twice. Both optimized and unoptimized JS will be racing against the exact same C version.
+- Maybe can do this before modifying compiler for C+JS?
+  - Use the Bash patching thing I already have, but apply it to different globals. Hand picked ones at first, then maybe pattern-based.
+  - Hand compile it.
+  - Do some GC stuff in the C version, like with a while loop checking the heap status and deciding whether to clean up.
+
+## Compile a real Elm program
+
+- Write to two output files (.c, .js)
+  - what do I have to hack to make this happen?
+  - call JS generator from C generator
+- Generate C for any global prefixed with `wasm` or in a module beginning with `Wasm` and make it a Wasm export
+- Everything else is JS
+- Tree traversal
+  - separate traversal of C and JS dependencies
+  - separate "seen" globals. Some generated for both
+- Generate JS to call the Wasm exports
+  - Numbers only at first?
+  - JSON later
+
+## Implement JSON for imports/exports
+
+- Use that pure Elm JSON parser lib I found somewhere (Ilias?)
+- Needs Custom types & some String stuff & UTF
+
+## Tail recursive calls
+
+- enables some good test cases
+
+## Get rid of Language.C
+
+- Leave it in elm.cabal for now to use in GHCi (even needed? check.)
+
+## Local closures, scope, etc.
+
+- language fundamentals!
+- Affects expression generator code structure (Elm local -> C global + local)
+
 # Functions code gen
 
 - Global
