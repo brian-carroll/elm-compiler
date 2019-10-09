@@ -1,3 +1,29 @@
+# TODO 9 Oct 2019
+
+- Working example
+
+  - Git update from master!
+  - Pick a program to generate (up/down counter will do)
+  - Write the `update` in Elm and C, make a fake AST for it
+  - Make the wrapper `Program` to interface to JS runtime
+    - will need kernel code => unlock that
+  - spit out both JS and C.
+  - Integrate it. Probably with some Makefile work
+
+- GC perf
+
+  - see if I can call out to `performance.now()`
+
+- GC completeness
+
+  - fix currying bug
+  - more memory
+
+- code gen refactoring
+
+  - fix up the C Builder, still has old stuff in it
+  - commit to home grown lib
+
 # TODO 4 Aug 2019
 
 ## GC demo
@@ -10,8 +36,7 @@
   - Boxed integers
     - All my Wasm integers are boxed
     - To make it fair, JS version should use boxed integers without `--optimize` and Wasm version should just use Int directly
-    - Also measure JS unboxed though, for completeness
-      - Just run unmodified Elm compiler with `--optimize`
+    - Also measure JS unboxed for completeness, with `--optimize`
     - Compile it twice. Both optimized and unoptimized JS will be racing against the exact same C version.
 - Maybe can do this before modifying compiler for C+JS?
   - Use the Bash patching thing I already have, but apply it to different globals. Hand picked ones at first, then maybe pattern-based.
