@@ -3,6 +3,16 @@
 module Repl
   ( Flags(..)
   , run
+  --
+  , Lines(..)
+  , Input(..)
+  , Prefill(..)
+  , CategorizedInput(..)
+  , categorize
+  --
+  , State(..)
+  , Output(..)
+  , toByteString
   )
   where
 
@@ -43,6 +53,9 @@ import qualified Parse.Expression as PE
 import qualified Parse.Declaration as PD
 import qualified Parse.Module as PM
 import qualified Parse.Primitives as P
+import qualified Parse.Space as PS
+import qualified Parse.Type as PT
+import qualified Parse.Variable as PV
 import Parse.Primitives (Row, Col)
 import qualified Reporting
 import qualified Reporting.Annotation as A
@@ -161,31 +174,110 @@ data Input
 
 read :: Repl.InputT M Input
 read =
-  do  line <- Repl.getInputLine "> "
-      case line of
+  do  maybeLine <- Repl.getInputLine "> "
+      case maybeLine of
         Nothing ->
           return Exit
 
         Just chars ->
-          case categorize chars of
+          let
+            lines = Lines (stripLegacyBackslash chars) []
+          in
+          case categorize lines of
             Done input -> return input
-            Continue   -> readMore chars
+            Continue p -> readMore lines p
 
 
-readMore :: [Char] -> Repl.InputT M Input
-readMore previousLines =
-  do  input <- Repl.getInputLineWithInitial "| " ("  ","")
+readMore :: Lines -> Prefill -> Repl.InputT M Input
+readMore previousLines prefill =
+  do  input <- Repl.getInputLineWithInitial "| " (renderPrefill prefill, "")
       case input of
         Nothing ->
           return Skip
 
         Just chars ->
           let
-            allLines = previousLines ++ '\n' : chars
+            lines = addLine (stripLegacyBackslash chars) previousLines
           in
-          case categorize allLines of
+          case categorize lines of
             Done input -> return input
-            Continue   -> readMore allLines
+            Continue p -> readMore lines p
+
+
+-- For compatibility with 0.19.0 such that readers of "Programming Elm" by @jfairbank
+-- can get through the REPL section successfully.
+--
+-- TODO: remove stripLegacyBackslash in next MAJOR release
+--
+stripLegacyBackslash :: [Char] -> [Char]
+stripLegacyBackslash chars =
+  case chars of
+    [] ->
+      []
+
+    _:_ ->
+      if last chars == '\\'
+      then init chars
+      else chars
+
+
+data Prefill
+  = Indent
+  | DefStart N.Name
+
+
+renderPrefill :: Prefill -> String
+renderPrefill lineStart =
+  case lineStart of
+    Indent ->
+      "  "
+
+    DefStart name ->
+      N.toChars name ++ " "
+
+
+
+-- LINES
+
+
+data Lines =
+  Lines
+    { _prevLine :: String
+    , _revLines :: [String]
+    }
+
+
+addLine :: [Char] -> Lines -> Lines
+addLine line (Lines x xs) =
+  Lines line (x:xs)
+
+
+isBlank :: Lines -> Bool
+isBlank (Lines prev rev) =
+  null rev && all (==' ') prev
+
+
+isSingleLine :: Lines -> Bool
+isSingleLine (Lines _ rev) =
+  null rev
+
+
+endsWithBlankLine :: Lines -> Bool
+endsWithBlankLine (Lines prev _) =
+  all (==' ') prev
+
+
+linesToByteString :: Lines -> BS_UTF8.ByteString
+linesToByteString (Lines prev rev) =
+  BS_UTF8.fromString (unlines (reverse (prev:rev)))
+
+
+getFirstLine :: Lines -> String
+getFirstLine (Lines x xs) =
+  case xs of
+    []   -> x
+    y:ys -> getFirstLine (Lines y ys)
+
 
 
 
@@ -194,21 +286,21 @@ readMore previousLines =
 
 data CategorizedInput
   = Done Input
-  | Continue
+  | Continue Prefill
 
 
-categorize :: [Char] -> CategorizedInput
-categorize chars
-  | all (==' ') chars                = Done Skip
-  | startsWithColon chars            = Done (toCommand chars)
-  | startsWithKeyword "import" chars = attemptImport chars
-  | otherwise                        = attemptDeclOrExpr chars
+categorize :: Lines -> CategorizedInput
+categorize lines
+  | isBlank lines                    = Done Skip
+  | startsWithColon lines            = Done (toCommand lines)
+  | startsWithKeyword "import" lines = attemptImport lines
+  | otherwise                        = attemptDeclOrExpr lines
 
 
-attemptImport :: [Char] -> CategorizedInput
-attemptImport chars =
+attemptImport :: Lines -> CategorizedInput
+attemptImport lines =
   let
-    src = BS_UTF8.fromString (chars ++ "\n")
+    src = linesToByteString lines
     parser = P.specialize (\_ _ _ -> ()) PM.chompImport
   in
   case P.fromByteString parser (\_ _ -> ()) src of
@@ -216,63 +308,69 @@ attemptImport chars =
       Done (Import name src)
 
     Left () ->
-      if endsWithBlankLine chars
-      then Done (Import "ERR" src)
-      else Continue
+      ifFail lines (Import "ERR" src)
 
 
-attemptDeclOrExpr :: [Char] -> CategorizedInput
-attemptDeclOrExpr chars =
+ifFail :: Lines -> Input -> CategorizedInput
+ifFail lines input =
+  if endsWithBlankLine lines
+  then Done input
+  else Continue Indent
+
+
+ifDone :: Lines -> Input -> CategorizedInput
+ifDone lines input =
+  if isSingleLine lines || endsWithBlankLine lines
+  then Done input
+  else Continue Indent
+
+
+attemptDeclOrExpr :: Lines -> CategorizedInput
+attemptDeclOrExpr lines =
   let
-    src = BS_UTF8.fromString (chars ++ "\n")
+    src = linesToByteString lines
     exprParser = P.specialize (toExprPosition src) PE.expression
     declParser = P.specialize (toDeclPosition src) PD.declaration
   in
   case P.fromByteString declParser (,) src of
     Right (decl, _) ->
       case decl of
-        PD.Value _ (A.At _ (Src.Value (A.At _ name) _ _ _)) -> Done (Decl name src)
-        PD.Union _ (A.At _ (Src.Union (A.At _ name) _ _  )) -> Done (Type name src)
-        PD.Alias _ (A.At _ (Src.Alias (A.At _ name) _ _  )) -> Done (Type name src)
+        PD.Value _ (A.At _ (Src.Value (A.At _ name) _ _ _)) -> ifDone lines (Decl name src)
+        PD.Union _ (A.At _ (Src.Union (A.At _ name) _ _  )) -> ifDone lines (Type name src)
+        PD.Alias _ (A.At _ (Src.Alias (A.At _ name) _ _  )) -> ifDone lines (Type name src)
         PD.Port  _ _                                        -> Done Port
 
     Left declPosition
-      | startsWithKeyword "type" chars ->
-          if endsWithBlankLine chars
-          then Done (Type "ERR" src)
-          else Continue
+      | startsWithKeyword "type" lines ->
+          ifFail lines (Type "ERR" src)
 
-      | startsWithKeyword "port" chars ->
+      | startsWithKeyword "port" lines ->
           Done Port
 
       | otherwise ->
           case P.fromByteString exprParser (,) src of
             Right _ ->
-              Done (Expr src)
+              ifDone lines (Expr src)
 
             Left exprPosition ->
-              if endsWithBlankLine chars
-              then Done (if declPosition <= exprPosition then Expr src else Decl "ERR" src)
-              else Continue
+              if exprPosition >= declPosition then
+                ifFail lines (Expr src)
+              else
+                case P.fromByteString annotation (\_ _ -> ()) src of
+                  Right name -> Continue (DefStart name)
+                  Left ()    -> ifFail lines (Decl "ERR" src)
 
 
-endsWithBlankLine :: [Char] -> Bool
-endsWithBlankLine chars =
-  case reverse (List.lines chars) of
-    []   -> False
-    cs:_ -> all (==' ') cs
-
-
-startsWithColon :: [Char] -> Bool
-startsWithColon chars =
-  case dropWhile (==' ') chars of
+startsWithColon :: Lines -> Bool
+startsWithColon lines =
+  case dropWhile (==' ') (getFirstLine lines) of
     [] -> False
     c:_ -> c == ':'
 
 
-toCommand :: [Char] -> Input
-toCommand chars =
-  case drop 1 $ dropWhile (==' ') chars of
+toCommand :: Lines -> Input
+toCommand lines =
+  case drop 1 $ dropWhile (==' ') (getFirstLine lines) of
     "reset" -> Reset
     "exit"  -> Exit
     "quit"  -> Exit
@@ -280,8 +378,11 @@ toCommand chars =
     rest    -> Help (Just (takeWhile (/=' ') rest))
 
 
-startsWithKeyword :: [Char] -> [Char] -> Bool
-startsWithKeyword keyword line =
+startsWithKeyword :: [Char] -> Lines -> Bool
+startsWithKeyword keyword lines =
+  let
+    line = getFirstLine lines
+  in
   List.isPrefixOf keyword line &&
     case drop (length keyword) line of
       [] -> True
@@ -305,6 +406,21 @@ toDeclPosition src decl r c =
     (Report.Report _ (A.Region (A.Position row col) _) _ _) = report
   in
   (row, col)
+
+
+annotation :: P.Parser () N.Name
+annotation =
+  let
+    err _ _ = ()
+    err_ _ _ _ = ()
+  in
+  do  name <- PV.lower err
+      PS.chompAndCheckIndent err_ err
+      P.word1 0x3A {-:-} err
+      PS.chompAndCheckIndent err_ err
+      (_, _) <- P.specialize err_ PT.expression
+      PS.checkFreshLine err
+      return name
 
 
 
@@ -435,16 +551,16 @@ toByteString (State imports types decls) output =
 
 outputToBuilder :: Output -> B.Builder
 outputToBuilder output =
+  N.toBuilder N.replValueToPrint <> " =" <>
   case output of
     OutputNothing ->
-      mempty
+      " ()\n"
 
     OutputDecl _ ->
-      mempty
+      " ()\n"
 
     OutputExpr expr ->
-      N.toBuilder N.replValueToPrint <> " ="
-      <> foldr (\line rest -> "\n  " <> B.byteString line <> rest) "\n" (BSC.lines expr)
+      foldr (\line rest -> "\n  " <> B.byteString line <> rest) "\n" (BSC.lines expr)
 
 
 
@@ -506,11 +622,20 @@ getRoot =
                   Licenses.bsd3
                   V.one
                   (Outline.ExposedList [])
-                  (Map.singleton Pkg.core C.anything)
+                  defaultDeps
                   Map.empty
                   C.defaultElm
 
               return root
+
+
+defaultDeps :: Map.Map Pkg.Name C.Constraint
+defaultDeps =
+  Map.fromList
+    [ (Pkg.core, C.anything)
+    , (Pkg.json, C.anything)
+    , (Pkg.html, C.anything)
+    ]
 
 
 

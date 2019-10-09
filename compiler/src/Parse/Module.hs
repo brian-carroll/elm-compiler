@@ -2,6 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Parse.Module
   ( fromByteString
+  , ProjectType(..)
+  , isKernel
   , chompImports
   , chompImport
   )
@@ -29,11 +31,34 @@ import qualified Reporting.Error.Syntax as E
 -- FROM BYTE STRING
 
 
-fromByteString :: Pkg.Name -> BS.ByteString -> Either E.Error Src.Module
-fromByteString pkg source =
-  case P.fromByteString (chompModule pkg) E.ModuleBadEnd source of
-    Right modul -> checkModule modul
+fromByteString :: ProjectType -> BS.ByteString -> Either E.Error Src.Module
+fromByteString projectType source =
+  case P.fromByteString (chompModule projectType) E.ModuleBadEnd source of
+    Right modul -> checkModule projectType modul
     Left err    -> Left (E.ParseError err)
+
+
+
+-- PROJECT TYPE
+
+
+data ProjectType
+  = Package Pkg.Name
+  | Application
+
+
+isCore :: ProjectType -> Bool
+isCore projectType =
+  case projectType of
+    Package pkg -> pkg == Pkg.core
+    Application -> False
+
+
+isKernel :: ProjectType -> Bool
+isKernel projectType =
+  case projectType of
+    Package pkg -> Pkg.isKernel pkg
+    Application -> False
 
 
 
@@ -49,11 +74,11 @@ data Module =
     }
 
 
-chompModule :: Pkg.Name -> Parser E.Module Module
-chompModule pkg =
+chompModule :: ProjectType -> Parser E.Module Module
+chompModule projectType =
   do  header <- chompHeader
-      imports <- chompImports (if pkg == Pkg.core then [] else Imports.defaults)
-      infixes <- if Pkg.isKernel pkg then chompInfixes [] else return []
+      imports <- chompImports (if isCore projectType then [] else Imports.defaults)
+      infixes <- if isKernel projectType then chompInfixes [] else return []
       decls <- specialize E.Declarations $ chompDecls []
       return (Module header imports infixes decls)
 
@@ -62,15 +87,15 @@ chompModule pkg =
 -- CHECK MODULE
 
 
-checkModule :: Module -> Either E.Error Src.Module
-checkModule (Module maybeHeader imports infixes decls) =
+checkModule :: ProjectType -> Module -> Either E.Error Src.Module
+checkModule projectType (Module maybeHeader imports infixes decls) =
   let
     (values, unions, aliases, ports) = categorizeDecls [] [] [] [] decls
   in
   case maybeHeader of
     Just (Header name effects exports docs) ->
       Src.Module (Just name) exports (toDocs docs decls) imports values unions aliases infixes
-        <$> checkEffects ports effects
+        <$> checkEffects projectType ports effects
 
     Nothing ->
       Right $
@@ -80,23 +105,37 @@ checkModule (Module maybeHeader imports infixes decls) =
             _:_ -> Src.Ports ports
 
 
-checkEffects :: [Src.Port] -> Effects -> Either E.Error Src.Effects
-checkEffects ports effects =
+checkEffects :: ProjectType -> [Src.Port] -> Effects -> Either E.Error Src.Effects
+checkEffects projectType ports effects =
   case effects of
     NoEffects region ->
       case ports of
-        []  -> Right Src.NoEffects
-        _:_ -> Left (E.UnexpectedPort region)
+        [] ->
+          Right Src.NoEffects
+
+        Src.Port name _ : _ ->
+          case projectType of
+            Package _   -> Left (E.NoPortsInPackage name)
+            Application -> Left (E.UnexpectedPort region)
 
     Ports region ->
-      case ports of
-        []  -> Left (E.NoPorts region)
-        _:_ -> Right (Src.Ports ports)
+      case projectType of
+        Package _ ->
+          Left (E.NoPortModulesInPackage region)
+
+        Application ->
+          case ports of
+            []  -> Left (E.NoPorts region)
+            _:_ -> Right (Src.Ports ports)
 
     Manager region manager ->
-      case ports of
-        []  -> Right (Src.Manager region manager)
-        _:_ -> Left (E.UnexpectedPort region)
+      if isKernel projectType then
+        case ports of
+          []  -> Right (Src.Manager region manager)
+          _:_ -> Left (E.UnexpectedPort region)
+      else
+        Left (E.NoEffectsOutsideKernel region)
+
 
 
 categorizeDecls :: [A.Located Src.Value] -> [A.Located Src.Union] -> [A.Located Src.Alias] -> [Src.Port] -> [Decl.Decl] -> ( [A.Located Src.Value], [A.Located Src.Union], [A.Located Src.Alias], [Src.Port] )
@@ -395,18 +434,18 @@ exposing =
               Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentEnd
               word1 0x29 {-)-} E.ExposingEnd
               return Src.Open
-        , do  exposed <- addLocation chompExposed
+        , do  exposed <- chompExposed
               Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentEnd
               exposingHelp [exposed]
         ]
 
 
-exposingHelp :: [A.Located Src.Exposed] -> Parser E.Exposing Src.Exposing
+exposingHelp :: [Src.Exposed] -> Parser E.Exposing Src.Exposing
 exposingHelp revExposed =
   oneOf E.ExposingEnd
     [ do  word1 0x2C {-,-} E.ExposingEnd
           Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentValue
-          exposed <- addLocation chompExposed
+          exposed <- chompExposed
           Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentEnd
           exposingHelp (exposed:revExposed)
     , do  word1 0x29 {-)-} E.ExposingEnd
@@ -416,16 +455,21 @@ exposingHelp revExposed =
 
 chompExposed :: Parser E.Exposing Src.Exposed
 chompExposed =
-  oneOf E.ExposingValue
-    [ Src.Lower <$> Var.lower E.ExposingValue
-    , do  word1 0x28 {-(-} E.ExposingValue
-          op <- Symbol.operator E.ExposingOperator E.ExposingOperatorReserved
-          word1 0x29 {-)-} E.ExposingOperatorRightParen
-          return (Src.Operator op)
-    , do  name <- Var.upper E.ExposingValue
-          Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentEnd
-          Src.Upper name <$> privacy
-    ]
+  do  start <- getPosition
+      oneOf E.ExposingValue
+        [ do  name <- Var.lower E.ExposingValue
+              end <- getPosition
+              return $ Src.Lower $ A.at start end name
+        , do  word1 0x28 {-(-} E.ExposingValue
+              op <- Symbol.operator E.ExposingOperator E.ExposingOperatorReserved
+              word1 0x29 {-)-} E.ExposingOperatorRightParen
+              end <- getPosition
+              return $ Src.Operator (A.Region start end) op
+        , do  name <- Var.upper E.ExposingValue
+              end <- getPosition
+              Space.chompAndCheckIndent E.ExposingSpace E.ExposingIndentEnd
+              Src.Upper (A.at start end name) <$> privacy
+        ]
 
 
 privacy :: Parser E.Exposing Src.Privacy
@@ -433,9 +477,11 @@ privacy =
   oneOfWithFallback
     [ do  word1 0x28 {-(-} E.ExposingTypePrivacy
           Space.chompAndCheckIndent E.ExposingSpace E.ExposingTypePrivacy
+          start <- getPosition
           word2 0x2E 0x2E {-..-} E.ExposingTypePrivacy
+          end <- getPosition
           Space.chompAndCheckIndent E.ExposingSpace E.ExposingTypePrivacy
           word1 0x29 {-)-} E.ExposingTypePrivacy
-          return Src.Public
+          return $ Src.Public (A.Region start end)
     ]
     Src.Private

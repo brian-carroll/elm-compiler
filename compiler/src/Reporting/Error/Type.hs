@@ -231,7 +231,7 @@ toPatternReport source localizer patternRegion category tipe expected =
                   "But all the previous patterns match:"
                   [ D.link "Note"
                       "A `case` expression can only handle one type of value, so you may want to use"
-                      "union-types"
+                      "custom-types"
                       "to handle “mixing” types."
                   ]
               )
@@ -253,11 +253,11 @@ toPatternReport source localizer patternRegion category tipe expected =
             , patternTypeComparison localizer tipe expectedType
                 (addPatternCategory ("The " <> D.ordinal index <> " pattern is trying to match") category)
                 "But all the previous patterns in the list are:"
-                [ D.toSimpleHint $
-                    "Everything in the list needs to be the same type of value.\
-                    \ This way you never run into unexpected values partway through.\
-                    \ To mix different types in a single list, create a \"union type\" as\
-                    \ described in: <http://guide.elm-lang.org/types/union_types.html>"
+                [ D.link "Hint"
+                    "Everything in a list must be the same type of value. This way, we never\
+                    \ run into unexpected values partway through a List.map, List.foldl, etc. Read"
+                    "custom-types"
+                    "to learn how to “mix” types."
                 ]
             )
 
@@ -431,10 +431,6 @@ problemToHint problem =
           ]
       ]
 
-    T.AnythingToList ->
-      [ D.toSimpleHint "Did you forget to add [] around it?"
-      ]
-
     T.ArityMismatch x y ->
       [ D.toSimpleHint $
           if x < y then
@@ -563,11 +559,31 @@ badFlexSuper :: T.Direction -> T.Super -> T.Type -> [D.Doc]
 badFlexSuper direction super tipe =
   case super of
     T.Comparable ->
-      [ D.toSimpleHint "Only ints, floats, chars, strings, lists, and tuples are comparable."
-      ]
+      case tipe of
+        T.Record _ _ ->
+          [ D.link "Hint"
+              "I do not know how to compare records. I can only compare ints, floats,\
+              \ chars, strings, lists of comparable values, and tuples of comparable values.\
+              \ Check out" "comparing-records" "for ideas on how to proceed."
+          ]
+
+        T.Type _ name _ ->
+          [ D.toSimpleHint $
+              "I do not know how to compare `" ++ Name.toChars name ++ "` values. I can only\
+              \ compare ints, floats, chars, strings, lists of comparable values, and tuples\
+              \ of comparable values."
+          , D.reflowLink
+              "Check out" "comparing-custom-types" "for ideas on how to proceed."
+          ]
+
+        _ ->
+          [ D.toSimpleHint $
+              "I only know how to compare ints, floats, chars, strings, lists of\
+              \ comparable values, and tuples of comparable values."
+          ]
 
     T.Appendable ->
-      [ D.toSimpleHint "Only strings and lists are appendable."
+      [ D.toSimpleHint "I only know how to append strings and lists."
       ]
 
     T.CompAppend ->
@@ -694,11 +710,11 @@ toExprReport source localizer exprRegion category tipe expected =
           , "The " <> ith <> " element of this list does not match all the previous elements:"
           , "The " <> ith <> " element is"
           , "But all the previous elements in the list are:"
-          , [ D.toSimpleHint $
-                "Everything in the list needs to be the same type of value.\
-                \ This way you never run into unexpected values partway through.\
-                \ To mix different types in a single list, create a \"union type\" as\
-                \ described in: <http://guide.elm-lang.org/types/union_types.html>"
+          , [ D.link "Hint"
+                "Everything in a list must be the same type of value. This way, we never\
+                \ run into unexpected values partway through a List.map, List.foldl, etc. Read"
+                "custom-types"
+                "to learn how to “mix” types."
             ]
           )
 
@@ -745,7 +761,7 @@ toExprReport source localizer exprRegion category tipe expected =
           , [ D.link "Hint"
                 "All branches in an `if` must produce the same type of values. This way, no\
                 \ matter which branch we take, the result is always a consistent shape. Read"
-                "union-types"
+                "custom-types"
                 "to learn how to “mix” types."
             ]
           )
@@ -760,7 +776,7 @@ toExprReport source localizer exprRegion category tipe expected =
           , [ D.link "Hint"
                 "All branches in a `case` must produce the same type of values. This way, no\
                 \ matter which branch we take, the result is always a consistent shape. Read"
-                "union-types"
+                "custom-types"
                 "to learn how to “mix” types."
             ]
           )

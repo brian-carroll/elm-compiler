@@ -69,6 +69,9 @@ data Error
   | ModuleNameMismatch ModuleName.Raw (A.Located ModuleName.Raw)
   | UnexpectedPort A.Region
   | NoPorts A.Region
+  | NoPortsInPackage (A.Located Name.Name)
+  | NoPortModulesInPackage A.Region
+  | NoEffectsOutsideKernel A.Region
   | ParseError Module
 
 
@@ -561,8 +564,82 @@ toReport source err =
               ]
           )
 
+    NoPortsInPackage (A.At region _) ->
+      Report.Report "PACKAGES CANNOT HAVE PORTS" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "Packages cannot declare any ports, so I am getting stuck here:"
+          ,
+            D.stack
+              [ D.reflow $
+                  "Remove this port declaration."
+              , noteForPortsInPackage
+              ]
+          )
+
+    NoPortModulesInPackage region ->
+      Report.Report "PACKAGES CANNOT HAVE PORTS" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "Packages cannot declare any ports, so I am getting stuck here:"
+          ,
+            D.stack
+              [ D.fillSep $
+                  ["Remove","the",D.cyan "port","keyword","and","I"
+                  ,"should","be","able","to","continue."
+                  ]
+              , noteForPortsInPackage
+              ]
+          )
+
+    NoEffectsOutsideKernel region ->
+      Report.Report "INVALID EFFECT MODULE" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "It is not possible to declare an `effect module` outside the @elm organization,\
+              \ so I am getting stuck here:"
+          ,
+            D.stack
+              [ D.reflow $
+                  "Switch to a normal module declaration."
+              , D.toSimpleNote $
+                  "Effect modules are designed to allow certain core functionality to be\
+                  \ defined separately from the compiler. So the @elm organization has access to\
+                  \ this so that certain changes, extensions, and fixes can be introduced without\
+                  \ needing to release new Elm binaries. For example, we want to make it possible\
+                  \ to test effects, but this may require changes to the design of effect modules.\
+                  \ By only having them defined in the @elm organization, that kind of design work\
+                  \ can proceed much more smoothly."
+              ]
+          )
+
     ParseError modul ->
       toParseErrorReport source modul
+
+
+noteForPortsInPackage :: D.Doc
+noteForPortsInPackage =
+  D.stack
+    [ D.toSimpleNote $
+        "One of the major goals of the package ecosystem is to be completely written\
+        \ in Elm. This means when you install an Elm package, you can be sure you are safe\
+        \ from security issues on install and that you are not going to get any runtime\
+        \ exceptions coming from your new dependency. This design also sets the ecosystem\
+        \ up to target other platforms more easily (like mobile phones, WebAssembly, etc.)\
+        \ since no community code explicitly depends on JavaScript even existing."
+    , D.reflow $
+        "Given that overall goal, allowing ports in packages would lead to some pretty\
+        \ surprising behavior. If ports were allowed in packages, you could install a\
+        \ package but not realize that it brings in an indirect dependency that defines a\
+        \ port. Now you have a program that does not work and the fix is to realize that\
+        \ some JavaScript needs to be added for a dependency you did not even know about.\
+        \ That would be extremely frustrating! \"So why not allow the package author to\
+        \ include the necessary JS code as well?\" Now we are back in conflict with our\
+        \ overall goal to keep all community packages free from runtime exceptions."
+    ]
 
 
 toParseErrorReport :: Code.Source -> Module -> Report.Report
@@ -572,156 +649,9 @@ toParseErrorReport source modul =
       toSpaceReport source space row col
 
     ModuleBadEnd row col ->
-      case Code.whatIsNext source row col of
-        Code.Keyword keyword ->
-          let
-            region = toKeywordRegion row col keyword
-          in
-          Report.Report "RESERVED WORD" region [] $
-            Code.toSnippet source region Nothing
-              (
-                D.reflow $
-                  "I got stuck on this reserved word:"
-              ,
-                D.reflow $
-                  "The name `" ++ keyword ++ "` is reserved, so try using a different name?"
-              )
-
-        Code.Operator op ->
-          let
-            region = toKeywordRegion row col op
-          in
-          Report.Report "UNEXPECTED SYMBOL" region [] $
-            Code.toSnippet source region Nothing
-              (
-                D.reflow $
-                  "I ran into an unexpected symbol:"
-              ,
-                D.reflow $
-                  "I was not expecting to see a " ++ op ++ " here. Try deleting it? Maybe\
-                  \ I can give a better hint from there?"
-              )
-
-        Code.Close term bracket ->
-          let
-            region = toRegion row col
-          in
-          Report.Report ("UNEXPECTED " ++ map Char.toUpper term) region [] $
-            Code.toSnippet source region Nothing
-              (
-                D.reflow $
-                  "I ran into an unexpected " ++ term ++ ":"
-              ,
-                D.reflow $
-                  "This " ++ bracket : " does not match up with an earlier open " ++ term ++ ". Try deleting it?"
-              )
-
-        Code.Other maybeChar ->
-          let
-            region = toRegion row col
-          in
-          case maybeChar of
-            Just ';' ->
-              Report.Report "UNEXPECTED SEMICOLON" region [] $
-                Code.toSnippet source region Nothing
-                  (
-                    D.reflow $
-                      "I got stuck on this semicolon:"
-                  ,
-                    D.stack
-                      [ D.reflow $ "Try removing it?"
-                      , D.toSimpleNote $
-                          "Some languages require semicolons at the end of each statement. These are\
-                          \ often called C-like languages, and they usually share a lot of language design\
-                          \ choices. (E.g. side-effects, for loops, etc.) Elm manages effects with commands\
-                          \ and subscriptions instead, so there is no special syntax for \"statements\" and\
-                          \ therefore no need to use semicolons to separate them. I think this will make\
-                          \ more sense as you work through https://guide.elm-lang.org though!"
-                      ]
-                  )
-
-            Just ',' ->
-              Report.Report "UNEXPECTED COMMA" region [] $
-                Code.toSnippet source region Nothing
-                  (
-                    D.reflow $
-                      "I got stuck on this comma:"
-                  ,
-                    D.stack
-                      [ D.reflow $
-                          "I do not think I am parsing a list or tuple right now. Try deleting the comma?"
-                      , D.toSimpleNote $
-                          "If this is supposed to be part of a list, the problem may be a bit earlier.\
-                          \ Perhaps the opening [ is missing? Or perhaps some value in the list has an extra\
-                          \ closing ] that is making me think the list ended earlier? The same kinds of\
-                          \ things could be going wrong if this is supposed to be a tuple."
-                      ]
-                  )
-
-            Just '`' ->
-              Report.Report "UNEXPECTED CHARACTER" region [] $
-                Code.toSnippet source region Nothing
-                  (
-                    D.reflow $
-                      "I got stuck on this character:"
-                  ,
-                    D.stack
-                      [ D.reflow $
-                          "It is not used for anything in Elm syntax. It is used for multi-line strings in\
-                          \ some languages though, so if you want a string that spans multiple lines, you\
-                          \ can use Elm's multi-line string syntax like this:"
-                      , D.vcat
-                          [ D.fillSep [D.green "markdown","=",D.dullyellow "\"\"\""]
-                          , mempty
-                          , D.dullyellow "# Multi-line Strings"
-                          , mempty
-                          , D.dullyellow "- start with triple double quotes"
-                          , D.dullyellow "- write whatever you want"
-                          , D.dullyellow "- no need to escape newlines or double quotes"
-                          , D.dullyellow "- end with triple double quotes"
-                          , mempty
-                          , D.dullyellow "\"\"\""
-                          ]
-                      , D.reflow $
-                          "Otherwise I do not know what is going on! Try removing the character?"
-                      ]
-                  )
-
-            Just '$' ->
-              Report.Report "UNEXPECTED SYMBOL" region [] $
-                Code.toSnippet source region Nothing
-                  (
-                    D.reflow $
-                      "I got stuck on this dollar sign:"
-                  ,
-                    D.reflow $
-                      "It is not used for anything in Elm syntax. Are you coming from a language where\
-                      \ dollar signs can be used in variable names? If so, try a name that (1) starts\
-                      \ with a letter and (2) only contains letters, numbers, and underscores."
-                  )
-
-            Just c | elem c ['#','@','!','%','~'] ->
-              Report.Report "UNEXPECTED SYMBOL" region [] $
-                Code.toSnippet source region Nothing
-                  (
-                    D.reflow $
-                      "I got stuck on this symbol:"
-                  ,
-                    D.reflow $
-                      "It is not used for anything in Elm syntax. Try removing it?"
-                  )
-
-            _ ->
-              Report.Report "SYNTAX PROBLEM" region [] $
-                Code.toSnippet source region Nothing
-                  (
-                    D.reflow $
-                      "I got stuck here:"
-                  ,
-                    D.reflow $
-                      "Whatever I am running into is confusing me a lot! Normally I can give fairly\
-                      \ specific hints, but something is really tripping me up this time."
-                  )
+      if col == 1
+      then toDeclStartReport source row col
+      else toWeirdEndReport source row col
 
     ModuleProblem row col ->
       let
@@ -867,15 +797,15 @@ toParseErrorReport source modul =
                   [ D.reflow $
                       "I am not sure what is going on, but I recommend starting an Elm\
                       \ file with the following lines:"
-                  , D.vcat
+                  , D.indent 4 $ D.vcat $
                       [ D.fillSep [D.cyan "import","Html"]
                       , ""
-                      , D.fillSep [D.green "main","="]
-                      , D.indent 2 $ D.fillSep [D.cyan "Html" <> ".text",D.dullyellow "\"Hello!\""]
+                      , "main ="
+                      , "  Html.text " <> D.dullyellow "\"Hello!\""
                       ]
                   , D.reflow $
-                      "You should be able to copy those lines directly into your file. Check out\
-                      \ some of the examples on https://elm-lang.org for more help getting started!"
+                      "You should be able to copy those lines directly into your file. Check out the\
+                      \ examples at <https://elm-lang.org/examples> for more help getting started!"
                   , D.toSimpleNote $
                       "This can also happen when something is indented too much!"
                   ]
@@ -900,11 +830,12 @@ toParseErrorReport source modul =
               , D.indent 4 $ D.vcat $
                   [ D.fillSep [D.cyan "import","Dict"]
                   , D.fillSep [D.cyan "import","Maybe"]
-                  , D.fillSep [D.cyan "import","Html.Attributes"]
-                  , D.fillSep [D.cyan "import","Json.Decode"]
+                  , D.fillSep [D.cyan "import","Html.Attributes",D.cyan "as","A"]
+                  , D.fillSep [D.cyan "import","Json.Decode",D.cyan "exposing","(..)"]
                   ]
               , D.reflow $
                   "Notice that the module names all start with capital letters. That is required!"
+              , D.reflowLink "Read" "imports" "to learn more."
               ]
           )
 
@@ -931,6 +862,7 @@ toParseErrorReport source modul =
                   ]
               , D.reflow $
                   "Notice that the alias always starts with a capital letter. That is required!"
+              , D.reflowLink "Read" "imports" "to learn more."
               ]
           )
 
@@ -993,6 +925,192 @@ toParseErrorReport source modul =
 
 
 
+-- WEIRD END
+
+
+toWeirdEndReport :: Code.Source -> Row -> Col -> Report.Report
+toWeirdEndReport source row col =
+  case Code.whatIsNext source row col of
+    Code.Keyword keyword ->
+      let
+        region = toKeywordRegion row col keyword
+      in
+      Report.Report "RESERVED WORD" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "I got stuck on this reserved word:"
+          ,
+            D.reflow $
+              "The name `" ++ keyword ++ "` is reserved, so try using a different name?"
+          )
+
+    Code.Operator op ->
+      let
+        region = toKeywordRegion row col op
+      in
+      Report.Report "UNEXPECTED SYMBOL" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "I ran into an unexpected symbol:"
+          ,
+            D.reflow $
+              "I was not expecting to see a " ++ op ++ " here. Try deleting it? Maybe\
+              \ I can give a better hint from there?"
+          )
+
+    Code.Close term bracket ->
+      let
+        region = toRegion row col
+      in
+      Report.Report ("UNEXPECTED " ++ map Char.toUpper term) region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "I ran into an unexpected " ++ term ++ ":"
+          ,
+            D.reflow $
+              "This " ++ bracket : " does not match up with an earlier open " ++ term ++ ". Try deleting it?"
+          )
+
+    Code.Lower c cs ->
+      let
+        region = toKeywordRegion row col (c:cs)
+      in
+      Report.Report "UNEXPECTED NAME" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "I got stuck on this name:"
+          ,
+            D.reflow $
+              "It is confusing me a lot! Normally I can give fairly specific hints, but\
+              \ something is really tripping me up this time."
+          )
+
+    Code.Upper c cs ->
+      let
+        region = toKeywordRegion row col (c:cs)
+      in
+      Report.Report "UNEXPECTED NAME" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "I got stuck on this name:"
+          ,
+            D.reflow $
+              "It is confusing me a lot! Normally I can give fairly specific hints, but\
+              \ something is really tripping me up this time."
+          )
+
+    Code.Other maybeChar ->
+      let
+        region = toRegion row col
+      in
+      case maybeChar of
+        Just ';' ->
+          Report.Report "UNEXPECTED SEMICOLON" region [] $
+            Code.toSnippet source region Nothing
+              (
+                D.reflow $
+                  "I got stuck on this semicolon:"
+              ,
+                D.stack
+                  [ D.reflow $ "Try removing it?"
+                  , D.toSimpleNote $
+                      "Some languages require semicolons at the end of each statement. These are\
+                      \ often called C-like languages, and they usually share a lot of language design\
+                      \ choices. (E.g. side-effects, for loops, etc.) Elm manages effects with commands\
+                      \ and subscriptions instead, so there is no special syntax for \"statements\" and\
+                      \ therefore no need to use semicolons to separate them. I think this will make\
+                      \ more sense as you work through <https://guide.elm-lang.org> though!"
+                  ]
+              )
+
+        Just ',' ->
+          Report.Report "UNEXPECTED COMMA" region [] $
+            Code.toSnippet source region Nothing
+              (
+                D.reflow $
+                  "I got stuck on this comma:"
+              ,
+                D.stack
+                  [ D.reflow $
+                      "I do not think I am parsing a list or tuple right now. Try deleting the comma?"
+                  , D.toSimpleNote $
+                      "If this is supposed to be part of a list, the problem may be a bit earlier.\
+                      \ Perhaps the opening [ is missing? Or perhaps some value in the list has an extra\
+                      \ closing ] that is making me think the list ended earlier? The same kinds of\
+                      \ things could be going wrong if this is supposed to be a tuple."
+                  ]
+              )
+
+        Just '`' ->
+          Report.Report "UNEXPECTED CHARACTER" region [] $
+            Code.toSnippet source region Nothing
+              (
+                D.reflow $
+                  "I got stuck on this character:"
+              ,
+                D.stack
+                  [ D.reflow $
+                      "It is not used for anything in Elm syntax. It is used for multi-line strings in\
+                      \ some languages though, so if you want a string that spans multiple lines, you\
+                      \ can use Elm's multi-line string syntax like this:"
+                  , D.dullyellow $ D.indent 4 $ D.vcat $
+                      [ "\"\"\""
+                      , "# Multi-line Strings"
+                      , ""
+                      , "- start with triple double quotes"
+                      , "- write whatever you want"
+                      , "- no need to escape newlines or double quotes"
+                      , "- end with triple double quotes"
+                      , "\"\"\""
+                      ]
+                  , D.reflow $
+                      "Otherwise I do not know what is going on! Try removing the character?"
+                  ]
+              )
+
+        Just '$' ->
+          Report.Report "UNEXPECTED SYMBOL" region [] $
+            Code.toSnippet source region Nothing
+              (
+                D.reflow $
+                  "I got stuck on this dollar sign:"
+              ,
+                D.reflow $
+                  "It is not used for anything in Elm syntax. Are you coming from a language where\
+                  \ dollar signs can be used in variable names? If so, try a name that (1) starts\
+                  \ with a letter and (2) only contains letters, numbers, and underscores."
+              )
+
+        Just c | elem c ['#','@','!','%','~'] ->
+          Report.Report "UNEXPECTED SYMBOL" region [] $
+            Code.toSnippet source region Nothing
+              (
+                D.reflow $
+                  "I got stuck on this symbol:"
+              ,
+                D.reflow $
+                  "It is not used for anything in Elm syntax. Try removing it?"
+              )
+
+        _ ->
+          Report.Report "SYNTAX PROBLEM" region [] $
+            Code.toSnippet source region Nothing
+              (
+                D.reflow $
+                  "I got stuck here:"
+              ,
+                D.reflow $
+                  "Whatever I am running into is confusing me a lot! Normally I can give fairly\
+                  \ specific hints, but something is really tripping me up this time."
+              )
+
+
+
 -- IMPORTS
 
 
@@ -1018,6 +1136,7 @@ toImportReport source row col =
               ]
           , D.reflow $
               "You are probably trying to import a different module, but try to make it look like one of these examples!"
+          , D.reflowLink "Read" "imports" "to learn more."
           ]
       )
 
@@ -1324,106 +1443,7 @@ toDeclarationsReport :: Code.Source -> Decl -> Report.Report
 toDeclarationsReport source decl =
   case decl of
     DeclStart row col ->
-      case Code.whatIsNext source row col of
-        Code.Close term bracket ->
-          let
-            region = toRegion row col
-          in
-          Report.Report ("STRAY " ++ map Char.toUpper term) region [] $
-            Code.toSnippet source region Nothing
-              (
-                D.reflow $
-                  "I was not expecting to see a " ++ term ++ " here:"
-              , D.reflow $
-                  "This " ++ bracket : " does not match up with an earlier open " ++ term ++ ". Try deleting it?"
-              )
-
-        Code.Keyword keyword ->
-          let
-            region = toKeywordRegion row col keyword
-          in
-          Report.Report "RESERVED WORD" region [] $
-            Code.toSnippet source region Nothing
-              (
-                D.reflow $
-                  "I was not expecting to run into the `" ++ keyword ++ "` keyword here:"
-              ,
-                case keyword of
-                  "import" ->
-                    D.reflow $
-                      "It is reserved for declaring imports at the top of your module. If you want\
-                      \ another import, try moving it up top with the other imports. If you want to\
-                      \ define a value or function, try changing the name to something else!"
-
-                  "case" ->
-                    D.stack
-                      [ D.reflow $
-                          "It is reserved for writing `case` expressions. Try using a different name?"
-                      , D.toSimpleNote $
-                          "If you are trying to write a `case` expression, it needs to be part of a\
-                          \ definition. So you could write something like this instead:"
-                      , D.vcat $
-                          [ D.indent 0 $ D.fillSep [D.green "getWidth","maybeWidth","="]
-                          , D.indent 2 $ D.fillSep [D.cyan "case","maybeWidth",D.cyan "of"]
-                          , D.indent 4 $ D.fillSep [D.blue "Just","width","->"]
-                          , D.indent 6 $ D.fillSep ["width","+",D.dullyellow "200"]
-                          , ""
-                          , D.indent 4 $ D.fillSep [D.blue "Nothing","->"]
-                          , D.indent 6 $ D.fillSep [D.dullyellow "400"]
-                          ]
-                      , D.reflow $
-                          "This defines a `getWidth` function that we can use elsewhere in our program."
-                      ]
-
-                  "if" ->
-                    D.stack
-                      [ D.reflow $
-                          "It is reserved for writing `if` expressions. Try using a different name?"
-                      , D.toSimpleNote $
-                          "If you are trying to write an `if` expression, it needs to be part of a\
-                          \ definition. So you could write something like this instead:"
-                      , D.vcat $
-                          [ D.indent 0 $ D.fillSep [D.green "reviewPowerLevel","powerLevel","="]
-                          , D.indent 2 $ D.fillSep $
-                              [D.cyan "if","powerLevel",">",D.dullyellow "9000"
-                              ,D.cyan "then",D.dullyellow "\"OVER 9000!!!\""
-                              ,D.cyan "else",D.dullyellow "\"not bad\""
-                              ]
-                          ]
-                      , D.reflow $
-                          "This defines a `reviewPowerLevel` function that we can use elsewhere in our program."
-                      ]
-
-                  _ ->
-                    D.reflow $
-                      "It is a reserved word. Try changing the name to something else?"
-              )
-
-        _ ->
-          let
-            region = toRegion row col
-          in
-          Report.Report "SYNTAX PROBLEM" region [] $
-            Code.toSnippet source region Nothing
-              (
-                D.reflow $
-                  "I was expecting to see a new declaration here:"
-              ,
-                D.stack
-                  [ D.reflow $
-                      "I am not sure what is going wrong exactly, but here are a couple valid\
-                      \ declarations for reference:"
-                  , D.vcat
-                      [ D.fillSep [D.green "add",":","Int","->","Int","->","Int"]
-                      , D.fillSep [D.green "add","x","y","="]
-                      , D.fillSep [" ","x","+","y"]
-                      ]
-                  , D.fillSep [D.cyan "type",D.green "User","=","Anonymous","|","LoggedIn String"]
-                  , D.reflow $
-                      "Note that all declarations start with lower-case letters in Elm. Capitalization\
-                      \ makes a difference, so be conscious of that if you are working from examples!"
-                  ]
-              )
+      toDeclStartReport source row col
 
     DeclSpace space row col ->
       toSpaceReport source space row col
@@ -1452,6 +1472,165 @@ toDeclarationsReport source decl =
               \ line with no indentation."
           )
 
+
+toDeclStartReport :: Code.Source -> Row -> Col -> Report.Report
+toDeclStartReport source row col =
+  case Code.whatIsNext source row col of
+    Code.Close term bracket ->
+      let
+        region = toRegion row col
+      in
+      Report.Report ("STRAY " ++ map Char.toUpper term) region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "I was not expecting to see a " ++ term ++ " here:"
+          , D.reflow $
+              "This " ++ bracket : " does not match up with an earlier open " ++ term ++ ". Try deleting it?"
+          )
+
+    Code.Keyword keyword ->
+      let
+        region = toKeywordRegion row col keyword
+      in
+      Report.Report "RESERVED WORD" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "I was not expecting to run into the `" ++ keyword ++ "` keyword here:"
+          ,
+            case keyword of
+              "import" ->
+                D.reflow $
+                  "It is reserved for declaring imports at the top of your module. If you want\
+                  \ another import, try moving it up top with the other imports. If you want to\
+                  \ define a value or function, try changing the name to something else!"
+
+              "case" ->
+                D.stack
+                  [ D.reflow $
+                      "It is reserved for writing `case` expressions. Try using a different name?"
+                  , D.toSimpleNote $
+                      "If you are trying to write a `case` expression, it needs to be part of a\
+                      \ definition. So you could write something like this instead:"
+                  , D.indent 4 $ D.vcat $
+                      [ D.indent 0 $ D.fillSep ["getWidth","maybeWidth","="]
+                      , D.indent 2 $ D.fillSep [D.cyan "case","maybeWidth",D.cyan "of"]
+                      , D.indent 4 $ D.fillSep [D.blue "Just","width","->"]
+                      , D.indent 6 $ D.fillSep ["width","+",D.dullyellow "200"]
+                      , ""
+                      , D.indent 4 $ D.fillSep [D.blue "Nothing","->"]
+                      , D.indent 6 $ D.fillSep [D.dullyellow "400"]
+                      ]
+                  , D.reflow $
+                      "This defines a `getWidth` function that you can use elsewhere in your program."
+                  ]
+
+              "if" ->
+                D.stack
+                  [ D.reflow $
+                      "It is reserved for writing `if` expressions. Try using a different name?"
+                  , D.toSimpleNote $
+                      "If you are trying to write an `if` expression, it needs to be part of a\
+                      \ definition. So you could write something like this instead:"
+                  , D.indent 4 $ D.vcat $
+                      [ "greet name ="
+                      , D.fillSep $
+                          [" "
+                          ,D.cyan "if","name","==",D.dullyellow "\"Abraham Lincoln\""
+                          ,D.cyan "then",D.dullyellow "\"Greetings Mr. President.\""
+                          ,D.cyan "else",D.dullyellow "\"Hey!\""
+                          ]
+                      ]
+                  , D.reflow $
+                      "This defines a `reviewPowerLevel` function that you can use elsewhere in your program."
+                  ]
+
+              _ ->
+                D.reflow $
+                  "It is a reserved word. Try changing the name to something else?"
+          )
+
+    Code.Upper c cs ->
+      let
+        region = toRegion row col
+      in
+      Report.Report "UNEXPECTED CAPITAL LETTER" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "Declarations always start with a lower-case letter, so I am getting stuck here:"
+          ,
+            D.stack
+              [ D.fillSep $
+                  ["Try","a","name","like"
+                  ,D.green (D.fromChars (Char.toLower c : cs))
+                  ,"instead?"
+                  ]
+              , D.toSimpleNote $
+                  "Here are a couple valid declarations for reference:"
+              , D.indent 4 $ D.vcat $
+                  [ "greet : String -> String"
+                  , "greet name ="
+                  , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
+                  , ""
+                  , D.cyan "type" <> " User = Anonymous | LoggedIn String"
+                  ]
+              , D.reflow $
+                  "Notice that they always start with a lower-case letter. Capitalization matters!"
+              ]
+          )
+
+    Code.Other (Just char) | elem char ['(', '{', '[', '+', '-', '*', '/', '^', '&', '|', '"', '\'', '!', '@', '#', '$', '%'] ->
+      let
+        region = toRegion row col
+      in
+      Report.Report "UNEXPECTED SYMBOL" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "I am getting stuck because this line starts with the " ++ [char] ++ " symbol:"
+          ,
+            D.stack
+              [ D.reflow $
+                  "When a line has no spaces at the beginning, I expect it to be a declaration like one of these:"
+              , D.indent 4 $ D.vcat $
+                  [ "greet : String -> String"
+                  , "greet name ="
+                  , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
+                  , ""
+                  , D.cyan "type" <> " User = Anonymous | LoggedIn String"
+                  ]
+              , D.reflow $
+                  "If this is not supposed to be a declaration, try adding some spaces before it?"
+              ]
+          )
+
+    _ ->
+      let
+        region = toRegion row col
+      in
+      Report.Report "WEIRD DECLARATION" region [] $
+        Code.toSnippet source region Nothing
+          (
+            D.reflow $
+              "I am trying to parse a declaration, but I am getting stuck here:"
+          ,
+            D.stack
+              [ D.reflow $
+                  "When a line has no spaces at the beginning, I expect it to be a declaration like one of these:"
+              , D.indent 4 $ D.vcat $
+                  [ "greet : String -> String"
+                  , "greet name ="
+                  , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
+                  , ""
+                  , D.cyan "type" <> " User = Anonymous | LoggedIn String"
+                  ]
+              , D.reflow $
+                  "Try to make your declaration look like one of those? Or if this is not\
+                  \ supposed to be a declaration, try adding some spaces before it?"
+              ]
+          )
 
 
 -- PORT
@@ -1579,7 +1758,7 @@ toPortReport source port_ startRow startCol =
               [ D.reflow $
                   "I was expecting to see a type next. Here are examples of outgoing and\
                   \ incoming ports for reference:"
-              , D.vcat
+              , D.indent 4 $ D.vcat $
                   [ D.fillSep [D.cyan "port","send",":","String -> Cmd msg"]
                   , D.fillSep [D.cyan "port","receive",":","(String -> msg) -> Sub msg"]
                   ]
@@ -1598,7 +1777,7 @@ portNote =
   D.stack
     [ D.toSimpleNote $
         "Here are some example `port` declarations for reference:"
-    , D.vcat
+    , D.indent 4 $ D.vcat $
         [ D.fillSep [D.cyan "port","send",":","String -> Cmd msg"]
         , D.fillSep [D.cyan "port","receive",":","(String -> msg) -> Sub msg"]
         ]
@@ -1781,8 +1960,8 @@ typeAliasNote =
     [ D.toSimpleNote $
         "Here is an example of a valid `type alias` for reference:"
     , D.vcat $
-        [ D.indent 0 $ D.fillSep [D.cyan "type",D.cyan "alias",D.green "Person","="]
-        , D.indent 2 $ D.vcat $
+        [ D.indent 4 $ D.fillSep [D.cyan "type",D.cyan "alias","Person","="]
+        , D.indent 6 $ D.vcat $
              ["{ name : String"
              ,", age : Int"
              ,", height : Float"
@@ -1982,10 +2161,10 @@ customTypeNote =
     [ D.toSimpleNote $
         "Here is an example of a valid `type` declaration for reference:"
     , D.vcat $
-        [ D.indent 0 $ D.fillSep [D.cyan "type",D.green "Status"]
-        , D.indent 2 $ D.fillSep ["=","Failure"]
-        , D.indent 2 $ D.fillSep ["|","Waiting"]
-        , D.indent 2 $ D.fillSep ["|","Success","String"]
+        [ D.indent 4 $ D.fillSep [D.cyan "type","Status"]
+        , D.indent 6 $ D.fillSep ["=","Failure"]
+        , D.indent 6 $ D.fillSep ["|","Waiting"]
+        , D.indent 6 $ D.fillSep ["|","Success","String"]
         ]
     , D.reflow $
         "This defines a new `Status` type with three variants. This could be useful if\
@@ -2016,11 +2195,55 @@ toDeclDefReport source name declDef startRow startCol =
           Report.Report "RESERVED WORD" region [] $
             Code.toSnippet source surroundings (Just region)
               (
-                D.reflow $
-                  "It looks like you are trying to use `" ++ keyword ++ "` as an argument:"
+                D.fillSep
+                  ["The","name"
+                  ,"`" <> D.cyan (D.fromChars keyword) <> "`"
+                  ,"is","reserved","in","Elm,","so","it","cannot"
+                  ,"be","used","as","an","argument","here:"
+                  ]
               ,
+                D.stack
+                  [ D.reflow $
+                      "Try renaming it to something else."
+                  , case keyword of
+                      "as" ->
+                        D.toFancyNote
+                          ["This","keyword","is","reserved","for","pattern","matches","like"
+                          ,"((x,y)",D.cyan "as","point)","where","you","want","to","name","a","tuple","and"
+                          ,"the","values","it","contains."
+                          ]
+
+                      _ ->
+                        D.toSimpleNote $
+                          "The `" ++ keyword ++ "` keyword has a special meaning in Elm, so it can only be used in certain situations."
+                  ]
+              )
+
+        Code.Operator "->" ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+            region = toWiderRegion row col 2
+          in
+          Report.Report "MISSING COLON?" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
                 D.reflow $
-                  "This is a reserved word! Try using some other name?"
+                  "I was not expecting to see an arrow here:"
+              ,
+                D.stack
+                  [ D.fillSep
+                      ["This","usually","means","a",D.green ":","is","missing","a","bit","earlier","in"
+                      ,"a","type","annotation.","It","could","be","something","else","though,","so"
+                      ,"here","is","a","valid","definition","for","reference:"
+                      ]
+                  , D.indent 4 $ D.vcat $
+                      [ "greet : String -> String"
+                      , "greet name ="
+                      , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
+                      ]
+                  , D.reflow $
+                      "Try to use that format with your `" ++ Name.toChars name ++ "` definition!"
+                  ]
               )
 
         Code.Operator op ->
@@ -2038,10 +2261,10 @@ toDeclDefReport source name declDef startRow startCol =
                   [ D.reflow $
                       "I am not sure what is going wrong exactly, so here is a valid\
                       \ definition (with an optional type annotation) for reference:"
-                  , D.vcat
-                      [ D.fillSep [D.green "add",":","Int","->","Int","->","Int"]
-                      , D.fillSep [D.green "add","x","y","="]
-                      , D.fillSep [" ","x","+","y"]
+                  , D.indent 4 $ D.vcat $
+                      [ "greet : String -> String"
+                      , "greet name ="
+                      , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
                       ]
                   , D.reflow $
                       "Try to use that format with your `" ++ Name.toChars name ++ "` definition!"
@@ -2063,10 +2286,10 @@ toDeclDefReport source name declDef startRow startCol =
                   [ D.reflow $
                       "I am not sure what is going wrong exactly, so here is a valid\
                       \ definition (with an optional type annotation) for reference:"
-                  , D.vcat
-                      [ D.fillSep [D.green "add",":","Int","->","Int","->","Int"]
-                      , D.fillSep [D.green "add","x","y","="]
-                      , D.fillSep [" ","x","+","y"]
+                  , D.indent 4 $ D.vcat $
+                      [ "greet : String -> String"
+                      , "greet name ="
+                      , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
                       ]
                   , D.reflow $
                       "Try to use that format!"
@@ -2181,10 +2404,10 @@ declDefNote =
   D.stack
     [ D.reflow $
         "Here is a valid definition (with a type annotation) for reference:"
-    , D.vcat
-        [ D.fillSep [D.green "add",":","Int","->","Int","->","Int"]
-        , D.fillSep [D.green "add","x","y","="]
-        , D.fillSep [" ","x","+","y"]
+    , D.indent 4 $ D.vcat $
+        [ "greet : String -> String"
+        , "greet name ="
+        , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
         ]
     , D.reflow $
         "The top line (called a \"type annotation\") is optional. You can leave it off\
@@ -2296,25 +2519,40 @@ toExprReport source context expr startRow startCol =
           )
 
     OperatorRight op row col ->
-      let region = toRegion row col in
+      let
+        surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+        region = toRegion row col
+        isMath = elem op ["-","+","*","/","^"]
+      in
       Report.Report "MISSING EXPRESSION" region [] $
-        Code.toSnippet source region Nothing
+        Code.toSnippet source surroundings (Just region)
           (
             D.reflow $
-              "I was expecting to see an expression after this " ++ Name.toChars op ++ " operator:"
+                "I just saw a " ++ Name.toChars op ++ " "
+                ++ (if isMath then "sign" else "operator")
+                ++ ", so I am getting stuck here:"
           ,
-            D.stack
-              [ D.fillSep $
-                  ["You","can","just","put","anything","for","now,","like"
-                  ,D.dullyellow "42","or",D.dullyellow"\"hello\"" <> "."
-                  ,"Once","there","is","something","there,","I","can","probably"
-                  ,"give","a","more","specific","hint!"
-                  ]
-              , D.toSimpleNote $
-                  "This can also happen if run into reserved words like `let` or `as` unexpectedly.\
-                  \ Or if I run into operators in unexpected spots. Point is, there are a\
-                  \ couple ways I can get confused and give sort of weird advice!"
-              ]
+            if isMath then
+              D.fillSep
+                ["I","was","expecting","to","see","an","expression","next."
+                ,"Something","like",D.dullyellow "42","or",D.dullyellow "1000"
+                ,"that","makes","sense","with","a",D.fromName op,"sign."
+                ]
+            else if op == "&&" || op == "||" then
+              D.fillSep
+                ["I","was","expecting","to","see","an","expression","next."
+                ,"Something","like",D.dullyellow "True","or",D.dullyellow "False"
+                ,"that","makes","sense","with","boolean","logic."
+                ]
+            else if op == "|>" then
+              D.reflow $
+                "I was expecting to see a function next."
+            else if op == "<|" then
+              D.reflow $
+                "I was expecting to see an argument next."
+            else
+              D.reflow $
+                "I was expecting to see an expression next."
           )
 
     OperatorReserved operator row col ->
@@ -2502,17 +2740,15 @@ toStringReport source string row col =
               , D.toSimpleNote $
                   "For a string that spans multiple lines, you can use the multi-line string\
                   \ syntax like this:"
-              , D.vcat
-                  [ D.fillSep [D.green "markdown","=",D.dullyellow "\"\"\""]
-                  , mempty
-                  , D.dullyellow "# Multi-line Strings"
-                  , mempty
-                  , D.dullyellow "- start with triple double quotes"
-                  , D.dullyellow "- write whatever you want"
-                  , D.dullyellow "- no need to escape newlines or double quotes"
-                  , D.dullyellow "- end with triple double quotes"
-                  , mempty
-                  , D.dullyellow "\"\"\""
+              , D.dullyellow $ D.indent 4 $ D.vcat $
+                  [ "\"\"\""
+                  , "# Multi-line Strings"
+                  , ""
+                  , "- start with triple double quotes"
+                  , "- write whatever you want"
+                  , "- no need to escape newlines or double quotes"
+                  , "- end with triple double quotes"
+                  , "\"\"\""
                   ]
               ]
           )
@@ -2531,17 +2767,15 @@ toStringReport source string row col =
               [ D.reflow "Add a \"\"\" somewhere after this to end the string."
               , D.toSimpleNote $
                   "Here is a valid multi-line string for reference:"
-              , D.vcat
-                  [ D.fillSep [D.green "markdown","=",D.dullyellow "\"\"\""]
-                  , mempty
-                  , D.dullyellow "# Multi-line Strings"
-                  , mempty
-                  , D.dullyellow "- start with triple double quotes"
-                  , D.dullyellow "- write whatever you want"
-                  , D.dullyellow "- no need to escape newlines or double quotes"
-                  , D.dullyellow "- end with triple double quotes"
-                  , mempty
-                  , D.dullyellow "\"\"\""
+              , D.dullyellow $ D.indent 4 $ D.vcat $
+                  [ "\"\"\""
+                  , "# Multi-line Strings"
+                  , ""
+                  , "- start with triple double quotes"
+                  , "- write whatever you want"
+                  , "- no need to escape newlines or double quotes"
+                  , "- end with triple double quotes"
+                  , "\"\"\""
                   ]
               ]
           )
@@ -2793,7 +3027,7 @@ toOperatorReport source context operator row col =
             ,
               D.stack
                 [ D.reflow $
-                    "It makes sense to see arrows around here, so I suspect it is something earlier."
+                    "It makes sense to see arrows around here, so I suspect it is something earlier. Maybe this pattern is indented a bit farther than the previous patterns?"
                 , noteForCaseIndentError
                 ]
             )
@@ -2801,11 +3035,15 @@ toOperatorReport source context operator row col =
           else
             (
               D.reflow $
-                "I was not expecting an arrow here:"
+                "I was partway through parsing an expression when I got stuck on this arrow:"
             ,
-              D.reflow $
-                "Arrows should only appear in `case` expressions and anonymous functions. Maybe\
-                \ you want > or >= instead?"
+              D.stack
+                [ "Arrows should only appear in `case` expressions and anonymous functions.\n\
+                  \Maybe it was supposed to be a > sign instead?"
+                , D.toSimpleNote $
+                    "The syntax for anonymous functions is (\\x -> x + 1) so the arguments all appear\
+                    \ after the backslash and before the arrow. Maybe a backslash is missing earlier?"
+                ]
             )
 
     BadEquals ->
@@ -3002,8 +3240,8 @@ toUnfinishLetReport source row col startRow startCol message =
           [ message
           , D.toSimpleNote $
               "Here is an example with a valid `let` expression for reference:"
-          , D.vcat $
-              [ D.indent 0 $ D.fillSep [D.green "viewPerson","person","="]
+          , D.indent 4 $ D.vcat $
+              [ D.indent 0 $ D.fillSep ["viewPerson","person","="]
               , D.indent 2 $ D.fillSep [D.cyan "let"]
               , D.indent 4 $ D.fillSep ["fullName","="]
               , D.indent 6 $ D.fillSep ["person.firstName","++",D.dullyellow "\" \"","++","person.lastName"]
@@ -3080,11 +3318,55 @@ toLetDefReport source name def startRow startCol =
           Report.Report "RESERVED WORD" region [] $
             Code.toSnippet source surroundings (Just region)
               (
-                D.reflow $
-                  "It looks like you are trying to use `" ++ keyword ++ "` as an argument:"
+                D.fillSep
+                  ["The","name"
+                  ,"`" <> D.cyan (D.fromChars keyword) <> "`"
+                  ,"is","reserved","in","Elm,","so","it","cannot"
+                  ,"be","used","as","an","argument","here:"
+                  ]
               ,
+                D.stack
+                  [ D.reflow $
+                      "Try renaming it to something else."
+                  , case keyword of
+                      "as" ->
+                        D.toFancyNote
+                          ["This","keyword","is","reserved","for","pattern","matches","like"
+                          ,"((x,y)",D.cyan "as","point)","where","you","want","to","name","a","tuple","and"
+                          ,"the","values","it","contains."
+                          ]
+
+                      _ ->
+                        D.toSimpleNote $
+                          "The `" ++ keyword ++ "` keyword has a special meaning in Elm, so it can only be used in certain situations."
+                  ]
+              )
+
+        Code.Operator "->" ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+            region = toWiderRegion row col 2
+          in
+          Report.Report "MISSING COLON?" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
                 D.reflow $
-                  "This is a reserved word! Try using some other name?"
+                  "I was not expecting to see an arrow here:"
+              ,
+                D.stack
+                  [ D.fillSep
+                      ["This","usually","means","a",D.green ":","is","missing","a","bit","earlier","in"
+                      ,"a","type","annotation.","It","could","be","something","else","though,","so"
+                      ,"here","is","a","valid","definition","for","reference:"
+                      ]
+                  , D.indent 4 $ D.vcat $
+                      [ "greet : String -> String"
+                      , "greet name ="
+                      , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
+                      ]
+                  , D.reflow $
+                      "Try to use that format with your `" ++ Name.toChars name ++ "` definition!"
+                  ]
               )
 
         Code.Operator op ->
@@ -3102,10 +3384,10 @@ toLetDefReport source name def startRow startCol =
                   [ D.reflow $
                       "I am not sure what is going wrong exactly, so here is a valid\
                       \ definition (with an optional type annotation) for reference:"
-                  , D.vcat
-                      [ D.indent 4 $ D.fillSep [D.green "add",":","Int","->","Int","->","Int"]
-                      , D.indent 4 $ D.fillSep [D.green "add","x","y","="]
-                      , D.indent 6 $ D.fillSep ["x","+","y"]
+                  , D.indent 4 $ D.vcat $
+                      [ "greet : String -> String"
+                      , "greet name ="
+                      , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
                       ]
                   , D.reflow $
                       "Try to use that format with your `" ++ Name.toChars name ++ "` definition!"
@@ -3127,10 +3409,10 @@ toLetDefReport source name def startRow startCol =
                   [ D.reflow $
                       "I am not sure what is going wrong exactly, so here is a valid\
                       \ definition (with an optional type annotation) for reference:"
-                  , D.vcat
-                      [ D.indent 4 $ D.fillSep [D.green "add",":","Int","->","Int","->","Int"]
-                      , D.indent 4 $ D.fillSep [D.green "add","x","y","="]
-                      , D.indent 4 $ D.fillSep ["x","+","y"]
+                  , D.indent 4 $ D.vcat $
+                      [ "greet : String -> String"
+                      , "greet name ="
+                      , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
                       ]
                   , D.reflow $
                       "Try to use that format!"
@@ -3220,10 +3502,10 @@ defNote =
   D.stack
     [ D.reflow $
         "Here is a valid definition (with a type annotation) for reference:"
-    , D.vcat
-        [ D.indent 4 $ D.fillSep [D.green "add",":","Int","->","Int","->","Int"]
-        , D.indent 4 $ D.fillSep [D.green "add","x","y","="]
-        , D.indent 6 $ D.fillSep ["x","+","y"]
+    , D.indent 4 $ D.vcat $
+        [ "greet : String -> String"
+        , "greet name ="
+        , "  " <> D.dullyellow "\"Hello \"" <> " ++ name ++ " <> D.dullyellow "\"!\""
         ]
     , D.reflow $
         "The top line (called a \"type annotation\") is optional. You can leave it off\
@@ -3482,8 +3764,9 @@ noteForCaseIndentError =
         , D.indent 8 $ D.fillSep [D.dullyellow "400"]
         ]
     , D.reflow $
-        "Notice the indentation! Each pattern is aligned, and each branch is indented\
-        \ a bit more than the corresponding pattern. That is important!"
+        "Notice the indentation! Patterns are aligned with each other. Same indentation.\
+        \ The expressions after each arrow are all indented a bit more than the patterns.\
+        \ That is important!"
     ]
 
 
@@ -3635,23 +3918,43 @@ toIfReport source context if_ startRow startCol =
           )
 
     IfIndentElse row col ->
-      let
-        surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
-        region = toRegion row col
-      in
-      Report.Report "UNFINISHED IF" region [] $
-        Code.toSnippet source surroundings (Just region)
-          (
-            D.reflow $
-              "I was expecting to see an `else` branch after this:"
-          ,
-            D.stack
-              [ D.reflow $
-                  "I know what to do when the condition is `True`, but not when it is `False`."
-              , D.fillSep
-                  ["Add","an",D.cyan "else","branch","to","handle","that","scenario!"]
-              ]
-          )
+      case Code.nextLineStartsWithKeyword "else" source row of
+        Just (elseRow, elseCol) ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position elseRow elseCol)
+            region = toWiderRegion elseRow elseCol 4
+          in
+          Report.Report "WEIRD ELSE BRANCH" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I was partway through an `if` expression when I got stuck here:"
+              ,
+                D.fillSep $
+                  ["I","think","this",D.cyan "else","keyword","needs","to","be","indented","more."
+                  ,"Try","adding","some","spaces","before","it."
+                  ]
+              )
+
+        Nothing ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+            region = toRegion row col
+          in
+          Report.Report "UNFINISHED IF" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I was expecting to see an `else` branch after this:"
+              ,
+                D.stack
+                  [ D.fillSep
+                      ["I","know","what","to","do","when","the","condition","is","True,"
+                      ,"but","what","happens","when","it","is","False?"
+                      ,"Add","an",D.cyan "else","branch","to","handle","that","scenario!"
+                      ]
+                  ]
+              )
 
 
 
@@ -3684,15 +3987,22 @@ toRecordReport source context record startRow startCol =
             surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
             region = toRegion row col
           in
-          Report.Report "UNFINISHED RECORD" region [] $
+          Report.Report "PROBLEM IN RECORD" region [] $
             Code.toSnippet source surroundings (Just region)
               (
                 D.reflow $
                   "I just started parsing a record, but I got stuck here:"
               ,
-                D.fillSep
-                  ["Records","look","like",D.dullyellow "{ x = 3, y = 4 },"
-                  ,"so","I","was","expecting","to","see","a","field","name","next."
+                D.stack
+                  [ D.fillSep
+                      ["I","was","expecting","to","see","a","record","field","defined","next,"
+                      ,"so","I","am","looking","for","a","name","like"
+                      ,D.dullyellow "userName","or",D.dullyellow "plantHeight" <> "."
+                      ]
+                  , D.toSimpleNote $
+                      "Field names must start with a lower-case letter. After that, you can use\
+                      \ any sequence of letters, numbers, and underscores."
+                  , noteForRecordError
                   ]
               )
 
@@ -3701,7 +4011,7 @@ toRecordReport source context record startRow startCol =
         surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
         region = toRegion row col
       in
-      Report.Report "UNFINISHED RECORD" region [] $
+      Report.Report "PROBLEM IN RECORD" region [] $
         Code.toSnippet source surroundings (Just region)
           (
             D.reflow $
@@ -3736,22 +4046,67 @@ toRecordReport source context record startRow startCol =
                   \ that is a reserved word. Try using a different name!"
               )
 
+        Code.Other (Just ',') ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+            region = toRegion row col
+          in
+          Report.Report "EXTRA COMMA" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I am partway through parsing a record, but I got stuck here:"
+              ,
+                D.stack
+                  [ D.reflow $
+                      "I am seeing two commas in a row. This is the second one!"
+                  , D.reflow $
+                      "Just delete one of the commas and you should be all set!"
+                  , noteForRecordError
+                  ]
+              )
+
+        Code.Close _ '}' ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+            region = toRegion row col
+          in
+          Report.Report "EXTRA COMMA" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I am partway through parsing a record, but I got stuck here:"
+              ,
+                D.stack
+                  [ D.reflow $
+                      "Trailing commas are not allowed in records. Try deleting the comma that appears\
+                      \ before this closing curly brace."
+                  , noteForRecordError
+                  ]
+              )
+
         _ ->
           let
             surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
             region = toRegion row col
           in
-          Report.Report "UNFINISHED RECORD" region [] $
+          Report.Report "PROBLEM IN RECORD" region [] $
             Code.toSnippet source surroundings (Just region)
               (
                 D.reflow $
-                  "I am partway through parsing a record, but I got stuck after that last comma:"
+                  "I am partway through parsing a record, but I got stuck here:"
               ,
-                addNoteForRecordError $
-                  D.reflow $
-                    "Trailing commas are not allowed in records, so I was expecting to see another\
-                    \ record field defined next. If you are done defining the record, the fix may\
-                    \ be to delete that last comma?"
+                D.stack
+                  [ D.fillSep
+                      ["I","was","expecting","to","see","another","record","field","defined","next,"
+                      ,"so","I","am","looking","for","a","name","like"
+                      ,D.dullyellow "userName","or",D.dullyellow "plantHeight" <> "."
+                      ]
+                  , D.toSimpleNote $
+                      "Field names must start with a lower-case letter. After that, you can use\
+                      \ any sequence of letters, numbers, and underscores."
+                  , noteForRecordError
+                  ]
               )
 
     RecordEquals row col ->
@@ -3759,17 +4114,19 @@ toRecordReport source context record startRow startCol =
         surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
         region = toRegion row col
       in
-      Report.Report "UNFINISHED RECORD" region [] $
+      Report.Report "PROBLEM IN RECORD" region [] $
         Code.toSnippet source surroundings (Just region)
           (
             D.reflow $
               "I am partway through parsing a record, but I got stuck here:"
           ,
-            addNoteForRecordError $
-              D.fillSep $
-                ["I","just","saw","a","field","name,","so","I","was","expecting","to","see"
-                ,"an","equals","sign","next.","So","try","putting","an",D.green "=","sign","here?"
-                ]
+            D.stack
+              [ D.fillSep $
+                  ["I","just","saw","a","field","name,","so","I","was","expecting","to","see"
+                  ,"an","equals","sign","next.","So","try","putting","an",D.green "=","sign","here?"
+                  ]
+              , noteForRecordError
+              ]
           )
 
     RecordExpr expr row col ->
@@ -3789,29 +4146,54 @@ toRecordReport source context record startRow startCol =
             D.reflow $
               "I just saw the opening curly brace of a record, but then I got stuck here:"
           ,
-            addNoteForRecordIndentError $
-              D.fillSep $
-                ["I","am","expecting","a","record","like",D.dullyellow "{ x = 3, y = 4 }","here."
-                ,"Try","defining","some","fields","of","your","own?"
-                ]
+            D.stack
+              [ D.fillSep $
+                  ["I","am","expecting","a","record","like",D.dullyellow "{ x = 3, y = 4 }","here."
+                  ,"Try","defining","some","fields","of","your","own?"
+                  ]
+              , noteForRecordIndentError
+              ]
           )
 
     RecordIndentEnd row col ->
-      let
-        surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
-        region = toRegion row col
-      in
-      Report.Report "UNFINISHED RECORD" region [] $
-        Code.toSnippet source surroundings (Just region)
-          (
-            D.reflow $
-              "I was expecting to see a closing curly brace next:"
-          ,
-            addNoteForRecordIndentError $
-              D.fillSep $
-                ["Try","putting","an",D.green "}","and","see","if","that","helps?"
-                ]
-          )
+      case Code.nextLineStartsWithCloseCurly source row of
+        Just (curlyRow, curlyCol) ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position curlyRow curlyCol)
+            region = toRegion curlyRow curlyCol
+          in
+          Report.Report "NEED MORE INDENTATION" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I was partway through parsing a record, but I got stuck here:"
+              ,
+                D.stack
+                  [ D.reflow $
+                      "I need this curly brace to be indented more. Try adding some spaces before it!"
+                  , noteForRecordError
+                  ]
+              )
+
+        Nothing ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+            region = toRegion row col
+          in
+          Report.Report "UNFINISHED RECORD" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I was partway through parsing a record, but I got stuck here:"
+              ,
+                D.stack
+                  [ D.fillSep $
+                      ["I","was","expecting","to","see","a","closing","curly","brace","next."
+                      ,"Try","putting","a",D.green "}","next","and","see","if","that","helps?"
+                      ]
+                  , noteForRecordIndentError
+                  ]
+              )
 
     RecordIndentField row col ->
       let
@@ -3824,11 +4206,13 @@ toRecordReport source context record startRow startCol =
             D.reflow $
               "I am partway through parsing a record, but I got stuck after that last comma:"
           ,
-            addNoteForRecordError $
-              D.reflow $
-                "Trailing commas are not allowed in records, so the fix may be to\
-                \ delete that last comma? Or maybe you were in the middle of defining\
-                \ an additional field?"
+            D.stack
+              [ D.reflow $
+                  "Trailing commas are not allowed in records, so the fix may be to\
+                  \ delete that last comma? Or maybe you were in the middle of defining\
+                  \ an additional field?"
+              , noteForRecordError
+              ]
           )
 
     RecordIndentEquals row col ->
@@ -3843,10 +4227,12 @@ toRecordReport source context record startRow startCol =
               "I am partway through parsing a record. I just saw a record\
               \ field, so I was expecting to see an equals sign next:"
           ,
-            addNoteForRecordIndentError $
-              D.fillSep $
-                ["Try","putting","an",D.green "=","followed","by","an","expression?"
-                ]
+            D.stack
+              [ D.fillSep $
+                  ["Try","putting","an",D.green "=","followed","by","an","expression?"
+                  ]
+              , noteForRecordIndentError
+              ]
           )
 
     RecordIndentExpr row col ->
@@ -3860,52 +4246,48 @@ toRecordReport source context record startRow startCol =
             D.reflow $
               "I am partway through parsing a record, and I was expecting to run into an expression next:"
           ,
-            addNoteForRecordIndentError $
-              D.fillSep $
-                ["Try","putting","something","like"
-                ,D.dullyellow "42","or",D.dullyellow"\"hello\"","for","now?"
-                ]
+            D.stack
+              [ D.fillSep $
+                  ["Try","putting","something","like"
+                  ,D.dullyellow "42","or",D.dullyellow"\"hello\"","for","now?"
+                  ]
+              , noteForRecordIndentError
+              ]
           )
 
 
-addNoteForRecordError :: D.Doc -> D.Doc
-addNoteForRecordError normalRecommendation =
+noteForRecordError :: D.Doc
+noteForRecordError =
   D.stack $
-    normalRecommendation
-    :
     [ D.toSimpleNote
         "If you are trying to define a record across multiple lines, I recommend using this format:"
     , D.indent 4 $ D.vcat $
-        [ "{ name = \"Alice\""
-        , ", age = 42"
-        , ", height = 1.75"
+        [ "{ name = " <> D.dullyellow "\"Alice\""
+        , ", age = " <> D.dullyellow "42"
+        , ", height = " <> D.dullyellow "1.75"
         , "}"
         ]
     , D.reflow $
-        "Notice that each line starts with some indentation. Usually two or four spaces. I\
-        \ know this style can be jarring for people coming from C-like syntax, but folks generally\
-        \ report that they are used to it (and often prefer it!) after a week or two of using Elm."
+        "Notice that each line starts with some indentation. Usually two or four spaces.\
+        \ This is the stylistic convention in the Elm ecosystem."
     ]
 
 
-addNoteForRecordIndentError :: D.Doc -> D.Doc
-addNoteForRecordIndentError normalRecommendation =
-  D.stack $
-    normalRecommendation
-    :
+noteForRecordIndentError :: D.Doc
+noteForRecordIndentError =
+  D.stack
     [ D.toSimpleNote
         "I may be confused by indentation. For example, if you are trying to define\
         \ a record across multiple lines, I recommend using this format:"
     , D.indent 4 $ D.vcat $
-        [ "{ name = \"Alice\""
-        , ", age = 42"
-        , ", height = 1.75"
+        [ "{ name = " <> D.dullyellow "\"Alice\""
+        , ", age = " <> D.dullyellow "42"
+        , ", height = " <> D.dullyellow "1.75"
         , "}"
         ]
     , D.reflow $
-        "Notice that each line starts with some indentation. Usually two or four spaces. I\
-        \ know this style can be jarring for people coming from C-like syntax, but folks generally\
-        \ report that they are used to it (and often prefer it!) after a week or two of using Elm."
+        "Notice that each line starts with some indentation. Usually two or four spaces.\
+        \ This is the stylistic convention in the Elm ecosystem!"
     ]
 
 
@@ -4094,15 +4476,14 @@ toListReport source context list startRow startCol =
                   , D.toSimpleNote
                       "I recommend using the following format for lists that span multiple lines:"
                   , D.indent 4 $ D.vcat $
-                      [ "[ \"Alice\""
-                      , ", \"Bob\""
-                      , ", \"Chuck\""
+                      [ "[ " <> D.dullyellow "\"Alice\""
+                      , ", " <> D.dullyellow "\"Bob\""
+                      , ", " <> D.dullyellow "\"Chuck\""
                       , "]"
                       ]
                   , D.reflow $
-                      "Notice that nothing comes directly after a newline. Each line starts with some spaces.\
-                      \ This style can be jarring for people coming from C-like syntax, but folks generally\
-                      \ report that they are used to it (and often prefer it!) after a week or two of using Elm."
+                      "Notice that each line starts with some indentation. Usually two or four spaces.\
+                      \ This is the stylistic convention in the Elm ecosystem."
                   ]
               )
 
@@ -4155,15 +4536,14 @@ toListReport source context list startRow startCol =
                   "I may be confused by indentation. For example, if you are trying to define\
                   \ a list across multiple lines, I recommend using this format:"
               , D.indent 4 $ D.vcat $
-                  [ "[ \"Alice\""
-                  , ", \"Bob\""
-                  , ", \"Chuck\""
+                  [ "[ " <> D.dullyellow "\"Alice\""
+                  , ", " <> D.dullyellow "\"Bob\""
+                  , ", " <> D.dullyellow "\"Chuck\""
                   , "]"
                   ]
               , D.reflow $
-                  "Notice that nothing comes directly after a newline. Each line starts with some spaces.\
-                  \ This style can be jarring for people coming from C-like syntax, but folks generally\
-                  \ report that they are used to it (and often prefer it!) after a week or two of using Elm."
+                  "Notice that each line starts with some indentation. Usually two or four spaces.\
+                  \ This is the stylistic convention in the Elm ecosystem."
               ]
           )
 
@@ -4187,15 +4567,14 @@ toListReport source context list startRow startCol =
                   "I may be confused by indentation. For example, if you are trying to define\
                   \ a list across multiple lines, I recommend using this format:"
               , D.indent 4 $ D.vcat $
-                  [ "[ \"Alice\""
-                  , ", \"Bob\""
-                  , ", \"Chuck\""
+                  [ "[ " <> D.dullyellow "\"Alice\""
+                  , ", " <> D.dullyellow "\"Bob\""
+                  , ", " <> D.dullyellow "\"Chuck\""
                   , "]"
                   ]
               , D.reflow $
-                  "Notice that nothing comes directly after a newline. Each line starts with some spaces.\
-                  \ This style can be jarring for people coming from C-like syntax, but folks generally\
-                  \ report that they are used to it (and often prefer it!) after a week or two of using Elm."
+                  "Notice that each line starts with some indentation. Usually two or four spaces.\
+                  \ This is the stylistic convention in the Elm ecosystem."
               ]
           )
 
@@ -4216,15 +4595,14 @@ toListReport source context list startRow startCol =
               , D.toSimpleNote
                   "I recommend using the following format for lists that span multiple lines:"
               , D.indent 4 $ D.vcat $
-                  [ "[ \"Alice\""
-                  , ", \"Bob\""
-                  , ", \"Chuck\""
+                  [ "[ " <> D.dullyellow "\"Alice\""
+                  , ", " <> D.dullyellow "\"Bob\""
+                  , ", " <> D.dullyellow "\"Chuck\""
                   , "]"
                   ]
               , D.reflow $
-                  "Notice that nothing comes directly after a newline. Each line starts with some spaces.\
-                  \ This style can be jarring for people coming from C-like syntax, but folks generally\
-                  \ report that they are used to it (and often prefer it!) after a week or two of using Elm."
+                  "Notice that each line starts with some indentation. Usually two or four spaces.\
+                  \ This is the stylistic convention in the Elm ecosystem."
               ]
           )
 
@@ -5097,22 +5475,64 @@ toTRecordReport source context record startRow startCol =
                   \ that is a reserved word. Try using a different name!"
               )
 
+        Code.Other (Just ',') ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+            region = toRegion row col
+          in
+          Report.Report "EXTRA COMMA" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I am partway through parsing a record type, but I got stuck here:"
+              ,
+                D.stack
+                  [ D.reflow $
+                      "I am seeing two commas in a row. This is the second one!"
+                  , D.reflow $
+                      "Just delete one of the commas and you should be all set!"
+                  , noteForRecordTypeError
+                  ]
+              )
+
+        Code.Close _ '}' ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+            region = toRegion row col
+          in
+          Report.Report "EXTRA COMMA" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I am partway through parsing a record type, but I got stuck here:"
+              ,
+                D.stack
+                  [ D.reflow $
+                      "Trailing commas are not allowed in record types. Try deleting the comma that\
+                      \ appears before this closing curly brace."
+                  , noteForRecordTypeError
+                  ]
+              )
+
         _ ->
           let
             surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
             region = toRegion row col
           in
-          Report.Report "UNFINISHED RECORD TYPE" region [] $
+          Report.Report "PROBLEM IN RECORD TYPE" region [] $
             Code.toSnippet source surroundings (Just region)
               (
                 D.reflow $
-                  "I am partway through parsing a record type, but I got stuck after that last comma:"
+                  "I am partway through parsing a record type, but I got stuck here:"
               ,
-                addNoteForRecordTypeError $
-                  D.reflow $
-                    "Trailing commas are not allowed in records, so I was expecting to see another\
-                    \ record field defined next. If you are done defining the record, the fix may\
-                    \ be to delete that last comma?"
+                D.stack
+                  [ D.fillSep
+                      ["I","was","expecting","to","see","another","record","field","defined","next,"
+                      ,"so","I","am","looking","for","a","name","like"
+                      ,D.dullyellow "userName","or",D.dullyellow "plantHeight" <> "."
+                      ]
+                  , noteForRecordTypeError
+                  ]
               )
 
     TRecordColon row col ->
@@ -5126,11 +5546,13 @@ toTRecordReport source context record startRow startCol =
             D.reflow $
               "I am partway through parsing a record type, but I got stuck here:"
           ,
-            addNoteForRecordTypeError $
-              D.fillSep $
-                ["I","just","saw","a","field","name,","so","I","was","expecting","to","see"
-                ,"a","colon","next.","So","try","putting","an",D.green ":","sign","here?"
-                ]
+            D.stack
+              [ D.fillSep $
+                  ["I","just","saw","a","field","name,","so","I","was","expecting","to","see"
+                  ,"a","colon","next.","So","try","putting","an",D.green ":","sign","here?"
+                  ]
+              , noteForRecordTypeError
+              ]
           )
 
     TRecordType tipe row col ->
@@ -5150,29 +5572,54 @@ toTRecordReport source context record startRow startCol =
             D.reflow $
               "I just saw the opening curly brace of a record type, but then I got stuck here:"
           ,
-            addNoteForRecordTypeIndentError $
-              D.fillSep $
-                ["I","am","expecting","a","record","like",D.dullyellow "{ name : String, age : Int }","here."
-                ,"Try","defining","some","fields","of","your","own?"
-                ]
+            D.stack
+              [ D.fillSep $
+                  ["I","am","expecting","a","record","like",D.dullyellow "{ name : String, age : Int }","here."
+                  ,"Try","defining","some","fields","of","your","own?"
+                  ]
+              , noteForRecordTypeIndentError
+              ]
           )
 
     TRecordIndentEnd row col ->
-      let
-        surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
-        region = toRegion row col
-      in
-      Report.Report "UNFINISHED RECORD TYPE" region [] $
-        Code.toSnippet source surroundings (Just region)
-          (
-            D.reflow $
-              "I was expecting to see a closing curly brace next:"
-          ,
-            addNoteForRecordTypeIndentError $
-              D.fillSep $
-                ["Try","putting","an",D.green "}","and","see","if","that","helps?"
-                ]
-          )
+      case Code.nextLineStartsWithCloseCurly source row of
+        Just (curlyRow, curlyCol) ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position curlyRow curlyCol)
+            region = toRegion curlyRow curlyCol
+          in
+          Report.Report "NEED MORE INDENTATION" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I was partway through parsing a record type, but I got stuck here:"
+              ,
+                D.stack
+                  [ D.reflow $
+                      "I need this curly brace to be indented more. Try adding some spaces before it!"
+                  , noteForRecordTypeError
+                  ]
+              )
+
+        Nothing ->
+          let
+            surroundings = A.Region (A.Position startRow startCol) (A.Position row col)
+            region = toRegion row col
+          in
+          Report.Report "UNFINISHED RECORD TYPE" region [] $
+            Code.toSnippet source surroundings (Just region)
+              (
+                D.reflow $
+                  "I was partway through parsing a record type, but I got stuck here:"
+              ,
+                D.stack
+                  [ D.fillSep $
+                      ["I","was","expecting","to","see","a","closing","curly","brace","next."
+                      ,"Try","putting","a",D.green "}","next","and","see","if","that","helps?"
+                      ]
+                  , noteForRecordTypeIndentError
+                  ]
+              )
 
     TRecordIndentField row col ->
       let
@@ -5185,11 +5632,13 @@ toTRecordReport source context record startRow startCol =
             D.reflow $
               "I am partway through parsing a record type, but I got stuck after that last comma:"
           ,
-            addNoteForRecordTypeIndentError $
-              D.reflow $
-                "Trailing commas are not allowed in record types, so the fix may be to\
-                \ delete that last comma? Or maybe you were in the middle of defining\
-                \ an additional field?"
+            D.stack
+              [ D.reflow $
+                  "Trailing commas are not allowed in record types, so the fix may be to\
+                  \ delete that last comma? Or maybe you were in the middle of defining\
+                  \ an additional field?"
+              , noteForRecordTypeIndentError
+              ]
           )
 
     TRecordIndentColon row col ->
@@ -5204,10 +5653,12 @@ toTRecordReport source context record startRow startCol =
               "I am partway through parsing a record type. I just saw a record\
               \ field, so I was expecting to see a colon next:"
           ,
-            addNoteForRecordTypeIndentError $
-              D.fillSep $
-                ["Try","putting","an",D.green ":","followed","by","a","type?"
-                ]
+            D.stack
+              [ D.fillSep $
+                  ["Try","putting","an",D.green ":","followed","by","a","type?"
+                  ]
+              , noteForRecordTypeIndentError
+              ]
           )
 
     TRecordIndentType row col ->
@@ -5221,19 +5672,19 @@ toTRecordReport source context record startRow startCol =
             D.reflow $
               "I am partway through parsing a record type, and I was expecting to run into a type next:"
           ,
-            addNoteForRecordTypeIndentError $
-              D.fillSep $
-                ["Try","putting","something","like"
-                ,D.dullyellow "Int","or",D.dullyellow "String","for","now?"
-                ]
+            D.stack
+              [ D.fillSep $
+                  ["Try","putting","something","like"
+                  ,D.dullyellow "Int","or",D.dullyellow "String","for","now?"
+                  ]
+              , noteForRecordTypeIndentError
+              ]
           )
 
 
-addNoteForRecordTypeError :: D.Doc -> D.Doc
-addNoteForRecordTypeError normalRecommendation =
+noteForRecordTypeError :: D.Doc
+noteForRecordTypeError =
   D.stack $
-    normalRecommendation
-    :
     [ D.toSimpleNote
         "If you are trying to define a record type across multiple lines, I recommend using this format:"
     , D.indent 4 $ D.vcat $
@@ -5243,17 +5694,14 @@ addNoteForRecordTypeError normalRecommendation =
         , "}"
         ]
     , D.reflow $
-        "Notice that each line starts with some indentation. Usually two or four spaces. I\
-        \ know this style can be jarring for people coming from C-like syntax, but folks generally\
-        \ report that they are used to it (and often prefer it!) after a week or two of using Elm."
+        "Notice that each line starts with some indentation. Usually two or four spaces.\
+        \ This is the stylistic convention in the Elm ecosystem."
     ]
 
 
-addNoteForRecordTypeIndentError :: D.Doc -> D.Doc
-addNoteForRecordTypeIndentError normalRecommendation =
+noteForRecordTypeIndentError :: D.Doc
+noteForRecordTypeIndentError =
   D.stack $
-    normalRecommendation
-    :
     [ D.toSimpleNote
         "I may be confused by indentation. For example, if you are trying to define\
         \ a record type across multiple lines, I recommend using this format:"
@@ -5264,9 +5712,8 @@ addNoteForRecordTypeIndentError normalRecommendation =
         , "}"
         ]
     , D.reflow $
-        "Notice that each line starts with some indentation. Usually two or four spaces. I\
-        \ know this style can be jarring for people coming from C-like syntax, but folks generally\
-        \ report that they are used to it (and often prefer it!) after a week or two of using Elm."
+        "Notice that each line starts with some indentation. Usually two or four spaces.\
+        \ This is the stylistic convention in the Elm ecosystem."
     ]
 
 

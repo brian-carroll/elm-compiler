@@ -1,6 +1,6 @@
 {
   "name": "elm",
-  "version": "0.19.0-no-deps",
+  "version": "0.19.1",
   "description": "Installer for Elm: just downloads the binary into node_modules",
   "preferGlobal": true,
   "license": "BSD-3-Clause",
@@ -11,9 +11,9 @@
   "homepage": "https://github.com/elm/compiler/tree/master/installers/npm",
   "bugs": "https://github.com/elm/compiler/issues",
   "author": {
-    "name": "Richard Feldman",
-    "email": "richard.t.feldman@gmail.com",
-    "url": "https://github.com/rtfeldman"
+    "name": "Evan Czaplicki",
+    "email": "evan@elm-lang.org",
+    "url": "https://github.com/evancz"
   },
   "engines": {
     "node": ">=7.0.0"
@@ -35,9 +35,8 @@
     "install",
     "installer"
   ],
-  "bin": {
-    "elm": "bin/elm"
-  },
+  "bin": "bin/elm",
   "dependencies": {
+    "request": "^2.88.0"
   }
 }

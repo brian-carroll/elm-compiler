@@ -7,6 +7,8 @@ module Reporting.Render.Code
   , toPair
   , Next(..)
   , whatIsNext
+  , nextLineStartsWithKeyword
+  , nextLineStartsWithCloseCurly
   )
   where
 
@@ -120,7 +122,7 @@ makeUnderline width realEndLine (A.Region (A.Position start c1) (A.Position end 
       spaces = replicate (fromIntegral c1 + width + 1) ' '
       zigzag = replicate (max 1 (fromIntegral (c2 - c1))) '^'
     in
-      Just (D.fromChars spaces <> D.dullred (D.fromChars zigzag))
+      Just (D.fromChars spaces <> D.red (D.fromChars zigzag))
 
 
 drawLines :: Bool -> Int -> A.Region -> [(Word16, String)] -> Doc -> Doc
@@ -146,7 +148,7 @@ addLineNumber addZigZag width start end n line =
 
     spacer =
       if addZigZag && start <= n && n <= end then
-        D.dullred ">"
+        D.red ">"
       else
         " "
   in
@@ -181,8 +183,8 @@ renderPair source@(Source sourceLines) region1 region2 =
     OneLine $
       D.vcat
         [ D.fromChars lineNumber <> "| " <> D.fromChars line
-        , D.fromChars spaces1 <> D.dullred (D.fromChars zigzag1) <>
-          D.fromChars spaces2 <> D.dullred (D.fromChars zigzag2)
+        , D.fromChars spaces1 <> D.red (D.fromChars zigzag1) <>
+          D.fromChars spaces2 <> D.red (D.fromChars zigzag2)
         ]
 
   else
@@ -199,6 +201,8 @@ data Next
   = Keyword [Char]
   | Operator [Char]
   | Close [Char] Char
+  | Upper Char [Char]
+  | Lower Char [Char]
   | Other (Maybe Char)
 
 
@@ -209,25 +213,34 @@ whatIsNext (Source sourceLines) row col =
       Other Nothing
 
     Just line ->
-      let
-        chars = drop (fromIntegral col - 1) line
-        keywords = map Name.toChars (Set.toList reservedWords)
-      in
-      case List.find (startsWithKeyword chars) keywords of
-        Just keyword ->
-          Keyword keyword
+      case drop (fromIntegral col - 1) line of
+        [] ->
+          Other Nothing
 
-        Nothing ->
-          case chars of
-            [] ->
-              Other Nothing
+        c:cs
+          | Char.isUpper c -> Upper c (takeWhile isInner cs)
+          | Char.isLower c -> detectKeywords c cs
+          | isSymbol c     -> Operator (c : takeWhile isSymbol cs)
+          | c == ')'       -> Close "parenthesis" ')'
+          | c == ']'       -> Close "square bracket" ']'
+          | c == '}'       -> Close "curly brace" '}'
+          | otherwise      -> Other (Just c)
 
-            c:cs
-              | isSymbol c -> Operator (c : takeWhile isSymbol cs)
-              | c == ')'   -> Close "parenthesis" ')'
-              | c == ']'   -> Close "square bracket" ']'
-              | c == '}'   -> Close "curly brace" '}'
-              | otherwise  -> Other (Just c)
+
+detectKeywords :: Char -> [Char] -> Next
+detectKeywords c rest =
+  let
+    cs = takeWhile isInner rest
+    name = c : cs
+  in
+  if Set.member (Name.fromChars name) reservedWords
+  then Keyword name
+  else Lower c name
+
+
+isInner :: Char -> Bool
+isInner char =
+  Char.isAlphaNum char || char == '_'
 
 
 isSymbol :: Char -> Bool
@@ -244,4 +257,32 @@ startsWithKeyword restOfLine keyword =
       True
 
     c:_ ->
-      not (Char.isAlphaNum c || c == '_')
+      not (isInner c)
+
+
+nextLineStartsWithKeyword :: [Char] -> Source -> Row -> Maybe (Row, Col)
+nextLineStartsWithKeyword keyword (Source sourceLines) row =
+  case List.lookup (row + 1) sourceLines of
+    Nothing ->
+      Nothing
+
+    Just line ->
+      if startsWithKeyword (dropWhile (==' ') line) keyword then
+        Just (row + 1, 1 + fromIntegral (length (takeWhile (==' ') line)))
+      else
+        Nothing
+
+
+nextLineStartsWithCloseCurly :: Source -> Row -> Maybe (Row, Col)
+nextLineStartsWithCloseCurly (Source sourceLines) row =
+  case List.lookup (row + 1) sourceLines of
+    Nothing ->
+      Nothing
+
+    Just line ->
+      case dropWhile (==' ') line of
+        '}':_ ->
+          Just (row + 1, 1 + fromIntegral (length (takeWhile (==' ') line)))
+
+        _ ->
+          Nothing
