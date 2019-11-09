@@ -108,7 +108,7 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
                   case getNoMains artifacts of
                     [] ->
                       do  builder <- toJsBuilder root details jsMode artifacts
-                          generate style target builder (Build.getMainNames artifacts)
+                          generate style target builder (Build.getRootNames artifacts)
 
                     name:names ->
                       Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
@@ -118,7 +118,7 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
                     [] ->
                       do  builder <- Task.mapError Exit.MakeBadGenerate $
                                       Generate.c root details artifacts
-                          generate style target builder (Build.getMainNames artifacts)
+                          generate style target builder (Build.getRootNames artifacts)
 
                     name:names ->
                       Task.throw (Exit.MakeNonMainFilesIntoC name names)
