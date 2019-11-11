@@ -279,7 +279,6 @@ addGlobalHelp mode graph global state =
             comment "End"
           )
 
-
     Opt.Enum index ->
       addStmt state (
         prefixComment "Enum" $

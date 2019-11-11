@@ -1,3 +1,104 @@
+# TODO 9 Nov 2019
+
+Figure out a type for the generator state & expr state
+express the file structure in types
+
+## JS text
+
+- Async load wasm
+- normal Elm stuff
+  - functions
+  - kernel modules
+  - patch
+    - jsKernelFunctions array
+    - ctor names
+    - field names
+    - fieldGroupNames
+    - wrapWasmElmApp def
+    - wrapWasmElmApp call
+    - `author$project$WasmWrapper$element` override
+  - main export
+
+## JS generation
+
+- can't just call `Generate.JavaScript.generate`, need different top level stuff for async compilation
+- copy that function and use the bits of it
+
+## Shared generator state
+
+- Set of seen globals
+- Set of JS kernel fn names
+- Set of ctors
+- Set of record fields
+- Set of sets of fields
+
+## JS generator state
+
+- just kernel builders
+
+## C generator state
+
+- header
+  - Set of literals
+- body
+  - builders
+- footer
+  - Set of global names that are GC roots
+  - Set of global names to be initialised
+
+```hs
+data State =
+  State
+    { _seenGlobals :: Set.Set Opt.Global
+    , _initGlobals :: Set.Set Opt.Global
+    , _revC :: [B.Builder]
+    , _revJsKernels :: [B.Builder]
+    , _jsKernelVars :: Set.Set ByteString
+    , _fieldGroups :: Set.Set [ByteString]
+    , _ctorNames :: Set.Set ByteString
+    , _literals :: Set.Set ByteString
+    }
+```
+
+## C text
+
+- top of file
+  - includes (kernel + eff mgrs)
+  - kernel fn name enum
+  - ctor name enum
+  - field name enum
+  - fieldgroup definitions
+  - fieldgroups array
+  - literals? `Set Builder`
+- global defs
+- Wasm module init
+  - start boilerplate
+    - GC_init & early exit on fail
+    - wrapper registrations (fieldgroups & main record)
+  - GC roots for Wasm effects (model, then later vdom)
+  - inits
+  - end boilerplate `return 0`
+
+```cpp
+void* thing1;
+void* init_thing1() {
+  return A2(&Basics_add, &literal_int_1, &literal_int_2);
+}
+void initialise_global(void** global, void* (*init_func)()) {
+  GC_register_root(global);
+  if ((*global = init_func()) != pGcFull) return;
+
+  GC_collect_major();
+  if ((*global = init_func()) != pGcFull) return;
+
+  fprintf(stderr, "Heap overflow initialising global at %p", global);
+  assert(0);
+}
+int main() {
+  initialise_global(&thing1, &init_thing1);
+}
+```
+
 # TODO 9 Oct 2019
 
 - Working example
