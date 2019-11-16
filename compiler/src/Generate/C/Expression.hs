@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.C.Expression
-( generate
-, generateEvalFn
-, generateConstClosure
-, generateConstInt
+ (
+--  generate
+-- , generateEvalFn
+-- , generateConstClosure
+-- , generateConstInt
 -- , generateCtor
 -- , generateField
 -- , generateTailDef
@@ -54,7 +55,7 @@ import qualified AST.Optimized as Opt
 --   = Expr CExpr
 --   | Stat CStat
 
-
+{-
 -- C Macros from Kernel
 m_NEW_ELM_INT = Var $ Ident "NEW_ELM_INT"
 m_HEADER_CLOSURE = Var $ Ident "HEADER_CLOSURE"
@@ -80,7 +81,7 @@ generate expr =
       CommentExpr "Float"
 
     Opt.VarLocal name ->
-      Var $ Ident $ CN.toBuilder $ CN.fromLocal name
+      Var $ Ident $ CN.toBuilder $ CN.local name
 
     Opt.VarGlobal (Opt.Global home name) ->
       Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
@@ -239,8 +240,9 @@ generateEvalFn fname params bodyExpr =
 generateParamRename :: Ident -> Name.Name -> Int -> Declaration
 generateParamRename argsArray name index =
   let
-    id = CN.toIdentAST $ CN.fromLocal name
+    id = CN.toIdentAST $ CN.local name
     declarator = Declr (Just id) [PtrDeclr []]
     init = Index (Var argsArray) (Const $ IntConst index)
   in
     Decl [TypeSpec Void] (Just declarator) (Just $ InitExpr init)
+-}
