@@ -135,7 +135,7 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 --     <> (CB.join CB.nIndent1 fieldGroupBuilders)
 
 
--- generateEnum :: B.Builder -> [CN.CName] -> B.Builder
+-- generateEnum :: B.Builder -> [CN.Name] -> B.Builder
 -- generateEnum prefix names =
 --   let
 --     sep = "," <> CB.nIndent1 <> prefix
@@ -316,7 +316,7 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 --     Opt.TailCall _ _ -> undefined
 
 
--- defineTextMacro :: State -> CN.CName -> CN.CName -> State
+-- defineTextMacro :: State -> CN.Name -> CN.Name -> State
 -- defineTextMacro state lvalue rvalue =
 --   state {
 --     _revBuildersC =

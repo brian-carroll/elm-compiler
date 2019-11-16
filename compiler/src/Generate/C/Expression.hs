@@ -156,7 +156,7 @@ generateLiteralInt value =
     ]
 
 
-generateConstInt :: CN.CName -> Int -> Declaration
+generateConstInt :: CN.Name -> Int -> Declaration
 generateConstInt name value =
   let
     declSpecs = [TypeQual ConstQual, TypeSpec ElmInt]
@@ -175,7 +175,7 @@ generateLiteralClosure maxValues evaluator =
     ]
 
 
-generateConstClosure :: CN.CName -> CN.CName -> Int -> Declaration
+generateConstClosure :: CN.Name -> CN.Name -> Int -> Declaration
 generateConstClosure closureName evalName maxValues =
   let
     declSpecs = [TypeQual ConstQual, TypeSpec Closure]
@@ -186,7 +186,7 @@ generateConstClosure closureName evalName maxValues =
 
 
 
-generateEvalFn :: CN.CName -> [Name.Name] -> Opt.Expr -> ExternalDeclaration
+generateEvalFn :: CN.Name -> [Name.Name] -> Opt.Expr -> ExternalDeclaration
 generateEvalFn fname params bodyExpr =
   let
     nparams = length params

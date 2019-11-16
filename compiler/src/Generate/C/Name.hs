@@ -1,140 +1,154 @@
-{-# LANGUAGE OverloadedStrings, EmptyDataDecls, FlexibleInstances #-}
+{-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Generate.C.Name
+( Name
+, local
+, global
+, globalInitFn
+, globalInitPtr
+, jsKernelVal
+, cKernelVal
+, ctor
+, field
+, fieldGroup
+, evaluator
+, literalInt
+, literalFloat
+, literalString
+, literalChar
+)
 where
 
 import qualified Data.ByteString.Builder as B
 import Data.Monoid ((<>))
-import Data.Char (toLower)
-import qualified Data.Set as Set
-import qualified Data.String as Chars
-import qualified Data.Char as Char
-import GHC.Word (Word8)
-import qualified Language.C as C
-
-import qualified Data.Utf8 as Utf8
+import qualified Data.Map as Map
 import qualified Data.Name as Name
-import qualified Elm.String as ES
-import qualified Generate.C.AST as AST
-import qualified Generate.C.Builder as CB
-import qualified Elm.Package as Pkg
+import qualified Data.Set as Set
+import qualified Data.Utf8 as Utf8
+import Data.Word (Word8)
+
+import qualified Data.Index as Index
 import qualified Elm.ModuleName as ModuleName
-import qualified AST.Optimized as Opt
+import qualified Elm.Package as Pkg
+
+  
+-- NAME
 
 
-type CName =
-  Utf8.Utf8 C_NAME
+newtype Name =
+  Name { toBuilder :: B.Builder }
 
 
-data C_NAME
+-- CONSTRUCTORS
 
 
--- INSTANCES
-
-instance Chars.IsString (Utf8.Utf8 C_NAME) where
-  fromString = Utf8.fromChars
-
-
--- TO
-
-toChars :: CName -> [Char]
-toChars =
-  Utf8.toChars
+local :: Name.Name -> Name
+local name =
+  Name $ "x" <> Name.toBuilder name
 
 
-toBuilder :: CName -> B.Builder
-toBuilder =
-  Utf8.toBuilder
+global :: ModuleName.Canonical -> Name.Name -> Name
+global home name =
+  Name (globalBuilder home name)
 
 
-toIdent :: CName -> C.Ident
-toIdent name =
-  C.mkIdent C.nopos (toChars name) (C.Name 0)
+globalInitFn :: ModuleName.Canonical -> Name.Name -> Name
+globalInitFn home name =
+  Name ("init_" <> globalBuilder home name)
 
 
-toIdentAST:: CName -> AST.Ident
-toIdentAST name =
-  AST.Ident $ toBuilder name
+globalInitPtr :: ModuleName.Canonical -> Name.Name -> Name
+globalInitPtr home name =
+  Name ("ptr_" <> globalBuilder home name)
 
 
--- Data.Utf8.fromChars $ concatMap escapeCIdentifier $ Data.Utf8.toChars s
--- literalString :: ES.String -> Name
--- literalString s =
---   Name $ concatMap escapeChar $ ES.toChars s
+globalEvaluator :: ModuleName.Canonical -> Name.Name -> Name
+globalEvaluator home name =
+  Name ("eval_" <> globalBuilder home name)
 
 
--- escapeChar :: Char -> B.Builder
--- escapeChar c =
---   if Char.isAscii c && (Char.isAlphaNum c || c == '_') then
---     B.char8 c
---   else
---     "\\U" ++ (B.int32HexFixed $ fromIntegral $ Char.ord c)
+localEvaluator :: ModuleName.Canonical -> Name.Name -> Int -> Name
+localEvaluator home name index =
+  Name ("eval_" <> globalBuilder home name <> "_lambda" <> B.intDec index)
 
 
--- FROM
+cycle :: ModuleName.Canonical -> Name.Name -> Name
+cycle home name
+  Name $ builderFromUtf8List $ homeToList (home ++ ["cyclic", name])
 
 
-{-# INLINE fromUtf8 #-}
-fromUtf8 :: Utf8.Utf8 t -> Utf8.Utf8 C_NAME
-fromUtf8 (Utf8.Utf8 name) =
-  Utf8.Utf8 name
+jsKernelValue :: Name.Name -> Name.Name -> Name
+jsKernelValue home name =
+  Name ("JS_" <> builderFromUtf8List [home, name])
 
 
-fromChars :: [Char] -> CName
-fromChars =
-  Utf8.fromChars
+cKernelValue :: Name.Name -> Name.Name -> Name
+cKernelValue home name =
+  Name $ builderFromUtf8List [home, name]
 
 
-fromLocal :: Name.Name -> CName
-fromLocal name =
-  fromUtf8 $
-    if Set.member name reservedNames
-    then Utf8.join underscore [Utf8.empty, name]
-    else name
+ctorId :: ModuleName.Canonical -> Name.Name -> Name
+ctorId _ name =
+  Name $ "CTOR_" <> Name.toBuilder name
 
 
-fromGlobal :: ModuleName.Canonical -> Name.Name -> CName
-fromGlobal home name =
-  Utf8.join underscore $
-    (homeToList home) ++ [fromLocal name]
+fieldId :: ModuleName.Canonical -> Name.Name -> Name
+fieldId _ name =
+  Name $ "FIELD_" <> Name.toBuilder name
 
 
-fromCycle :: ModuleName.Canonical -> Name.Name -> CName
-fromCycle home name =
-  Utf8.join underscore $
-    (homeToList home) ++ [fromChars "cyclic", fromLocal name]
+fieldGroup :: [Name.Name] -> Name
+fieldGroup fields =
+  Name $ "fg_" <> builderFromUtf8List fields
 
 
-fromKernel :: Name.Name -> Name.Name -> CName
-fromKernel home name =
-  fromUtf8 $ Utf8.join underscore [home, name]
+literalInt :: Int -> B.Builder
+literalInt x =
+  Name $ "literal_int_" <> B.intDec x
 
 
-kernelHeaderFile :: ModuleName.Canonical -> CName
-kernelHeaderFile (ModuleName.Canonical (Pkg.Name author project) mod) =
-  let
-    lowercaseChars =
-      map (\c -> if c == '.' then '_' else toLower c) (Name.toChars mod)
-  in
-  fromChars $ lowercaseChars ++ ".h"
+literalFloat :: EF.Float -> B.Builder
+literalFloat x =
+  Name $ "literal_float_" <> (builderFromUtf8List $ Utf8.split dot x)
 
 
-homeToList :: ModuleName.Canonical -> [CName]
+literalString :: ES.String -> Name
+literalString s =
+  Name $ "literal_string_" ++ (concatMap escapeChar $ ES.toChars s)
+
+
+literalChar :: ES.String -> Name
+literalChar s =
+  Name $ "literal_char_" ++ (concatMap escapeChar $ ES.toChars s)
+
+
+-- INTERNAL UTILS
+
+
+escapeChar :: Char -> B.Builder
+escapeChar c =
+  if Char.isAscii c && (Char.isAlphaNum c || c == '_') then
+    B.char8 c
+  else
+    "\\U" ++ (B.int32HexFixed $ fromIntegral $ Char.ord c)
+
+
+globalBuilder :: ModuleName.Canonical -> Name.Name -> Name
+globalBuilder home name =
+  builderFromUtf8List (homeToList home ++ [name])
+
+
+builderFromUtf8List :: [Utf8.Utf8 t] -> B.Builder
+builderFromUtf8List names =
+  mconcat $ List.intersperse "_" $
+    map Name.toBuilder names
+
+
+homeToList :: ModuleName.Canonical -> [Name.Name]
 homeToList (ModuleName.Canonical (Pkg.Name author project) mod) =
-  [ replaceChar hyphen underscore author
-  , replaceChar hyphen underscore project
-  , replaceChar dot underscore mod
-  ]
-
-
-replaceChar :: Word8 -> Word8 -> Utf8.Utf8 t -> CName
-replaceChar bad good name =
-  Utf8.join good $
-    Utf8.split bad $
-    fromUtf8 name
-    
-
-underscore :: Word8
-underscore = 0x5F
+  Utf8.split hyphen author
+  ++ Utf8.split hyphen project
+  ++ Utf8.split dot mod
 
 
 hyphen :: Word8
@@ -145,80 +159,13 @@ dot :: Word8
 dot = 0x2E
 
 
--- RESERVED NAMES
-
-
-reservedNames :: Set.Set Name.Name
-reservedNames =
-  Set.union cReservedWords elmReservedWords
-
-
-cReservedWords :: Set.Set Name.Name
-cReservedWords =
-  Set.fromList
-    [ "auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern"
-    , "float", "for", "goto", "if", "inline", "int", "long", "register", "restrict", "return", "short"
-    , "signed", "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned", "void", "volatile", "while"
-    , "_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic", "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local"
-    , "alignas", "alignof", "bool", "complex", "imaginary", "noreturn", "static_assert", "thread_local"
-    , "elif", "endif", "defined", "ifdef", "ifndef", "define", "undef", "include", "line", "error", "pragma"
-    , "_Pragma"
-    , "asm", "fortran"
-    ]
-
-
-elmReservedWords :: Set.Set Name.Name
-elmReservedWords =
-  Set.fromList
-    [ "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"
-    ]
-
-
--- DERIVED NAMES
-
-
-asCtor :: CName -> CName
-asCtor name =
-  Utf8.join underscore [fromChars "Ctor", name]
-
-
-asField :: CName -> CName
-asField name =
-  Utf8.join underscore [fromChars "Field", name]
-
-
-globalInitPtr :: CName -> CName
-globalInitPtr name =
-  Utf8.join underscore [fromChars "ptr", name]
-
-
-globalInitFn :: CName -> CName
-globalInitFn name =
-  Utf8.join underscore [fromChars "init", name]
-
-
-evalFn :: CName -> CName
-evalFn name =
-  Utf8.join underscore [fromChars "eval", name]
-
-
 -- KERNEL CONSTANTS
 
-unit :: CName
-unit = fromChars "Unit"
+unit :: Name
+unit = Name "Unit"
 
-true :: CName
-true = fromChars "True"
+true :: Name
+true = Name "True"
 
-false :: CName
-false = fromChars "False"
-
-
--- KERNEL TYPES
-
-
-typeFieldGroup :: CName
-typeFieldGroup = fromChars "FieldGroup"
-
-typeElmValue :: CName
-typeElmValue = fromChars "ElmValue"
+false :: Name
+false = Name "False"
