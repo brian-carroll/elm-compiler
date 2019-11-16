@@ -1,3 +1,26 @@
+# 14 Nov 2019
+
+- Need to approach this more systematically
+- C Names module
+
+  - What are all the things I need names for?
+    - Go through main.c and find the naming conventions I've used
+    - In general go through it and make notes on how to generate everything
+  - Make functions to generate each one from AST representation
+  - Make it more like JS.Name
+  - Rename from CName to Name
+  - Name.Name is UTF8
+
+- C module
+
+  - always convert to CN.Name first
+
+- C Builder
+  - It's mainly for Expressions really, Nodes can be more low-tech
+  - However could put an enum thing here
+  - make it about writing C strings from Haskell. No Elm specifics.
+    - Elm stuff goes in C and Expression
+
 # TODO 9 Nov 2019
 
 Figure out a type for the generator state & expr state
@@ -43,14 +66,14 @@ express the file structure in types
 - body
   - builders
 - footer
-  - Set of global names that are GC roots
-  - Set of global names to be initialised
+  - List of global names that are GC roots
+  - List of global names to be initialised
 
 ```hs
 data State =
   State
     { _seenGlobals :: Set.Set Opt.Global
-    , _initGlobals :: Set.Set Opt.Global
+    , _revInitGlobals :: [Opt.Global]
     , _revC :: [B.Builder]
     , _revJsKernels :: [B.Builder]
     , _jsKernelVars :: Set.Set ByteString

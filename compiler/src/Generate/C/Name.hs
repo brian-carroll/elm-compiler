@@ -7,11 +7,13 @@ import Data.Monoid ((<>))
 import Data.Char (toLower)
 import qualified Data.Set as Set
 import qualified Data.String as Chars
+import qualified Data.Char as Char
 import GHC.Word (Word8)
 import qualified Language.C as C
 
 import qualified Data.Utf8 as Utf8
 import qualified Data.Name as Name
+import qualified Elm.String as ES
 import qualified Generate.C.AST as AST
 import qualified Generate.C.Builder as CB
 import qualified Elm.Package as Pkg
@@ -52,6 +54,20 @@ toIdent name =
 toIdentAST:: CName -> AST.Ident
 toIdentAST name =
   AST.Ident $ toBuilder name
+
+
+-- Data.Utf8.fromChars $ concatMap escapeCIdentifier $ Data.Utf8.toChars s
+-- literalString :: ES.String -> Name
+-- literalString s =
+--   Name $ concatMap escapeChar $ ES.toChars s
+
+
+-- escapeChar :: Char -> B.Builder
+-- escapeChar c =
+--   if Char.isAscii c && (Char.isAlphaNum c || c == '_') then
+--     B.char8 c
+--   else
+--     "\\U" ++ (B.int32HexFixed $ fromIntegral $ Char.ord c)
 
 
 -- FROM

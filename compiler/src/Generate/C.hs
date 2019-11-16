@@ -19,6 +19,9 @@ import Language.C.Pretty as C
 import qualified Text.PrettyPrint as PP
 import Text.RawString.QQ (r)
 
+import qualified Elm.Float as EF
+import qualified Elm.String as ES
+
 import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
 import qualified Generate.C.Expression as CE
@@ -53,153 +56,195 @@ type Mains = Map.Map ModuleName.Canonical Opt.Main
 data State =
   State
     { _seenGlobals :: Set.Set Opt.Global
-    , _revKernelsJS :: [B.Builder]
-    , _revBuildersJS :: [B.Builder]
-    , _revKernelsC :: [B.Builder]
-    , _revBuildersC :: [B.Builder]
+    , _seenLiterals :: Set.Set LiteralStruct
     , _revInitGlobals :: [Opt.Global]
-    , _seenFieldGroups :: Map.Map [Name.Name] Int
+    , _revBuildersC :: [B.Builder]
+    , _revJsKernels :: [B.Builder]
+    , _jsKernelVars :: Set.Set (Name.Name, Name.Name)
+    , _fieldGroups :: Set.Set [Name.Name]
+    , _ctorNames :: Set.Set Name.Name
     }
+
+
+data LiteralStruct
+  = LiteralInt Int
+  | LiteralFloat EF.Float
+  | LiteralChr ES.String
+  | LiteralStr ES.String
+  deriving (Eq, Ord)
 
 
 emptyState :: State
 emptyState =
   State
     { _seenGlobals = Set.empty
-    , _revKernelsJS = []
-    , _revBuildersJS = []
-    , _revKernelsC = cRequiredKernels
-    , _revBuildersC = []
+    , _seenLiterals = Set.empty
     , _revInitGlobals = []
-    , _seenFieldGroups = Map.empty
+    , _revBuildersC = []
+    , _revJsKernels = []
+    , _jsKernelVars = Set.empty
+    , _fieldGroups = Set.empty
+    , _ctorNames = Set.empty
     }
-
-
-cRequiredKernels :: [B.Builder]
-cRequiredKernels =
-  map generateKernelInclude ["types.h", "gc.h", "utils.h"]
 
 
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
-  let
-    -- state = Map.foldrWithKey (addMain graph) emptyState mains
-    state = Map.foldrWithKey (addMain FakeAST.graph) emptyState FakeAST.mains
-  in
-    stateToBuilder state
+  -- let
+  --   -- state = Map.foldrWithKey (addMain graph) emptyState mains
+  --   state = Map.foldrWithKey (addMain FakeAST.graph) emptyState FakeAST.mains
+  -- in
+    -- stateToBuilder state
+  ""
+
+-- stateToBuilder :: State -> B.Builder
+-- stateToBuilder state =
+--   generateHeader state
+  --  <> (
+  -- prependBuilders (_revKernelsC state) $
+  --   prependBuilders (_revBuildersC state) $
+  --   generateCMain (_revInitGlobals state)
+--   -- )
 
 
-stateToBuilder :: State -> B.Builder
-stateToBuilder state =
-  prependBuilders (_revKernelsC state) $
-    prependBuilders (_revBuildersC state) $
-    generateCMain (_revInitGlobals state)
-
-
-prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
-prependBuilders revBuilders monolith =
-  List.foldl' (\m b -> b <> m) monolith revBuilders
-
-
-generateCMain :: [Opt.Global] -> B.Builder
-generateCMain revInitGlobals =
-  let
-    globalNames =
-      map (\(Opt.Global home name) -> CN.fromGlobal home name) revInitGlobals
-    registrations = map
-      (\g -> CB.nIndent1 <> "GC_register_root(&" <> (CN.toBuilder $ CN.globalInitPtr g) <> ");")
-      globalNames
-    inits = map
-      (\g -> CB.nIndent1 <> (CN.toBuilder $ CN.globalInitFn g) <> "();")
-      globalNames
-    body =
-      CB.nIndent1 <> "GC_init();" <>
-      (prependBuilders registrations $
-        prependBuilders inits $
-        "\n")
-  in
-  "int main() {" <> body <> "}\n"
+-- prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
+-- prependBuilders revBuilders monolith =
+--   List.foldl' (\m b -> b <> m) monolith revBuilders
 
 
 {-
-                ELM 'MAIN' VALUES
+    Accumulated values
 -}
-
-addMain :: Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
-addMain graph home _ state =
-  addGlobal graph state (Opt.Global home "main")
-
-
-addGlobal :: Graph -> State -> Opt.Global -> State
-addGlobal graph state global =
-  let
-    seen = _seenGlobals state
-  in
-  if Set.member global seen then
-    state
-  else
-    addGlobalHelp graph global $
-      state { _seenGlobals = Set.insert global seen }
-
-
-addGlobalHelp :: Graph -> Opt.Global -> State -> State
-addGlobalHelp graph global state =
-  let
-    addDeps deps someState =
-      Set.foldl' (addGlobal graph) someState deps
-  in
-  case graph ! global of
-    Opt.Define expr deps ->
-      addDef global expr $
-      (addDeps deps state)
-
-    Opt.DefineTailFunc argNames body deps ->
-      addDeps deps state
-
-    Opt.Ctor index arity ->
-      state
-
-    Opt.Link (Opt.Global moduleName name) ->
-      state
-
-    Opt.Cycle names values functions deps ->
-      addDeps deps state
-
-    Opt.Manager effectsType ->
-      state
-
-    Opt.Kernel chunks deps ->
-      addKernel (addDeps deps state) $
-        generateKernel global
-
-    Opt.Enum index ->
-      state
-
-    Opt.Box ->
-      state
-
-    Opt.PortIncoming decoder deps ->
-      addDeps deps state
-
-    Opt.PortOutgoing encoder deps ->
-      addDeps deps state
+-- generateHeader :: State -> B.Builder
+-- generateHeader state =
+--   let
+--     include = "#include \"kernel.h\""
+--     kernelEnum = generateEnum "JS_" $
+--       map (\(home, name) -> CN.fromKernel home name) $
+--       Set.toList $ _jsKernelVars state
+--     ctorEnum = generateEnum "CTOR_" $ Set.toList $ _ctorNames state
+--     fieldGroups = _fieldGroups state      
+--     fieldEnum = generateEnum "FIELD_" $      Set.foldl' (foldl' $ flip Set.insert) Set.empty fieldGroups
+--     fieldGroupBuilders = map generateFieldGroup (toList fieldGroups)
+--     fieldGroupsArray = ""
+--   in
+--     kernelEnum
+--     <> ctorEnum
+--     <> fieldEnum
+--     <> fieldGroupBuilders
+--     <> (CB.join CB.nIndent1 fieldGroupBuilders)
 
 
-addKernel :: State -> B.Builder -> State
-addKernel state kernel =
-  state { _revKernelsC = kernel : _revKernelsC state }
+-- generateEnum :: B.Builder -> [CN.CName] -> B.Builder
+-- generateEnum prefix names =
+--   let
+--     sep = "," <> CB.nIndent1 <> prefix
+--   in
+--   "enum {" <> CB.nIndent1
+--     <> prefix <> (CB.joinMap sep CN.toBuilder names)
+--     <> "\n};\n\n"
 
 
-generateKernel :: Opt.Global -> B.Builder
-generateKernel (Opt.Global home _) =
-  generateKernelInclude $
-  CN.toBuilder $
-  CN.kernelHeaderFile home
+-- generateCMain :: [Opt.Global] -> B.Builder
+-- generateCMain revInitGlobals =
+--   let
+--     globalNames =
+--       map (\(Opt.Global home name) -> CN.fromGlobal home name) revInitGlobals
+--     registrations = map
+--       (\g -> CB.nIndent1 <> "GC_register_root(&" <> (CN.toBuilder $ CN.globalInitPtr g) <> ");")
+--       globalNames
+--     inits = map
+--       (\g -> CB.nIndent1 <> (CN.toBuilder $ CN.globalInitFn g) <> "();")
+--       globalNames
+--     body =
+--       CB.nIndent1 <> "GC_init();" <>
+--       (prependBuilders registrations $
+--         prependBuilders inits $
+--         "\n")
+--   in
+--   "int main() {" <> body <> "}\n"
 
 
-generateKernelInclude :: B.Builder -> B.Builder
-generateKernelInclude filename =
-  "#include \"../kernel/" <> filename <> "\"\n"
+-- {-
+--                 ELM 'MAIN' VALUES
+-- -}
+
+-- addMain :: Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
+-- addMain graph home _ state =
+--   addGlobal graph state (Opt.Global home "main")
+
+
+-- addGlobal :: Graph -> State -> Opt.Global -> State
+-- addGlobal graph state global =
+--   let
+--     seen = _seenGlobals state
+--   in
+--   if Set.member global seen then
+--     state
+--   else
+--     addGlobalHelp graph global $
+--       state { _seenGlobals = Set.insert global seen }
+
+
+-- addGlobalHelp :: Graph -> Opt.Global -> State -> State
+-- addGlobalHelp graph global state =
+--   let
+--     addDeps deps someState =
+--       Set.foldl' (addGlobal graph) someState deps
+--   in
+--   case graph ! global of
+--     Opt.Define expr deps ->
+--       addDef global expr $
+--       (addDeps deps state)
+
+--     Opt.DefineTailFunc argNames body deps ->
+--       addDeps deps state
+
+--     Opt.Ctor index arity ->
+--       state
+
+--     Opt.Link (Opt.Global moduleName name) ->
+--       state
+
+--     Opt.Cycle names values functions deps ->
+--       addDeps deps state
+
+--     Opt.Manager effectsType ->
+--       state
+
+--     Opt.Kernel chunks deps ->
+--       state
+--      addKernel (addDeps deps state) $
+--        generateKernel global
+
+--     Opt.Enum index ->
+--       state
+
+--     Opt.Box ->
+--       state
+
+--     Opt.PortIncoming decoder deps ->
+--       addDeps deps state
+
+--     Opt.PortOutgoing encoder deps ->
+--       addDeps deps state
+
+
+-- addKernel :: State -> B.Builder -> State
+-- addKernel state kernel =
+--   state { _revKernelsC = kernel : _revKernelsC state }
+
+
+-- generateKernel :: Opt.Global -> B.Builder
+-- generateKernel (Opt.Global home _) =
+--   generateKernelInclude $
+--   CN.toBuilder $
+--   CN.kernelHeaderFile home
+
+
+-- generateKernelInclude :: B.Builder -> B.Builder
+-- generateKernelInclude filename =
+--   "#include \"../kernel/" <> filename <> "\"\n"
 
 
 {-
@@ -207,151 +252,151 @@ generateKernelInclude filename =
 -}
 
 
-addDef :: Opt.Global -> Opt.Expr -> State -> State
-addDef global@(Opt.Global home' name') expr state =
-  let
-    globalName =
-      CN.fromGlobal home' name'
-    textMacro otherGlobal =
-      defineTextMacro state globalName otherGlobal
-    runtimeInit =
-      defineRuntimeInit global expr state
-  in
-  case expr of
-    Opt.Function args body ->
-      let
-        evalFnName = CN.evalFn globalName
-        arity = length args -- TODO: add free variables
-      in
-      state {
-        _revBuildersC =
-          (CB.fromExtDecl $ AST.DeclExt $ CE.generateConstClosure globalName evalFnName arity)
-          : (CB.fromExtDecl $ CE.generateEvalFn evalFnName args body)
-          : _revBuildersC state
-      }
+-- addDef :: Opt.Global -> Opt.Expr -> State -> State
+-- addDef global@(Opt.Global home' name') expr state =
+--   let
+--     globalName =
+--       CN.fromGlobal home' name'
+--     textMacro otherGlobal =
+--       defineTextMacro state globalName otherGlobal
+--     runtimeInit =
+--       defineRuntimeInit global expr state
+--   in
+--   case expr of
+--     Opt.Function args body ->
+--       let
+--         evalFnName = CN.evalFn globalName
+--         arity = length args -- TODO: add free variables
+--       in
+--       state {
+--         _revBuildersC =
+--           (CB.fromExtDecl $ AST.DeclExt $ CE.generateConstClosure globalName evalFnName arity)
+--           : (CB.fromExtDecl $ CE.generateEvalFn evalFnName args body)
+--           : _revBuildersC state
+--       }
 
-    Opt.Int value ->
-      state {
-        _revBuildersC =
-          (CB.fromExtDecl $ AST.DeclExt $ CE.generateConstInt globalName value)
-          : _revBuildersC state
-      }
+--     Opt.Int value ->
+--       state {
+--         _revBuildersC =
+--           (CB.fromExtDecl $ AST.DeclExt $ CE.generateConstInt globalName value)
+--           : _revBuildersC state
+--       }
 
-    -- TODO: create these at compile time rather than runtime (global const)
-    Opt.Chr _ -> runtimeInit
-    Opt.Str _ -> runtimeInit
-    Opt.Float _ -> runtimeInit
-    Opt.Accessor _ -> runtimeInit
+--     -- TODO: create these at compile time rather than runtime (global const)
+--     Opt.Chr _ -> runtimeInit
+--     Opt.Str _ -> runtimeInit
+--     Opt.Float _ -> runtimeInit
+--     Opt.Accessor _ -> runtimeInit
     
-    -- defineConst body
-    Opt.List _ -> runtimeInit
-    Opt.Call _ _ -> runtimeInit
-    Opt.If _ _ -> runtimeInit
-    Opt.Let _ _ -> runtimeInit
-    Opt.Destruct _ _ -> runtimeInit
-    Opt.Case _ _ _ _ -> runtimeInit
-    Opt.Access _ _ -> runtimeInit
-    Opt.Record _ -> runtimeInit
-    Opt.Update _ _ -> runtimeInit
-    Opt.Tuple _ _ _ -> runtimeInit
-    Opt.Shader _ _ _ -> runtimeInit
+--     -- defineConst body
+--     Opt.List _ -> runtimeInit
+--     Opt.Call _ _ -> runtimeInit
+--     Opt.If _ _ -> runtimeInit
+--     Opt.Let _ _ -> runtimeInit
+--     Opt.Destruct _ _ -> runtimeInit
+--     Opt.Case _ _ _ _ -> runtimeInit
+--     Opt.Access _ _ -> runtimeInit
+--     Opt.Record _ -> runtimeInit
+--     Opt.Update _ _ -> runtimeInit
+--     Opt.Tuple _ _ _ -> runtimeInit
+--     Opt.Shader _ _ _ -> runtimeInit
 
-    Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)
-    Opt.Unit -> textMacro CN.unit
-    Opt.VarGlobal (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
-    Opt.VarEnum (Opt.Global home name) _ -> textMacro (CN.fromGlobal home name)
-    Opt.VarBox (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
-    Opt.VarCycle home name -> textMacro (CN.fromGlobal home name)
-    Opt.VarDebug name home _ _ -> textMacro (CN.fromGlobal home name)
-    Opt.VarKernel home name -> textMacro (CN.fromKernel home name)
-
-
-    -- impossible in global scope
-    Opt.VarLocal _ -> undefined
-    Opt.TailCall _ _ -> undefined
+--     Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)
+--     Opt.Unit -> textMacro CN.unit
+--     Opt.VarGlobal (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
+--     Opt.VarEnum (Opt.Global home name) _ -> textMacro (CN.fromGlobal home name)
+--     Opt.VarBox (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
+--     Opt.VarCycle home name -> textMacro (CN.fromGlobal home name)
+--     Opt.VarDebug name home _ _ -> textMacro (CN.fromGlobal home name)
+--     Opt.VarKernel home name -> textMacro (CN.fromKernel home name)
 
 
-defineTextMacro :: State -> CN.CName -> CN.CName -> State
-defineTextMacro state lvalue rvalue =
-  state {
-    _revBuildersC =
-      ("#define " <> (CN.toBuilder lvalue) <> " " <> (CN.toBuilder rvalue) <> "\n")
-      : _revBuildersC state
-  }
+--     -- impossible in global scope
+--     Opt.VarLocal _ -> undefined
+--     Opt.TailCall _ _ -> undefined
 
 
-defineRuntimeInit :: Opt.Global -> Opt.Expr -> State -> State
-defineRuntimeInit global@(Opt.Global home name) expr state =
-  let
-    globalName = CN.fromGlobal home name
-    g = CN.toBuilder globalName
-    initPtr = CN.toBuilder $ CN.globalInitPtr globalName
-    initFn = CN.toBuilder $ CN.globalInitFn globalName
+-- defineTextMacro :: State -> CN.CName -> CN.CName -> State
+-- defineTextMacro state lvalue rvalue =
+--   state {
+--     _revBuildersC =
+--       ("#define " <> (CN.toBuilder lvalue) <> " " <> (CN.toBuilder rvalue) <> "\n")
+--       : _revBuildersC state
+--   }
 
-    exprBuilder = CB.fromExpr $ CE.generate expr
+
+-- defineRuntimeInit :: Opt.Global -> Opt.Expr -> State -> State
+-- defineRuntimeInit global@(Opt.Global home name) expr state =
+--   let
+--     globalName = CN.fromGlobal home name
+--     g = CN.toBuilder globalName
+--     initPtr = CN.toBuilder $ CN.globalInitPtr globalName
+--     initFn = CN.toBuilder $ CN.globalInitFn globalName
+
+--     exprBuilder = CB.fromExpr $ CE.generate expr
         
-    builder :: B.Builder
-    builder =
-      mconcat $ List.intersperse "\n"
-        [ ""
-        , "#define " <> g <> " (*" <> initPtr <> ")"
-        , "ElmValue* " <> initPtr <> ";"
-        , "void* " <> initFn <> "() {"
-        , "    " <> initPtr <> " = " <> exprBuilder <> ";"
-        , "    return NULL;"
-        , "}"
-        , ""
-        ]
-    -- TODO: init function could in theory throw a heap overflow, should catch it
-  in
-  state
-    { _revBuildersC = builder : _revBuildersC state
-    , _revInitGlobals = global : _revInitGlobals state
-    }
+--     builder :: B.Builder
+--     builder =
+--       mconcat $ List.intersperse "\n"
+--         [ ""
+--         , "#define " <> g <> " (*" <> initPtr <> ")"
+--         , "ElmValue* " <> initPtr <> ";"
+--         , "void* " <> initFn <> "() {"
+--         , "    " <> initPtr <> " = " <> exprBuilder <> ";"
+--         , "    return NULL;"
+--         , "}"
+--         , ""
+--         ]
+--     -- TODO: init function could in theory throw a heap overflow, should catch it
+--   in
+--   state
+--     { _revBuildersC = builder : _revBuildersC state
+--     , _revInitGlobals = global : _revInitGlobals state
+--     }
 
 
-{-
-                RECORD FIELDGROUP
--}
+-- {-
+--                 RECORD FIELDGROUP
+-- -}
 
-generateFieldGroup :: [Name.Name] -> C.Ident -> CExtDecl
-generateFieldGroup fields fieldGroupName =
-  let
-    -- const FieldGroup
-    declarationSpecifiers :: [CDeclSpec]
-    declarationSpecifiers =
-      [ CTypeQual $ CConstQual undefNode
-      , CTypeSpec $ CTypeDef (CN.toIdent CN.typeFieldGroup) undefNode
-      ]
+-- generateFieldGroup :: [Name.Name] -> C.Ident -> CExtDecl
+-- generateFieldGroup fields fieldGroupName =
+--   let
+--     -- const FieldGroup
+--     declarationSpecifiers :: [CDeclSpec]
+--     declarationSpecifiers =
+--       [ CTypeQual $ CConstQual undefNode
+--       , CTypeSpec $ CTypeDef (CN.toIdent CN.typeFieldGroup) undefNode
+--       ]
 
-    -- fg3
-    declarator :: CDeclr
-    declarator =
-      CDeclr (Just fieldGroupName) [] Nothing [] undefNode
+--     -- fg3
+--     declarator :: CDeclr
+--     declarator =
+--       CDeclr (Just fieldGroupName) [] Nothing [] undefNode
 
-    -- {Field_aardvaark, Field_banana}
-    fieldsInitList :: CInitList
-    fieldsInitList =
-        map
-          (\f ->
-            let ident = CN.toIdent $ CN.asField $ CN.fromLocal f in
-            ([] , CInitExpr (CVar ident undefNode) undefNode))
-          fields
+--     -- {Field_aardvaark, Field_banana}
+--     fieldsInitList :: CInitList
+--     fieldsInitList =
+--         map
+--           (\f ->
+--             let ident = CN.toIdent $ CN.asField $ CN.fromLocal f in
+--             ([] , CInitExpr (CVar ident undefNode) undefNode))
+--           fields
   
-    -- { 2, {Field_aardvaark, Field_banana} }
-    initializer :: CInit
-    initializer =
-      CInitList
-        [ ([], CInitExpr (CB.intLiteral $ length fields) undefNode)
-        , ([], CInitList fieldsInitList undefNode)
-        ]
-        undefNode
+--     -- { 2, {Field_aardvaark, Field_banana} }
+--     initializer :: CInit
+--     initializer =
+--       CInitList
+--         [ ([], CInitExpr (CB.intLiteral $ length fields) undefNode)
+--         , ([], CInitList fieldsInitList undefNode)
+--         ]
+--         undefNode
 
-    -- const FieldGroup fg3 = { 2, {Field_aardvaark, Field_banana} }
-    declaration :: CDecl
-    declaration = CDecl
-      declarationSpecifiers
-      [(Just declarator, Just initializer, Nothing)]
-      undefNode
-  in
-    CDeclExt declaration
+--     -- const FieldGroup fg3 = { 2, {Field_aardvaark, Field_banana} }
+--     declaration :: CDecl
+--     declaration = CDecl
+--       declarationSpecifiers
+--       [(Just declarator, Just initializer, Nothing)]
+--       undefNode
+--   in
+--     CDeclExt declaration

@@ -92,6 +92,11 @@ join sep builders =
   mconcat $ List.intersperse sep builders
 
 
+joinMap :: B.Builder -> (a -> B.Builder) -> [a] -> B.Builder
+joinMap sep buildItem items =
+  mconcat $ List.intersperse sep $ map buildItem items
+
+
 indent1 :: B.Builder
 indent1 = "    "
 
