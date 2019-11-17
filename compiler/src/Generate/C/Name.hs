@@ -22,6 +22,8 @@ module Generate.C.Name
   , unit
   , true
   , false
+  , KernelTypeDef(..)
+  , HeaderFile(..)
   )
   where
 
@@ -86,29 +88,29 @@ cycleVar home name =
     ++ ["cyclic", Name.toBuilder name]
 
 
-jsKernelValue :: Name.Name -> Name.Name -> Name
-jsKernelValue home name =
-  Name ("JS_" <> builderFromUtf8List [home, name])
+jsKernelValue :: (Name.Name, Name.Name) -> Name
+jsKernelValue (home, name) =
+  Name ("JS_" <> (join $ map Name.toBuilder [home, name]))
 
 
-cKernelValue :: Name.Name -> Name.Name -> Name
-cKernelValue home name =
-  Name $ builderFromUtf8List [home, name]
+cKernelValue :: (Name.Name, Name.Name) -> Name
+cKernelValue (home, name) =
+  Name $ join $ map Name.toBuilder [home, name]
 
 
-ctorId :: ModuleName.Canonical -> Name.Name -> Name
-ctorId _ name =
+ctorId :: Name.Name -> Name
+ctorId name =
   Name $ "CTOR_" <> Name.toBuilder name
 
 
-fieldId :: ModuleName.Canonical -> Name.Name -> Name
-fieldId _ name =
+fieldId :: Name.Name -> Name
+fieldId name =
   Name $ "FIELD_" <> Name.toBuilder name
 
 
 fieldGroup :: [Name.Name] -> Name
 fieldGroup fields =
-  Name $ "fg_" <> builderFromUtf8List fields
+  Name $ "fg_" <> (join $ map Name.toBuilder fields)
 
 
 literalInt :: Int -> Name
@@ -118,7 +120,7 @@ literalInt x =
 
 literalFloat :: EF.Float -> Name
 literalFloat x =
-  Name $ "literal_float_" <> (builderFromUtf8List $ Utf8.split dot x)
+  Name $ "literal_float_" <> (join $ splitUtf8 dot x)
 
 
 literalString :: ES.String -> Name
@@ -138,34 +140,36 @@ literalChar s =
 
 escapeChar :: Char -> B.Builder
 escapeChar c =
-  if Char.isAscii c then
-    if Char.isAlphaNum c then
-      B.char8 c
-    else
-      B.char8 '_'
+  if Char.isAscii c && (Char.isAlphaNum c || c == '_') then
+    B.char8 c
   else
-    "\\U" <> (B.int32HexFixed $ fromIntegral $ Char.ord c)
+    let codepoint = Char.ord c in
+    if codepoint <= 0xffff then      
+      "\\u" <> (B.word16HexFixed $ fromIntegral $ codepoint)
+    else
+      "\\U" <> (B.int32HexFixed $ fromIntegral $ codepoint)
 
 
 globalBuilder :: ModuleName.Canonical -> Name.Name -> B.Builder
 globalBuilder home name =
-  mconcat (homeToBuilders home ++ [Name.toBuilder name])
+  join (homeToBuilders home ++ [Name.toBuilder name])
 
 
-builderFromUtf8List :: [Utf8.Utf8 t] -> B.Builder
-builderFromUtf8List names =
-  mconcat $ List.intersperse "_" $
-    map Utf8.toBuilder names
-
-
--- these Utf8 mofos all have different phantom types
--- need to convert toBuilder first then shove into a list
 homeToBuilders :: ModuleName.Canonical -> [B.Builder]
 homeToBuilders (ModuleName.Canonical (Pkg.Name author project) modul) =
-  [ builderFromUtf8List $ Utf8.split hyphen author
-  , builderFromUtf8List $ Utf8.split hyphen project
-  , builderFromUtf8List $ Utf8.split dot modul
-  ]
+  (splitUtf8 hyphen author)
+  ++ (splitUtf8 hyphen project)
+  ++ (splitUtf8 dot modul)
+
+
+splitUtf8 :: Word8 -> Utf8.Utf8 t -> [B.Builder]
+splitUtf8 chr utf8 =
+  map Utf8.toBuilder $ Utf8.split chr utf8
+
+
+join :: [B.Builder] -> B.Builder
+join builders =
+  mconcat $ List.intersperse "_" builders
 
 
 hyphen :: Word8
@@ -186,3 +190,26 @@ true = Name "True"
 
 false :: Name
 false = Name "False"
+
+
+-- C KERNEL TYPE DEFINITIONS
+
+data KernelTypeDef
+  = ElmValue
+  | ElmInt
+  | ElmFloat
+  | ElmChar
+  | ElmString
+  | Cons
+  | Tuple2
+  | Tuple3
+  | Custom
+  | Record
+  | FieldGroup
+  | Closure
+  | I32
+  | F64
+
+
+data HeaderFile
+  = KernelH

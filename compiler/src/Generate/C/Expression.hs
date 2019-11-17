@@ -24,10 +24,6 @@ import qualified Data.ByteString.Builder as B
 import qualified Data.Name as Name
 -- import qualified Data.Set as Set
 -- import qualified Data.Utf8 as Utf8
--- import Language.C as C
--- import Language.C.Data.Name as C
--- import Language.C.Pretty as C
--- import qualified Text.PrettyPrint as PP
 
 -- import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN

@@ -2,7 +2,7 @@ module Generate.C.AST where
 
 import qualified Data.ByteString.Builder as B
 import qualified Elm.Float as EF
-import Generate.C.Name (Name)
+import Generate.C.Name (Name, KernelTypeDef, HeaderFile)
 
 
 data Statement
@@ -101,29 +101,17 @@ data Declaration
 -- Declaration specifiers include at most one storage-class specifier (C99 6.7.1),
 -- type specifiers (6.7.2) and type qualifiers (6.7.3).
 data DeclarationSpecifier
-  = TypeSpec    TypeSpecifier    -- ^ type name
-  | TypeQual    TypeQualifier    -- ^ type qualifier (const, volatile, register, etc)
+  = TypeSpec TypeSpecifier    -- ^ type name
+  | TypeQual TypeQualifier    -- ^ type qualifier (const, volatile, register, etc)
   -- = StorageSpec StorageSpecifier -- ^ storage-class specifier or typedef
   --- | FunSpec     FunctionSpecifier -- ^ function specifier (inline or noreturn)
   --- | AlignSpec   AlignmentSpecifier -- ^ alignment specifier
 
--- Note: this is mixing concerns really...
+
 data TypeSpecifier
-  = ElmValue
-  | ElmInt
-  | ElmFloat
-  | ElmChar
-  | ElmString
-  | Cons
-  | Tuple2
-  | Tuple3
-  | Custom
-  | Record
-  | FieldSet
-  | Closure
-  | I32
-  | F64
+  = TypeDef KernelTypeDef
   | Void
+  | Enum [Name]
 
 
 data TypeQualifier
@@ -141,60 +129,60 @@ data Declarator
 data DerivedDeclarator
   = PtrDeclr [TypeQualifier]
   | ArrDeclr [TypeQualifier] ArraySize
-  | FunDeclr [Declaration] -- params
+  | FunDeclr [Declaration]
 
 data ArraySize
-  = NoArrSize               -- ^ @UnknownSize isCompleteType@
+  = NoArrSize
   | ArrSize Expression
   
 data CompoundBlockItem
-  = BlockStmt Statement    -- ^ A statement
-  | BlockDecl Declaration  -- ^ A local declaration
+  = BlockStmt Statement
+  | BlockDecl Declaration
 
 data BinaryOp
   = MulOp
   | DivOp
-  | RmdOp                 -- ^ remainder of division
+  | RmdOp   -- remainder of division
   | AddOp
   | SubOp
-  | ShlOp                 -- ^ shift left
-  | ShrOp                 -- ^ shift right
-  | LtOp                  -- ^ less
-  | GtOp                  -- ^ greater
-  | LeOp                  -- ^ less or equal
-  | GeOp                  -- ^ greater or equal
-  | EqOp                  -- ^ equal
-  | NeqOp                 -- ^ not equal
-  | AndOp                 -- ^ bitwise and
-  | XorOp                 -- ^ exclusive bitwise or
-  | OrOp                  -- ^ inclusive bitwise or
-  | LandOp                -- ^ logical and
-  | LorOp                 -- ^ logical or
+  | ShlOp   -- shift left
+  | ShrOp   -- shift right
+  | LtOp    -- less
+  | GtOp    -- greater
+  | LeOp    -- less or equal
+  | GeOp    -- greater or equal
+  | EqOp    -- equal
+  | NeqOp   -- not equal
+  | AndOp   -- bitwise and
+  | XorOp   -- exclusive bitwise or
+  | OrOp    -- inclusive bitwise or
+  | LandOp  -- logical and
+  | LorOp   -- logical or
 
 data UnaryOp
-  = PreIncOp               -- ^ prefix increment operator
-  | PreDecOp               -- ^ prefix decrement operator
-  | PostIncOp              -- ^ postfix increment operator
-  | PostDecOp              -- ^ postfix decrement operator
-  | AddrOp                 -- ^ address operator
-  | DerefOp                -- ^ dereference operator
-  | PlusOp                 -- ^ prefix plus
-  | MinOp                  -- ^ prefix minus
-  | CompOp                 -- ^ one's complement
-  | NegOp                  -- ^ logical negation
+  = PreIncOp   -- prefix increment operator
+  | PreDecOp   -- prefix decrement operator
+  | PostIncOp  -- postfix increment operator
+  | PostDecOp  -- postfix decrement operator
+  | AddrOp     -- address operator
+  | DerefOp    -- dereference operator
+  | PlusOp     -- prefix plus
+  | MinOp      -- prefix minus
+  | CompOp     -- one's complement
+  | NegOp      -- logical negation
 
 data AssignOp
-  = AssignOp
-  | MulAssOp
-  | DivAssOp
-  | RmdAssOp
-  | AddAssOp
-  | SubAssOp
-  | ShlAssOp
-  | ShrAssOp
-  | AndAssOp
-  | XorAssOp
-  | OrAssOp
+  = AssignOp  --  =
+  | MulAssOp  --  *=
+  | DivAssOp  --  /=
+  | RmdAssOp  --  %=
+  | AddAssOp  --  +=
+  | SubAssOp  --  -=
+  | ShlAssOp  --  <<=
+  | ShrAssOp  --  >>=
+  | AndAssOp  --  &=
+  | XorAssOp  --  ^=
+  | OrAssOp   --  |=
 
 data FunctionDef =
   FunDef
@@ -205,3 +193,5 @@ data FunctionDef =
 data ExternalDeclaration
   = DeclExt Declaration
   | FDefExt FunctionDef
+  | DefineExt Name Expression
+  | IncludeExt HeaderFile

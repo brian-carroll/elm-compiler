@@ -6,7 +6,6 @@ import qualified Data.ByteString.Builder as B
 import Data.Monoid ((<>))
 import qualified Data.Map as Map
 import Data.Maybe (maybe, maybeToList)
-import qualified Data.Name as Name
 import qualified Data.Set as Set
 import qualified Data.List as List
 import qualified Elm.Float as EF
@@ -240,21 +239,31 @@ fromDeclSpec declSpec =
 fromTypeSpecifier :: TypeSpecifier -> B.Builder
 fromTypeSpecifier typeSpec =
   case typeSpec of
-    ElmValue -> "ElmValue"
-    ElmInt -> "ElmInt"
-    ElmFloat -> "ElmFloat"
-    ElmChar -> "ElmChar"
-    ElmString -> "ElmString"
-    Cons -> "Cons"
-    Tuple2 -> "Tuple2"
-    Tuple3 -> "Tuple3"
-    Custom -> "Custom"
-    Record -> "Record"
-    FieldSet -> "FieldSet"
-    Closure -> "Closure"
-    I32 -> "i32"
-    F64 -> "f64"
     Void -> "void"
+
+    Enum names ->
+      "enum {"
+        <> (List.foldl'
+            (\acc name -> acc <> nIndent1 <> CN.toBuilder name)
+              "" names)
+        <> "}"
+
+    TypeDef kernelTypeDef ->
+      case kernelTypeDef of
+        ElmValue -> "ElmValue"
+        ElmInt -> "ElmInt"
+        ElmFloat -> "ElmFloat"
+        ElmChar -> "ElmChar"
+        ElmString -> "ElmString"
+        Cons -> "Cons"
+        Tuple2 -> "Tuple2"
+        Tuple3 -> "Tuple3"
+        Custom -> "Custom"
+        Record -> "Record"
+        FieldGroup -> "FieldGroup"
+        Closure -> "Closure"
+        I32 -> "i32"
+        F64 -> "f64"
 
 
 fromTypeQualifier :: TypeQualifier -> B.Builder
@@ -296,13 +305,27 @@ fromDerivedDeclr declrBuilder derivedDeclr =
       <> ")"
 
 
+fromHeaderFile :: HeaderFile -> B.Builder
+fromHeaderFile headerFile =
+  case headerFile of
+    KernelH -> "kernel.h"
+
+
 fromExtDecl :: ExternalDeclaration -> B.Builder
 fromExtDecl extDecl =
   case extDecl of
     DeclExt decl ->
       (fromDeclaration decl) <> ";\n"
+
     FDefExt (FunDef declSpecs declarator statement) ->
       mconcat $
         (map fromDeclSpec declSpecs)
         ++ [fromDeclarator declarator]
         ++ [" ", fromStatement "" statement, "\n"]
+
+    DefineExt name expr ->
+      "#define " <> CN.toBuilder name <> " " <> fromExpr expr <> "\n"
+
+    IncludeExt headerFile ->
+      "#include \"" <> fromHeaderFile headerFile <> "\"\n"
+

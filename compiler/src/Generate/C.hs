@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, QuasiQuotes #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Generate.C
   ( generate
   )
@@ -8,16 +8,12 @@ import Prelude hiding (cycle, print)
 import qualified Data.ByteString.Builder as B
 import Data.Monoid ((<>))
 import qualified Data.List as List
-import Data.Map ((!))
+import Data.Map ((!), Map)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
+import Data.Set (Set)
 import qualified Data.Set as Set
 -- import qualified Data.Utf8 as Utf8
-import Language.C as C
-import Language.C.Data.Name as C
-import Language.C.Pretty as C
-import qualified Text.PrettyPrint as PP
-import Text.RawString.QQ (r)
 
 import qualified Elm.Float as EF
 import qualified Elm.String as ES
@@ -25,7 +21,7 @@ import qualified Elm.String as ES
 import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
 import qualified Generate.C.Expression as CE
-import qualified Generate.C.AST as AST
+import qualified Generate.C.AST as C
 -- import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 -- import qualified Data.Index as Index
@@ -56,9 +52,9 @@ type Mains = Map.Map ModuleName.Canonical Opt.Main
 data State =
   State
     { _seenGlobals :: Set.Set Opt.Global
-    , _seenLiterals :: Set.Set LiteralStruct
+    , _seenLiteralPrims :: Set.Set LiteralPrim
     , _revInitGlobals :: [Opt.Global]
-    , _revBuildersC :: [B.Builder]
+    , _revExtDecls :: [C.ExternalDeclaration]
     , _revJsKernels :: [B.Builder]
     , _jsKernelVars :: Set.Set (Name.Name, Name.Name)
     , _fieldGroups :: Set.Set [Name.Name]
@@ -66,7 +62,7 @@ data State =
     }
 
 
-data LiteralStruct
+data LiteralPrim
   = LiteralInt Int
   | LiteralFloat EF.Float
   | LiteralChr ES.String
@@ -78,9 +74,9 @@ emptyState :: State
 emptyState =
   State
     { _seenGlobals = Set.empty
-    , _seenLiterals = Set.empty
+    , _seenLiteralPrims = Set.empty
     , _revInitGlobals = []
-    , _revBuildersC = []
+    , _revExtDecls = []
     , _revJsKernels = []
     , _jsKernelVars = Set.empty
     , _fieldGroups = Set.empty
@@ -90,59 +86,51 @@ emptyState =
 
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
-  -- let
-  --   -- state = Map.foldrWithKey (addMain graph) emptyState mains
-  --   state = Map.foldrWithKey (addMain FakeAST.graph) emptyState FakeAST.mains
-  -- in
-    -- stateToBuilder state
-  ""
+  let
+    -- state = Map.foldrWithKey (addMain graph) emptyState mains
+    state = Map.foldrWithKey (addMain FakeAST.graph) emptyState FakeAST.mains
+  in
+    stateToBuilder state
 
--- stateToBuilder :: State -> B.Builder
--- stateToBuilder state =
---   generateHeader state
+
+stateToBuilder :: State -> B.Builder
+stateToBuilder state =
+  prependBuilders
+    (map CB.fromExtDecl $ generateHeader state)
+    ""
+
   --  <> (
-  -- prependBuilders (_revKernelsC state) $
-  --   prependBuilders (_revBuildersC state) $
-  --   generateCMain (_revInitGlobals state)
---   -- )
+    -- prependBuilders (_revExtDecls state) $
+    -- generateCMain (_revInitGlobals state)
+  -- )
 
 
--- prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
--- prependBuilders revBuilders monolith =
---   List.foldl' (\m b -> b <> m) monolith revBuilders
+prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
+prependBuilders revBuilders monolith =
+  List.foldl' (\m b -> b <> m) monolith revBuilders
 
 
 {-
     Accumulated values
 -}
--- generateHeader :: State -> B.Builder
--- generateHeader state =
---   let
---     include = "#include \"kernel.h\""
---     kernelEnum = generateEnum "JS_" $
---       map (\(home, name) -> CN.fromKernel home name) $
---       Set.toList $ _jsKernelVars state
---     ctorEnum = generateEnum "CTOR_" $ Set.toList $ _ctorNames state
---     fieldGroups = _fieldGroups state      
---     fieldEnum = generateEnum "FIELD_" $      Set.foldl' (foldl' $ flip Set.insert) Set.empty fieldGroups
---     fieldGroupBuilders = map generateFieldGroup (toList fieldGroups)
---     fieldGroupsArray = ""
---   in
---     kernelEnum
---     <> ctorEnum
---     <> fieldEnum
---     <> fieldGroupBuilders
---     <> (CB.join CB.nIndent1 fieldGroupBuilders)
+generateHeader :: State -> [C.ExternalDeclaration]
+generateHeader state =
+  let
+    kernelNames = map CN.jsKernelValue $ Set.toList $ _jsKernelVars state
+    ctorNames = map CN.ctorId $ Set.toList $ _ctorNames state
+    fieldGroups = _fieldGroups state
+    fieldNames = map CN.fieldId $ Set.toList $
+      Set.foldl' (List.foldl' $ flip Set.insert) Set.empty fieldGroups
+    -- fieldGroupBuilders = map generateFieldGroup (toList fieldGroups)
+    -- fieldGroupsArray = ""
+  in
+    (map generateEnum [kernelNames, ctorNames, fieldNames])
+    ++ [ C.IncludeExt CN.KernelH ]
 
 
--- generateEnum :: B.Builder -> [CN.Name] -> B.Builder
--- generateEnum prefix names =
---   let
---     sep = "," <> CB.nIndent1 <> prefix
---   in
---   "enum {" <> CB.nIndent1
---     <> prefix <> (CB.joinMap sep CN.toBuilder names)
---     <> "\n};\n\n"
+generateEnum :: [CN.Name] -> C.ExternalDeclaration
+generateEnum names =
+  C.DeclExt $ C.Decl [C.TypeSpec $ C.Enum names] Nothing Nothing
 
 
 -- generateCMain :: [Opt.Global] -> B.Builder
@@ -169,65 +157,66 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 --                 ELM 'MAIN' VALUES
 -- -}
 
--- addMain :: Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
--- addMain graph home _ state =
---   addGlobal graph state (Opt.Global home "main")
+addMain :: Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
+addMain graph home _ state =
+  addGlobal graph state (Opt.Global home "main")
 
 
--- addGlobal :: Graph -> State -> Opt.Global -> State
--- addGlobal graph state global =
---   let
---     seen = _seenGlobals state
---   in
---   if Set.member global seen then
---     state
---   else
---     addGlobalHelp graph global $
---       state { _seenGlobals = Set.insert global seen }
+addGlobal :: Graph -> State -> Opt.Global -> State
+addGlobal graph state global =
+  let
+    seen = _seenGlobals state
+  in
+  if Set.member global seen then
+    state
+  else
+    addGlobalHelp graph global $
+      state { _seenGlobals = Set.insert global seen }
 
 
--- addGlobalHelp :: Graph -> Opt.Global -> State -> State
--- addGlobalHelp graph global state =
---   let
---     addDeps deps someState =
---       Set.foldl' (addGlobal graph) someState deps
---   in
---   case graph ! global of
---     Opt.Define expr deps ->
---       addDef global expr $
---       (addDeps deps state)
+addGlobalHelp :: Graph -> Opt.Global -> State -> State
+addGlobalHelp graph global state =
+  let
+    addDeps deps someState =
+      Set.foldl' (addGlobal graph) someState deps
+  in
+  case graph ! global of
+    Opt.Define expr deps ->
+      addDef global expr $
+      (addDeps deps state)
 
---     Opt.DefineTailFunc argNames body deps ->
---       addDeps deps state
+    Opt.DefineTailFunc argNames body deps ->
+      addDeps deps state
 
---     Opt.Ctor index arity ->
---       state
+    Opt.Ctor index arity ->
+      state
 
---     Opt.Link (Opt.Global moduleName name) ->
---       state
+    Opt.Link (Opt.Global moduleName name) ->
+      state
 
---     Opt.Cycle names values functions deps ->
---       addDeps deps state
+    Opt.Cycle names values functions deps ->
+      addDeps deps state
 
---     Opt.Manager effectsType ->
---       state
+    Opt.Manager effectsType ->
+      state
 
---     Opt.Kernel chunks deps ->
---       state
---      addKernel (addDeps deps state) $
---        generateKernel global
+    Opt.Kernel chunks deps ->
+      addDeps deps state
+      -- state
+    --  addKernel (addDeps deps state) $
+    --    generateKernel global
 
---     Opt.Enum index ->
---       state
+    Opt.Enum index ->
+      state
 
---     Opt.Box ->
---       state
+    Opt.Box ->
+      state
 
---     Opt.PortIncoming decoder deps ->
---       addDeps deps state
+    Opt.PortIncoming decoder deps ->
+      addDeps deps state
 
---     Opt.PortOutgoing encoder deps ->
---       addDeps deps state
+    Opt.PortOutgoing encoder deps ->
+      addDeps deps state
 
 
 -- addKernel :: State -> B.Builder -> State
@@ -252,76 +241,81 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 -}
 
 
--- addDef :: Opt.Global -> Opt.Expr -> State -> State
--- addDef global@(Opt.Global home' name') expr state =
---   let
---     globalName =
---       CN.fromGlobal home' name'
---     textMacro otherGlobal =
---       defineTextMacro state globalName otherGlobal
---     runtimeInit =
---       defineRuntimeInit global expr state
---   in
---   case expr of
---     Opt.Function args body ->
---       let
---         evalFnName = CN.evalFn globalName
---         arity = length args -- TODO: add free variables
---       in
---       state {
---         _revBuildersC =
---           (CB.fromExtDecl $ AST.DeclExt $ CE.generateConstClosure globalName evalFnName arity)
---           : (CB.fromExtDecl $ CE.generateEvalFn evalFnName args body)
---           : _revBuildersC state
---       }
+addDef :: Opt.Global -> Opt.Expr -> State -> State
+addDef global@(Opt.Global home' name') expr state =
+  -- let
+    -- globalName =
+    --   CN.global home' name'
+    -- textMacro otherGlobal =
+    --   defineTextMacro state globalName otherGlobal
+    -- runtimeInit =
+    --   defineRuntimeInit global expr state
+  -- in
+  case expr of
+    -- Opt.Function args body ->
+    --   let
+    --     evalFnName = CN.evaluator global
+    --     arity = length args -- TODO: add free variables
+    --   in
+    --   state {
+    --     _revExtDecls =
+    --       (CB.fromExtDecl $ C.DeclExt $ CE.generateConstClosure globalName evalFnName arity)
+    --       : (CB.fromExtDecl $ CE.generateEvalFn evalFnName args body)
+    --       : _revExtDecls state
+    --   }
 
---     Opt.Int value ->
---       state {
---         _revBuildersC =
---           (CB.fromExtDecl $ AST.DeclExt $ CE.generateConstInt globalName value)
---           : _revBuildersC state
---       }
+    Opt.Int value ->
+      -- let
+        -- intdef = C.DeclExt $ 
+      -- in
+      state
+      --  {
+      --   _revExtDecls =
+      --     : _revExtDecls state
+      -- }
 
---     -- TODO: create these at compile time rather than runtime (global const)
---     Opt.Chr _ -> runtimeInit
---     Opt.Str _ -> runtimeInit
---     Opt.Float _ -> runtimeInit
---     Opt.Accessor _ -> runtimeInit
+    _ -> state
+
+    -- -- TODO: create these at compile time rather than runtime (global const)
+    -- Opt.Chr _ -> runtimeInit
+    -- Opt.Str _ -> runtimeInit
+    -- Opt.Float _ -> runtimeInit
+    -- Opt.Accessor _ -> runtimeInit
     
---     -- defineConst body
---     Opt.List _ -> runtimeInit
---     Opt.Call _ _ -> runtimeInit
---     Opt.If _ _ -> runtimeInit
---     Opt.Let _ _ -> runtimeInit
---     Opt.Destruct _ _ -> runtimeInit
---     Opt.Case _ _ _ _ -> runtimeInit
---     Opt.Access _ _ -> runtimeInit
---     Opt.Record _ -> runtimeInit
---     Opt.Update _ _ -> runtimeInit
---     Opt.Tuple _ _ _ -> runtimeInit
---     Opt.Shader _ _ _ -> runtimeInit
+    -- -- defineConst body
+    -- Opt.List _ -> runtimeInit
+    -- Opt.Call _ _ -> runtimeInit
+    -- Opt.If _ _ -> runtimeInit
+    -- Opt.Let _ _ -> runtimeInit
+    -- Opt.Destruct _ _ -> runtimeInit
+    -- Opt.Case _ _ _ _ -> runtimeInit
+    -- Opt.Access _ _ -> runtimeInit
+    -- Opt.Record _ -> runtimeInit
+    -- Opt.Update _ _ -> runtimeInit
+    -- Opt.Tuple _ _ _ -> runtimeInit
+    -- Opt.Shader _ _ _ -> runtimeInit
 
---     Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)
---     Opt.Unit -> textMacro CN.unit
---     Opt.VarGlobal (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
---     Opt.VarEnum (Opt.Global home name) _ -> textMacro (CN.fromGlobal home name)
---     Opt.VarBox (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
---     Opt.VarCycle home name -> textMacro (CN.fromGlobal home name)
---     Opt.VarDebug name home _ _ -> textMacro (CN.fromGlobal home name)
---     Opt.VarKernel home name -> textMacro (CN.fromKernel home name)
+    -- Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)
+    -- Opt.Unit -> textMacro CN.unit
+    -- Opt.VarGlobal (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
+    -- Opt.VarEnum (Opt.Global home name) _ -> textMacro (CN.fromGlobal home name)
+    -- Opt.VarBox (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
+    -- Opt.VarCycle home name -> textMacro (CN.fromGlobal home name)
+    -- Opt.VarDebug name home _ _ -> textMacro (CN.fromGlobal home name)
+    -- Opt.VarKernel home name -> textMacro (CN.fromKernel home name)
 
 
---     -- impossible in global scope
---     Opt.VarLocal _ -> undefined
---     Opt.TailCall _ _ -> undefined
+    -- -- impossible in global scope
+    -- Opt.VarLocal _ -> undefined
+    -- Opt.TailCall _ _ -> undefined
 
 
 -- defineTextMacro :: State -> CN.Name -> CN.Name -> State
 -- defineTextMacro state lvalue rvalue =
 --   state {
---     _revBuildersC =
+--     _revExtDecls =
 --       ("#define " <> (CN.toBuilder lvalue) <> " " <> (CN.toBuilder rvalue) <> "\n")
---       : _revBuildersC state
+--       : _revExtDecls state
 --   }
 
 
@@ -350,7 +344,7 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 --     -- TODO: init function could in theory throw a heap overflow, should catch it
 --   in
 --   state
---     { _revBuildersC = builder : _revBuildersC state
+--     { _revExtDecls = builder : _revExtDecls state
 --     , _revInitGlobals = global : _revInitGlobals state
 --     }
 
