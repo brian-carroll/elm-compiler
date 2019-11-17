@@ -12,79 +12,12 @@ import qualified Data.List as List
 import qualified Elm.Float as EF
 
 -- import qualified Data.Utf8 as Utf8
-import Language.C as C
-import Language.C.Data.Name as C
-import Language.C.Pretty as C
-import qualified Text.PrettyPrint as PP
-
-import Generate.C.AST
+import Generate.C.AST as C
+import Generate.C.Name (Name)
+import Generate.C.Name as CN
 
 
--- Language.C AST uses unique integer IDs (confusingly called Name)
--- It's for fast equality, but we're not parsing so we don't need that
-dummyNodeId :: C.Name
-dummyNodeId =
-  C.Name 0
-
-
-identFromChars :: String -> C.Ident
-identFromChars chars =
-  C.mkIdent C.nopos chars dummyNodeId
-
-
-identWithPrefix :: String -> Name.Name -> C.Ident
-identWithPrefix prefix name =
-  identFromChars (prefix ++ Name.toChars name)
-
-
-identFromName :: Name.Name -> C.Ident
-identFromName name =
-  identFromChars (Name.toChars name)
-
-
-intLiteral :: Int -> CExpr
-intLiteral i =
-  CConst $ CIntConst (CInteger (fromIntegral i) C.DecRepr C.noFlags) undefNode
-
-
-intDeclSpec :: CDeclSpec
-intDeclSpec = CTypeSpec $ CIntType undefNode
-
-
-voidDeclSpec :: CDeclSpec
-voidDeclSpec = CTypeSpec $ CVoidType undefNode
-
-    
-declareEnum :: String -> String -> Set.Set Name.Name -> CExtDecl
-declareEnum enumName memberPrefix memberIds =
-  let
-    enumMembers :: [(C.Ident, Maybe CExpr)]
-    enumMembers =
-      Set.foldr
-        (\memberId idsAndVals ->
-          (identWithPrefix memberPrefix memberId, Nothing) : idsAndVals
-        )
-        []
-        memberIds
-
-    fieldEnum :: CEnum
-    fieldEnum =
-      CEnum
-        (Just $ identFromChars enumName)
-        (Just $ enumMembers)
-        []
-        undefNode
-
-    typeSpecifier :: CTypeSpec
-    typeSpecifier = CEnumType fieldEnum undefNode
-
-    cDeclarationSpecifier :: CDeclSpec
-    cDeclarationSpecifier = CTypeSpec typeSpecifier
-
-    cDeclaration :: CDecl
-    cDeclaration = CDecl [cDeclarationSpecifier] [] undefNode
-  in
-    CDeclExt cDeclaration
+-- UTILS
 
 
 join :: B.Builder -> [B.Builder] -> B.Builder
@@ -105,19 +38,31 @@ nIndent1 :: B.Builder
 nIndent1 = "\n" <> indent1
 
 
+-- EXPRESSION
+
+
 fromExpr :: Expression -> B.Builder
 fromExpr expression =
   case expression of
-    Comma exprList -> "/*Comma*/"
-    Assign op lval rval -> "/*Assign*/"
-    Cond condition expr1 expr0 -> "/*Cond*/"
+    Comma exprList ->
+      joinMap ", " fromExpr exprList
+
+    Assign op lval rval ->
+      "/* Assign */"
+
+    Cond condition expr1 expr0 ->
+      (fromExpr condition)
+      <> " ? " <> (fromExpr expr1)
+      <> " : " <> (fromExpr expr0)
+
     Binary op lhs rhs -> "/*Binary*/"
+
     Cast typeNameDecl expr -> "/*Cast*/"
 
     Unary op expr ->
       let e = fromExpr expr in
       case op of
-        PreIncOp -> "--" <> e
+        PreIncOp -> "++" <> e
         PreDecOp -> "--" <> e
         PostIncOp -> e <> "++"
         PostDecOp -> e <> "--"
@@ -128,20 +73,26 @@ fromExpr expression =
         CompOp -> "~" <> e
         NegOp -> "!" <> e
 
-    SizeofExpr expr -> "/*SizeofExpr*/"
-    SizeofType typeNameDecl -> "/*SizeofType*/"
+    SizeofExpr expr ->
+      "sizeof(" <> (fromExpr expr) <> ")"
+
+    SizeofType typeNameDecl ->
+      "sizeof(" <> (fromDeclaration typeNameDecl) <> ")"
+
     Index array index ->
       (fromExpr array) <> "[" <> (fromExpr index) <> "]"
 
     Call funcExpr argExprs ->
       (fromExpr funcExpr)
       <> "("
-      <> join ", " (map fromExpr argExprs)
+      <> joinMap ", " fromExpr argExprs
       <> ")"
 
-    Member structure member shouldUseArrow -> "/*Member*/"
+    MemberDot structure member -> "/*MemberDot*/"
 
-    Var (Ident builder) -> builder
+    MemberArrow structure member -> "/*MemberArrow*/"
+
+    Var name -> CN.toBuilder name
 
     Const constant ->
       case constant of
@@ -157,6 +108,9 @@ fromExpr expression =
     CommentExpr builder -> "/* " <> builder <> " */" 
 
 
+-- STATEMENT
+
+
 fromStatement :: B.Builder -> Statement -> B.Builder
 fromStatement indent statement =
   let
@@ -165,32 +119,58 @@ fromStatement indent statement =
     nDeeper = nIndent <> indent1
   in
   case statement of
-    Label (Ident ident) statement ->
-      ident <> ":" <> nIndent <> (fromStatement deeper statement)
+    Label name statement ->
+      (CN.toBuilder name) <> ":"
+      <> nIndent <> (fromStatement deeper statement)
 
-    Case expression statement -> "/* Case */"
+    Switch expression statement  ->
+      "switch (" <> (fromExpr expression) <> ")" 
+      <> fromStatement nDeeper statement
 
-    Cases from to statement -> "/* Cases */"
+    Cases expressions statement ->
+      (joinMap (":" <> nIndent) fromExpr expressions) <> ":"
+      <> nDeeper <> fromStatement deeper statement
 
     Default statement ->
-      "default:" <> deeper <> fromStatement deeper statement
+      "default:" <> nDeeper
+      <> fromStatement deeper statement
 
     Expr maybeExpression -> 
       maybe "" fromExpr maybeExpression
 
     Compound blockItems ->
-      "{" <> nIndent
-      <> (join (";\n") $
-        map (fromBlockItem deeper) blockItems)
-      <> ";" <> nIndent <> "}"
+      "{" <> nDeeper
+        <> (joinMap (";" <> nDeeper)
+            (fromBlockItem deeper) blockItems)
+        <> ";" <> nIndent
+        <> "}" <> nIndent
 
-    If condition thenStmt maybeElseStmt  -> "/* If */"
-    Switch expression statement  -> "/* Switch */"
-    While guardExpr statement isDoWhile -> "/* While */"
-    For init guardExpr iterExpr statement -> "/* For */"
-    Goto (Ident ident) -> "goto" <> ident
-    Cont -> "continue"
-    Break -> "break"
+    If condition thenStmt maybeElseStmt ->
+      "if (" <> (fromExpr condition) <> ") "
+        <> (fromStatement indent thenStmt)
+        <> (maybe "" (\elseStmt -> 
+              " else " <> (fromStatement indent elseStmt))
+            maybeElseStmt)
+
+    While guardExpr statement ->
+      "while (" <> (fromExpr guardExpr) <> ")"
+      <> fromStatement indent statement
+
+    DoWhile guardExpr statement ->
+      "do " <> fromStatement indent statement
+      <> "while (" <> (fromExpr guardExpr) <> ")"
+
+    For init guardExpr iterExpr statement ->
+      "/* For */"
+
+    Goto name ->
+      "goto " <> CN.toBuilder name
+
+    Cont ->
+      "continue"
+
+    Break ->
+      "break"
 
     Return maybeExpr ->
       indent <> (join " " $
@@ -244,8 +224,8 @@ fromPartDesignator part =
   case part of
     ArrDesig expression ->
       "[" <> fromExpr expression <> "]" -- not sure of this, but prob won't use
-    MemberDesig (Ident ident) ->
-      "." <> ident
+    MemberDesig name ->
+      "." <> CN.toBuilder name
     RangeDesig from to ->
       "[" <> fromExpr from <> "..." <> fromExpr to <> "]" -- not sure of this, but prob won't use
 
@@ -287,9 +267,7 @@ fromDeclarator :: Declarator -> B.Builder
 fromDeclarator (Declr maybeIdent derivedDeclrs) =
   let
     identBuilder =
-      case maybeIdent of
-        Nothing -> ""
-        Just (Ident ident) -> ident
+      maybe "" CN.toBuilder maybeIdent
   in
     List.foldl' fromDerivedDeclr identBuilder derivedDeclrs
 
