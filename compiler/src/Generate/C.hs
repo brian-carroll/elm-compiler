@@ -235,6 +235,16 @@ addGlobalHelp graph global state =
 -- generateKernelInclude filename =
 --   "#include \"../kernel/" <> filename <> "\"\n"
 
+addExtDecl :: C.ExternalDeclaration -> State -> State
+addExtDecl extDecl state =
+  state { _revExtDecls = extDecl : _revExtDecls state }
+
+
+addLiteral :: LiteralPrim -> State -> State
+addLiteral lit state =
+  state { _seenLiteralPrims =
+      Set.insert lit (_seenLiteralPrims state) }
+
 
 {-
                 GLOBAL DEFINITION
@@ -243,14 +253,18 @@ addGlobalHelp graph global state =
 
 addDef :: Opt.Global -> Opt.Expr -> State -> State
 addDef global@(Opt.Global home' name') expr state =
-  -- let
-    -- globalName =
-    --   CN.global home' name'
+  let
+    globalName =
+      CN.global home' name'
+
+    defineAlias alias state =
+      addExtDecl (C.DefineExt globalName $ C.Var alias) state 
+
     -- textMacro otherGlobal =
     --   defineTextMacro state globalName otherGlobal
     -- runtimeInit =
     --   defineRuntimeInit global expr state
-  -- in
+  in
   case expr of
     -- Opt.Function args body ->
     --   let
@@ -265,21 +279,29 @@ addDef global@(Opt.Global home' name') expr state =
     --   }
 
     Opt.Int value ->
-      -- let
-        -- intdef = C.DeclExt $ 
-      -- in
-      state
-      --  {
-      --   _revExtDecls =
-      --     : _revExtDecls state
-      -- }
+      addLiteral (LiteralInt value) $
+        defineAlias (CN.literalInt value) state
 
+    Opt.Float value ->
+      addLiteral (LiteralFloat value) $
+        defineAlias (CN.literalFloat value) state
+  
+    Opt.Chr value ->
+      addLiteral (LiteralChr value) $
+        defineAlias (CN.literalChr value) state
+
+    Opt.Str value ->
+      addLiteral (LiteralStr value) $
+        defineAlias (CN.literalStr value) state
+
+    Opt.Bool bool ->
+      defineAlias (if bool then CN.true else CN.false) state
+
+    Opt.Unit ->
+      defineAlias CN.unit state
+  
     _ -> state
 
-    -- -- TODO: create these at compile time rather than runtime (global const)
-    -- Opt.Chr _ -> runtimeInit
-    -- Opt.Str _ -> runtimeInit
-    -- Opt.Float _ -> runtimeInit
     -- Opt.Accessor _ -> runtimeInit
     
     -- -- defineConst body
@@ -297,6 +319,7 @@ addDef global@(Opt.Global home' name') expr state =
 
     -- Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)
     -- Opt.Unit -> textMacro CN.unit
+
     -- Opt.VarGlobal (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
     -- Opt.VarEnum (Opt.Global home name) _ -> textMacro (CN.fromGlobal home name)
     -- Opt.VarBox (Opt.Global home name) -> textMacro (CN.fromGlobal home name)

@@ -17,8 +17,8 @@ module Generate.C.Name
   , localEvaluator
   , literalInt
   , literalFloat
-  , literalString
-  , literalChar
+  , literalStr
+  , literalChr
   , unit
   , true
   , false
@@ -123,14 +123,14 @@ literalFloat x =
   Name $ "literal_float_" <> (join $ splitUtf8 dot x)
 
 
-literalString :: ES.String -> Name
-literalString s =
+literalStr :: ES.String -> Name
+literalStr s =
   Name $ mconcat $
     "literal_string_" : (map escapeChar $ ES.toChars s)
 
 
-literalChar :: ES.String -> Name
-literalChar s =
+literalChr :: ES.String -> Name
+literalChr s =
   Name $ mconcat $
     "literal_char_" : (map escapeChar $ ES.toChars s)
 
