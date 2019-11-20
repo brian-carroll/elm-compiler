@@ -137,7 +137,7 @@ generateEnum names =
 -- generateCMain revInitGlobals =
 --   let
 --     globalNames =
---       map (\(Opt.Global home name) -> CN.fromGlobal home name) revInitGlobals
+--       map (\(Opt.Global home name) -> CN.global home name) revInitGlobals
 --     registrations = map
 --       (\g -> CB.nIndent1 <> "GC_register_root(&" <> (CN.toBuilder $ CN.globalInitPtr g) <> ");")
 --       globalNames
@@ -260,10 +260,8 @@ addDef global@(Opt.Global home' name') expr state =
     defineAlias alias state =
       addExtDecl (C.DefineExt globalName $ C.Var alias) state 
 
-    -- textMacro otherGlobal =
-    --   defineTextMacro state globalName otherGlobal
     -- runtimeInit =
-    --   defineRuntimeInit global expr state
+    --   generateInitFn global expr state
   in
   case expr of
     -- Opt.Function args body ->
@@ -299,8 +297,6 @@ addDef global@(Opt.Global home' name') expr state =
 
     Opt.Unit ->
       defineAlias CN.unit state
-  
-    _ -> state
 
     -- Opt.Accessor _ -> runtimeInit
     
@@ -317,59 +313,45 @@ addDef global@(Opt.Global home' name') expr state =
     -- Opt.Tuple _ _ _ -> runtimeInit
     -- Opt.Shader _ _ _ -> runtimeInit
 
-    -- Opt.Bool bool -> textMacro (if bool then CN.true else CN.false)
-    -- Opt.Unit -> textMacro CN.unit
+    Opt.VarGlobal (Opt.Global home name) ->
+      defineAlias (CN.global home name) state
 
-    -- Opt.VarGlobal (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
-    -- Opt.VarEnum (Opt.Global home name) _ -> textMacro (CN.fromGlobal home name)
-    -- Opt.VarBox (Opt.Global home name) -> textMacro (CN.fromGlobal home name)
-    -- Opt.VarCycle home name -> textMacro (CN.fromGlobal home name)
-    -- Opt.VarDebug name home _ _ -> textMacro (CN.fromGlobal home name)
-    -- Opt.VarKernel home name -> textMacro (CN.fromKernel home name)
+    Opt.VarEnum (Opt.Global home name) _ ->
+      defineAlias (CN.global home name) state
 
+    Opt.VarBox (Opt.Global home name) ->
+      defineAlias (CN.global home name) state
+
+    Opt.VarCycle home name ->
+      defineAlias (CN.global home name) state
+
+    Opt.VarDebug name home _ _ ->
+      defineAlias (CN.global home name) state
+
+    Opt.VarKernel home name ->
+      -- TODO: decide if C or JS, generate either #define or Closure
+      defineAlias (CN.cKernelValue home name) state
 
     -- -- impossible in global scope
-    -- Opt.VarLocal _ -> undefined
-    -- Opt.TailCall _ _ -> undefined
+    Opt.VarLocal _ -> undefined
+    Opt.TailCall _ _ -> undefined
+
+    _ -> state
 
 
--- defineTextMacro :: State -> CN.Name -> CN.Name -> State
--- defineTextMacro state lvalue rvalue =
---   state {
---     _revExtDecls =
---       ("#define " <> (CN.toBuilder lvalue) <> " " <> (CN.toBuilder rvalue) <> "\n")
---       : _revExtDecls state
---   }
-
-
--- defineRuntimeInit :: Opt.Global -> Opt.Expr -> State -> State
--- defineRuntimeInit global@(Opt.Global home name) expr state =
---   let
---     globalName = CN.fromGlobal home name
---     g = CN.toBuilder globalName
---     initPtr = CN.toBuilder $ CN.globalInitPtr globalName
---     initFn = CN.toBuilder $ CN.globalInitFn globalName
-
---     exprBuilder = CB.fromExpr $ CE.generate expr
-        
---     builder :: B.Builder
---     builder =
---       mconcat $ List.intersperse "\n"
---         [ ""
---         , "#define " <> g <> " (*" <> initPtr <> ")"
---         , "ElmValue* " <> initPtr <> ";"
---         , "void* " <> initFn <> "() {"
---         , "    " <> initPtr <> " = " <> exprBuilder <> ";"
---         , "    return NULL;"
---         , "}"
---         , ""
---         ]
---     -- TODO: init function could in theory throw a heap overflow, should catch it
---   in
---   state
---     { _revExtDecls = builder : _revExtDecls state
---     , _revInitGlobals = global : _revInitGlobals state
---     }
+generateInitFn :: Opt.Global -> Opt.Expr -> State -> State
+generateInitFn global@(Opt.Global home name) expr state =
+  let
+    initFn :: C.ExternalDeclaration
+    initFn = C.FDefExt $ C.FunDef
+      [C.TypeSpec C.Void]
+      (C.Declr (Just $ CN.globalInitFn home name) [C.PtrDeclr [], C.FunDeclr []])
+      (C.Compound [C.BlockStmt $ C.Return $ Just $ CE.generate expr])
+  in
+  state
+    { _revExtDecls = initFn : _revExtDecls state
+    , _revInitGlobals = global : _revInitGlobals state
+    }
 
 
 -- {-

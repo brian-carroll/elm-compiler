@@ -93,8 +93,8 @@ jsKernelValue (home, name) =
   Name ("JS_" <> (join $ map Name.toBuilder [home, name]))
 
 
-cKernelValue :: (Name.Name, Name.Name) -> Name
-cKernelValue (home, name) =
+cKernelValue :: Name.Name -> Name.Name -> Name
+cKernelValue home name =
   Name $ join $ map Name.toBuilder [home, name]
 
 
@@ -180,7 +180,7 @@ dot :: Word8
 dot = 0x2E
 
 
--- KERNEL CONSTANTS
+-- C KERNEL VALUES
 
 unit :: Name
 unit = Name "Unit"
@@ -190,6 +190,11 @@ true = Name "True"
 
 false :: Name
 false = Name "False"
+
+
+initGlobal :: Name
+initGlobal =
+  cKernelValue Name.utils (Name.fromChars "initGlobal")
 
 
 -- C KERNEL TYPE DEFINITIONS

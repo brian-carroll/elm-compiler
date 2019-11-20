@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.C.Expression
  (
---  generate
+ generate
 -- , generateEvalFn
 -- , generateConstClosure
 -- , generateConstInt
@@ -51,15 +51,17 @@ import qualified AST.Optimized as Opt
 --   = Expr CExpr
 --   | Stat CStat
 
-{-
 -- C Macros from Kernel
-m_NEW_ELM_INT = Var $ Ident "NEW_ELM_INT"
-m_HEADER_CLOSURE = Var $ Ident "HEADER_CLOSURE"
-m_HEADER_INT = Var $ Ident "HEADER_INT"
+-- m_NEW_ELM_INT = Var $ Ident "NEW_ELM_INT"
+-- m_HEADER_CLOSURE = Var $ Ident "HEADER_CLOSURE"
+-- m_HEADER_INT = Var $ Ident "HEADER_INT"
 
 
 generate :: Opt.Expr -> Expression
 generate expr =
+  CommentExpr "Expression"
+{-
+
   case expr of
     Opt.Bool bool ->
       Unary AddrOp $ Var $ Ident $ if bool then "True" else "False"
