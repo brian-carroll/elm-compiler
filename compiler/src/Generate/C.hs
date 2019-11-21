@@ -124,19 +124,22 @@ generateEnum names =
 
 
 generateSharedDef :: CE.SharedDef -> C.ExternalDeclaration
-generateSharedDef def = 
+generateSharedDef def =
+  C.DeclExt $ 
   case def of
     CE.SharedInt value ->
-      C.DeclExt $ C.Decl
-        [C.TypeSpec $ C.TypeDef CN.ElmInt]
-        (Just $ C.Declr (Just $ CN.literalInt value) [])
-        (Just $ C.InitExpr $ C.CompoundLit
-          [ ([C.MemberDesig "header"], C.InitExpr $ CE.generateHeader CE.HEADER_INT)
-          , ([C.MemberDesig "value"], C.InitExpr $ C.Const $ C.IntConst value)
-          ])
+      generateStructDef CN.ElmInt (CN.literalInt value)
+        [ ("header", CE.generateHeader CE.HEADER_INT)
+        , ("value", C.Const $ C.IntConst value)
+        ]
+        Nothing
 
     CE.SharedFloat value ->
-      undefined
+      generateStructDef CN.ElmFloat (CN.literalFloat value)
+        [ ("header", CE.generateHeader CE.HEADER_FLOAT)
+        , ("value", C.Const $ C.FloatConst value)
+        ]
+        Nothing
 
     CE.SharedChr value ->
       undefined
@@ -149,6 +152,29 @@ generateSharedDef def =
 
     CE.SharedFieldGroup names ->
       undefined
+
+
+generateStructDef :: CN.KernelTypeDef -> CN.Name -> [(B.Builder, C.Expression)] -> Maybe (B.Builder, [C.Expression]) -> C.Declaration
+generateStructDef structName varName fixedMembers flexibleMembers =
+  let
+    fixed = map
+      (\(memberBuilder, memberExpr) ->
+        ([C.MemberDesig memberBuilder], C.InitExpr $ memberExpr))
+      fixedMembers
+    flexible = maybe []
+      (\(memberBuilder, memberExprs) ->
+        [( [C.MemberDesig memberBuilder]
+        , C.InitExpr $ C.CompoundLit $
+            map (\expr -> ([], C.InitExpr expr)) memberExprs
+        )]
+      )
+      flexibleMembers
+  in
+  C.Decl
+    [C.TypeSpec $ C.TypeDef structName]
+    (Just $ C.Declr (Just $ varName) [])
+    (Just $ C.InitExpr $ C.CompoundLit $ (fixed ++ flexible))
+
 
 
 -- generateCMain :: [Opt.Global] -> B.Builder

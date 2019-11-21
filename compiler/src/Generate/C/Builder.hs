@@ -97,7 +97,7 @@ fromExpr expression =
       case constant of
         IntConst int -> B.intDec int
         CharConst int -> B.intDec int
-        FloatConst builder -> builder
+        FloatConst float -> EF.toBuilder float
         StrConst builder -> "\"" <> builder <> "\""
 
     CompoundLit initList ->

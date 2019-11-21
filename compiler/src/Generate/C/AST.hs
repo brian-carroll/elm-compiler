@@ -83,7 +83,7 @@ data Initializer
 data Constant
   = IntConst Int
   | CharConst Int
-  | FloatConst B.Builder
+  | FloatConst EF.Float
   | StrConst B.Builder
 
 data Declaration
