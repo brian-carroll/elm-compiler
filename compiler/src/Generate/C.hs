@@ -15,9 +15,6 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 -- import qualified Data.Utf8 as Utf8
 
-import qualified Elm.Float as EF
-import qualified Elm.String as ES
-
 import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
 import qualified Generate.C.Expression as CE
@@ -52,7 +49,7 @@ type Mains = Map.Map ModuleName.Canonical Opt.Main
 data State =
   State
     { _seenGlobals :: Set.Set Opt.Global
-    , _seenLiteralPrims :: Set.Set LiteralPrim
+    , _sharedDefs :: Set.Set CE.SharedDef
     , _revInitGlobals :: [Opt.Global]
     , _revExtDecls :: [C.ExternalDeclaration]
     , _revJsKernels :: [B.Builder]
@@ -62,19 +59,11 @@ data State =
     }
 
 
-data LiteralPrim
-  = LiteralInt Int
-  | LiteralFloat EF.Float
-  | LiteralChr ES.String
-  | LiteralStr ES.String
-  deriving (Eq, Ord)
-
-
 emptyState :: State
 emptyState =
   State
     { _seenGlobals = Set.empty
-    , _seenLiteralPrims = Set.empty
+    , _sharedDefs = Set.empty
     , _revInitGlobals = []
     , _revExtDecls = []
     , _revJsKernels = []
@@ -240,10 +229,10 @@ addExtDecl extDecl state =
   state { _revExtDecls = extDecl : _revExtDecls state }
 
 
-addLiteral :: LiteralPrim -> State -> State
-addLiteral lit state =
-  state { _seenLiteralPrims =
-      Set.insert lit (_seenLiteralPrims state) }
+addShared :: CE.SharedDef -> State -> State
+addShared sharedDef state =
+  state { _sharedDefs =
+    Set.insert sharedDef (_sharedDefs state) }
 
 
 {-
@@ -260,8 +249,8 @@ addDef global@(Opt.Global home' name') expr state =
     defineAlias alias state =
       addExtDecl (C.DefineExt globalName $ C.Var alias) state 
 
-    -- runtimeInit =
-    --   generateInitFn global expr state
+    runtimeInit =
+      generateInitFn global expr state
   in
   case expr of
     -- Opt.Function args body ->
@@ -277,19 +266,19 @@ addDef global@(Opt.Global home' name') expr state =
     --   }
 
     Opt.Int value ->
-      addLiteral (LiteralInt value) $
+      addShared (CE.SharedInt value) $
         defineAlias (CN.literalInt value) state
 
     Opt.Float value ->
-      addLiteral (LiteralFloat value) $
+      addShared (CE.SharedFloat value) $
         defineAlias (CN.literalFloat value) state
   
     Opt.Chr value ->
-      addLiteral (LiteralChr value) $
+      addShared (CE.SharedChr value) $
         defineAlias (CN.literalChr value) state
 
     Opt.Str value ->
-      addLiteral (LiteralStr value) $
+      addShared (CE.SharedStr value) $
         defineAlias (CN.literalStr value) state
 
     Opt.Bool bool ->
@@ -298,20 +287,21 @@ addDef global@(Opt.Global home' name') expr state =
     Opt.Unit ->
       defineAlias CN.unit state
 
-    -- Opt.Accessor _ -> runtimeInit
-    
-    -- -- defineConst body
-    -- Opt.List _ -> runtimeInit
-    -- Opt.Call _ _ -> runtimeInit
-    -- Opt.If _ _ -> runtimeInit
-    -- Opt.Let _ _ -> runtimeInit
-    -- Opt.Destruct _ _ -> runtimeInit
-    -- Opt.Case _ _ _ _ -> runtimeInit
-    -- Opt.Access _ _ -> runtimeInit
-    -- Opt.Record _ -> runtimeInit
-    -- Opt.Update _ _ -> runtimeInit
-    -- Opt.Tuple _ _ _ -> runtimeInit
-    -- Opt.Shader _ _ _ -> runtimeInit
+    Opt.Accessor name ->
+      addShared (CE.SharedAccessor name) $
+        defineAlias (CN.accessor name) state
+
+    Opt.List _ -> runtimeInit
+    Opt.Call _ _ -> runtimeInit
+    Opt.If _ _ -> runtimeInit
+    Opt.Let _ _ -> runtimeInit
+    Opt.Destruct _ _ -> runtimeInit
+    Opt.Case _ _ _ _ -> runtimeInit
+    Opt.Access _ _ -> runtimeInit
+    Opt.Record _ -> runtimeInit
+    Opt.Update _ _ -> runtimeInit
+    Opt.Tuple _ _ _ -> runtimeInit
+    Opt.Shader _ _ _ -> runtimeInit
 
     Opt.VarGlobal (Opt.Global home name) ->
       defineAlias (CN.global home name) state
@@ -332,7 +322,7 @@ addDef global@(Opt.Global home' name') expr state =
       -- TODO: decide if C or JS, generate either #define or Closure
       defineAlias (CN.cKernelValue home name) state
 
-    -- -- impossible in global scope
+    -- impossible in global scope
     Opt.VarLocal _ -> undefined
     Opt.TailCall _ _ -> undefined
 

@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.C.Expression
- (
- generate
+ ( generate
+ , SharedDef(..)
 -- , generateEvalFn
 -- , generateConstClosure
 -- , generateConstInt
@@ -18,19 +18,23 @@ where
 
 import qualified Data.ByteString.Builder as B
   -- import qualified Data.IntMap as IntMap
+import Data.Set (Set)
+import qualified Data.Set as Set
 -- import qualified Data.List as List
 -- import Data.Map ((!))
 -- import qualified Data.Map as Map
-import qualified Data.Name as Name
--- import qualified Data.Set as Set
+import qualified Data.Name as N
 -- import qualified Data.Utf8 as Utf8
 
 -- import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
-import Generate.C.AST
+import qualified Generate.C.AST as C
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
+
+import qualified Elm.Float as EF
+import qualified Elm.String as ES
 
 -- import qualified AST.Utils.Shader as Shader
 -- import qualified Data.Index as Index
@@ -45,22 +49,65 @@ import qualified AST.Optimized as Opt
 -- import qualified Reporting.Annotation as A
 
 
+data Code
+  = CExpr C.Expression
+  | CBlock [C.CompoundBlockItem]
 
 
--- data Code
---   = Expr CExpr
---   | Stat CStat
+data SharedDef
+  = SharedInt Int
+  | SharedFloat EF.Float
+  | SharedChr ES.String
+  | SharedStr ES.String
+  | SharedAccessor N.Name
+  | SharedFieldGroup [N.Name]
+  deriving (Eq, Ord)
 
--- C Macros from Kernel
--- m_NEW_ELM_INT = Var $ Ident "NEW_ELM_INT"
--- m_HEADER_CLOSURE = Var $ Ident "HEADER_CLOSURE"
--- m_HEADER_INT = Var $ Ident "HEADER_INT"
+
+data ExprState =
+  ExprState
+    { _code :: Code
+    , _extDecls :: [C.ExternalDeclaration]
+    , _sharedDefs :: Set SharedDef
+    , _scope :: Set N.Name
+    }
 
 
-generate :: Opt.Expr -> Expression
+generate :: Opt.Expr -> C.Expression
 generate expr =
-  CommentExpr "Expression"
+  C.CommentExpr "Expression"
 {-
+
+  Very similar to the JS setup, only Record is different
+
+  Bool        expr
+  Chr         expr + literal
+  Str         expr + literal
+  Int         expr + literal
+  Float       expr + literal
+  VarLocal    expr
+  VarGlobal   expr
+  VarEnum     expr
+  VarBox      expr
+  VarCycle    expr (call)
+  VarDebug    expr
+  VarKernel   expr (not only top level rename, also core .elm files)
+  List        expr
+  Function    expr (Closure ref) & statement (alloc) & decl (closure) & extdecl (eval)
+  Call        expr
+  TailCall    statements (assignments to args[i])
+  If          statement
+  Let         decls
+  Destruct    decls & exprs
+  Case        statement
+  Accessor    expr (Closure ref) & ext decl (Closure) - agh, this is another shared thing like literals
+  Access      expr (call)
+  Update      expr (call)
+  Record      decl & statements & fieldGroup
+  Unit        expr
+  Tuple       expr (call)
+  Shader
+
 
   case expr of
     Opt.Bool bool ->
@@ -185,7 +232,7 @@ generateConstClosure closureName evalName maxValues =
 
 
 
-generateEvalFn :: CN.Name -> [Name.Name] -> Opt.Expr -> ExternalDeclaration
+generateEvalFn :: CN.Name -> [N.Name] -> Opt.Expr -> ExternalDeclaration
 generateEvalFn fname params bodyExpr =
   let
     nparams = length params
@@ -235,7 +282,7 @@ generateEvalFn fname params bodyExpr =
     (Compound $ paramRenames ++ body)
 
 
-generateParamRename :: Ident -> Name.Name -> Int -> Declaration
+generateParamRename :: Ident -> N.Name -> Int -> Declaration
 generateParamRename argsArray name index =
   let
     id = CN.toIdentAST $ CN.local name

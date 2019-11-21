@@ -19,9 +19,11 @@ module Generate.C.Name
   , literalFloat
   , literalStr
   , literalChr
+  , accessor
   , unit
   , true
   , false
+  , utilsInitGlobal
   , KernelTypeDef(..)
   , HeaderFile(..)
   )
@@ -135,6 +137,11 @@ literalChr s =
     "literal_char_" : (map escapeChar $ ES.toChars s)
 
 
+accessor :: Name.Name -> Name
+accessor name =
+  Name $ "accessor_" <> Name.toBuilder name
+
+
 -- INTERNAL UTILS
 
 
@@ -192,8 +199,8 @@ false :: Name
 false = Name "False"
 
 
-initGlobal :: Name
-initGlobal =
+utilsInitGlobal :: Name
+utilsInitGlobal =
   cKernelValue Name.utils (Name.fromChars "initGlobal")
 
 
