@@ -2,6 +2,8 @@
 module Generate.C.Expression
  ( generate
  , SharedDef(..)
+ , HeaderMacro(..)
+ , generateHeader
 -- , generateEvalFn
 -- , generateConstClosure
 -- , generateConstInt
@@ -291,3 +293,31 @@ generateParamRename argsArray name index =
   in
     Decl [TypeSpec Void] (Just declarator) (Just $ InitExpr init)
 -}
+
+
+data HeaderMacro
+  = HEADER_INT
+  | HEADER_FLOAT
+  | HEADER_CHAR
+  | HEADER_STRING Int
+  | HEADER_LIST
+  | HEADER_TUPLE2
+  | HEADER_TUPLE3
+  | HEADER_CUSTOM Int
+  | HEADER_RECORD Int
+  | HEADER_CLOSURE Int
+
+
+generateHeader :: HeaderMacro -> C.Expression
+generateHeader header =
+  case header of
+    HEADER_INT -> C.Var $ CN.fromBuilder "HEADER_INT"
+    HEADER_FLOAT -> C.Var $ CN.fromBuilder "HEADER_FLOAT"
+    HEADER_CHAR -> C.Var $ CN.fromBuilder "HEADER_CHAR"
+    HEADER_STRING n -> C.Call (C.Var $ CN.fromBuilder "HEADER_STRING") [C.Const $ C.IntConst n]
+    HEADER_LIST -> C.Var $ CN.fromBuilder "HEADER_LIST"
+    HEADER_TUPLE2 -> C.Var $ CN.fromBuilder "HEADER_TUPLE2"
+    HEADER_TUPLE3 -> C.Var $ CN.fromBuilder "HEADER_TUPLE3"
+    HEADER_CUSTOM n -> C.Call (C.Var $ CN.fromBuilder "HEADER_CUSTOM") [C.Const $ C.IntConst n]
+    HEADER_RECORD n -> C.Call (C.Var $ CN.fromBuilder "HEADER_RECORD") [C.Const $ C.IntConst n]
+    HEADER_CLOSURE n -> C.Call (C.Var $ CN.fromBuilder "HEADER_CLOSURE") [C.Const $ C.IntConst n]

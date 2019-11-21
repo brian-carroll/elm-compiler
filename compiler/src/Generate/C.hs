@@ -122,6 +122,35 @@ generateEnum names =
   C.DeclExt $ C.Decl [C.TypeSpec $ C.Enum names] Nothing Nothing
 
 
+
+generateSharedDef :: CE.SharedDef -> C.ExternalDeclaration
+generateSharedDef def = 
+  case def of
+    CE.SharedInt value ->
+      C.DeclExt $ C.Decl
+        [C.TypeSpec $ C.TypeDef CN.ElmInt]
+        (Just $ C.Declr (Just $ CN.literalInt value) [])
+        (Just $ C.InitExpr $ C.CompoundLit
+          [ ([C.MemberDesig "header"], C.InitExpr $ CE.generateHeader CE.HEADER_INT)
+          , ([C.MemberDesig "value"], C.InitExpr $ C.Const $ C.IntConst value)
+          ])
+
+    CE.SharedFloat value ->
+      undefined
+
+    CE.SharedChr value ->
+      undefined
+
+    CE.SharedStr value ->
+      undefined
+
+    CE.SharedAccessor name ->
+      undefined
+
+    CE.SharedFieldGroup names ->
+      undefined
+
+
 -- generateCMain :: [Opt.Global] -> B.Builder
 -- generateCMain revInitGlobals =
 --   let

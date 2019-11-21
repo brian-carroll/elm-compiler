@@ -223,8 +223,8 @@ fromPartDesignator part =
   case part of
     ArrDesig expression ->
       "[" <> fromExpr expression <> "]" -- not sure of this, but prob won't use
-    MemberDesig name ->
-      "." <> CN.toBuilder name
+    MemberDesig builder ->
+      "." <> builder
     RangeDesig from to ->
       "[" <> fromExpr from <> "..." <> fromExpr to <> "]" -- not sure of this, but prob won't use
 

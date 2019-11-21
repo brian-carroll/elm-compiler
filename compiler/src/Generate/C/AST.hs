@@ -65,7 +65,7 @@ type InitializerList = [([PartDesignator], Initializer)]
 -- or the named member of struct \/ union.
 data PartDesignator
   = ArrDesig Expression
-  | MemberDesig Name
+  | MemberDesig B.Builder
   | RangeDesig Expression Expression
 
 

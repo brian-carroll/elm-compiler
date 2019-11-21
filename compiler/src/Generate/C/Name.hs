@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.C.Name
   ( Name
+  , fromBuilder
   , toBuilder
   , local
   , global
@@ -51,6 +52,9 @@ newtype Name =
 
 
 -- CONSTRUCTORS
+
+fromBuilder :: B.Builder -> Name
+fromBuilder = Name
 
 
 local :: Name.Name -> Name
