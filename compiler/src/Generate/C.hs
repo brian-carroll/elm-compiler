@@ -125,7 +125,6 @@ generateEnum names =
 
 generateSharedDef :: CE.SharedDef -> C.ExternalDeclaration
 generateSharedDef def =
-  C.DeclExt $ 
   case def of
     CE.SharedInt value ->
       generateStructDef CN.ElmInt (CN.literalInt value)
@@ -142,19 +141,33 @@ generateSharedDef def =
         Nothing
 
     CE.SharedChr value ->
-      undefined
+      C.CommentExt "SharedChr"
 
     CE.SharedStr value ->
-      undefined
+      C.CommentExt "SharedStr"
 
     CE.SharedAccessor name ->
-      undefined
+      generateClosure (CN.accessor name) CN.utilsAccessEval
+        2 [CE.castAsVoidPtr $ CN.fieldId name]
 
     CE.SharedFieldGroup names ->
-      undefined
+      C.CommentExt "SharedFieldGroup"
 
 
-generateStructDef :: CN.KernelTypeDef -> CN.Name -> [(B.Builder, C.Expression)] -> Maybe (B.Builder, [C.Expression]) -> C.Declaration
+generateClosure :: CN.Name -> CN.Name -> Int -> [C.Expression] -> C.ExternalDeclaration
+generateClosure name evalName maxValues values =
+  let nValues = length values
+  in
+  generateStructDef CN.Closure name
+    [ ("header", CE.generateHeader $ CE.HEADER_CLOSURE nValues)
+    , ("n_values", C.Const $ C.IntConst nValues)
+    , ("max_values", C.Const $ C.IntConst maxValues)
+    , ("evaluator",  C.Unary C.AddrOp $ C.Var evalName)
+    ]
+    (if nValues > 0 then Just ("values", values) else Nothing)
+
+
+generateStructDef :: CN.KernelTypeDef -> CN.Name -> [(B.Builder, C.Expression)] -> Maybe (B.Builder, [C.Expression]) -> C.ExternalDeclaration
 generateStructDef structName varName fixedMembers flexibleMembers =
   let
     fixed = map
@@ -164,13 +177,13 @@ generateStructDef structName varName fixedMembers flexibleMembers =
     flexible = maybe []
       (\(memberBuilder, memberExprs) ->
         [( [C.MemberDesig memberBuilder]
-        , C.InitExpr $ C.CompoundLit $
+         , C.InitExpr $ C.CompoundLit $
             map (\expr -> ([], C.InitExpr expr)) memberExprs
-        )]
+         )]
       )
       flexibleMembers
   in
-  C.Decl
+  C.DeclExt $ C.Decl
     [C.TypeSpec $ C.TypeDef structName]
     (Just $ C.Declr (Just $ varName) [])
     (Just $ C.InitExpr $ C.CompoundLit $ (fixed ++ flexible))

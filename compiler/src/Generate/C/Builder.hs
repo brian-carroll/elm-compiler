@@ -329,3 +329,6 @@ fromExtDecl extDecl =
     IncludeExt headerFile ->
       "#include \"" <> fromHeaderFile headerFile <> "\"\n"
 
+    CommentExt comment ->
+      "// " <> comment <> "\n"
+

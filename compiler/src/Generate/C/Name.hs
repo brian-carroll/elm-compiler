@@ -25,6 +25,7 @@ module Generate.C.Name
   , true
   , false
   , utilsInitGlobal
+  , utilsAccessEval
   , KernelTypeDef(..)
   , HeaderFile(..)
   )
@@ -207,6 +208,11 @@ utilsInitGlobal :: Name
 utilsInitGlobal =
   cKernelValue Name.utils (Name.fromChars "initGlobal")
 
+
+utilsAccessEval :: Name
+utilsAccessEval =
+  cKernelValue Name.utils (Name.fromChars "access_eval")
+  
 
 -- C KERNEL TYPE DEFINITIONS
 

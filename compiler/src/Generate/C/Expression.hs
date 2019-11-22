@@ -4,6 +4,7 @@ module Generate.C.Expression
  , SharedDef(..)
  , HeaderMacro(..)
  , generateHeader
+ , castAsVoidPtr
 -- , generateEvalFn
 -- , generateConstClosure
 -- , generateConstInt
@@ -293,6 +294,14 @@ generateParamRename argsArray name index =
   in
     Decl [TypeSpec Void] (Just declarator) (Just $ InitExpr init)
 -}
+
+
+castAsVoidPtr :: CN.Name -> C.Expression
+castAsVoidPtr name =
+  C.Cast
+    (C.Decl [C.TypeSpec C.Void]
+      (Just $ C.Declr Nothing [C.PtrDeclr []]) Nothing)
+    (C.Var name)
 
 
 data HeaderMacro

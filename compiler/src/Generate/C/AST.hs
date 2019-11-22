@@ -195,3 +195,4 @@ data ExternalDeclaration
   | FDefExt FunctionDef
   | DefineExt Name Expression
   | IncludeExt HeaderFile
+  | CommentExt B.Builder
