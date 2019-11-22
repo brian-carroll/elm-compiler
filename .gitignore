@@ -10,3 +10,4 @@ cabal.sandbox.config
 *.c
 .DS_Store
 *~
+.clang-format

@@ -105,6 +105,7 @@ prependBuilders revBuilders monolith =
 generateHeader :: State -> [C.ExternalDeclaration]
 generateHeader state =
   let
+    -- revInitGlobals = _revInitGlobals state
     kernelNames = map CN.jsKernelValue $ Set.toList $ _jsKernelVars state
     ctorNames = map CN.ctorId $ Set.toList $ _ctorNames state
     fieldGroups = _fieldGroups state
@@ -113,7 +114,10 @@ generateHeader state =
     -- fieldGroupBuilders = map generateFieldGroup (toList fieldGroups)
     -- fieldGroupsArray = ""
   in
-    (map generateEnum [kernelNames, ctorNames, fieldNames])
+    -- revInitGlobals
+    (_revExtDecls state)
+    ++ (map generateSharedDef $ Set.toList $ _sharedDefs state)
+    ++ (map generateEnum [kernelNames, ctorNames, fieldNames])
     ++ [ C.IncludeExt CN.KernelH ]
 
 
@@ -321,17 +325,13 @@ addDef global@(Opt.Global home' name') expr state =
       generateInitFn global expr state
   in
   case expr of
-    -- Opt.Function args body ->
-    --   let
-    --     evalFnName = CN.evaluator global
-    --     arity = length args -- TODO: add free variables
-    --   in
-    --   state {
-    --     _revExtDecls =
-    --       (CB.fromExtDecl $ C.DeclExt $ CE.generateConstClosure globalName evalFnName arity)
-    --       : (CB.fromExtDecl $ CE.generateEvalFn evalFnName args body)
-    --       : _revExtDecls state
-    --   }
+    Opt.Function args body ->
+      let
+        evalFnName = CN.globalEvaluator home' name'
+        arity = length args
+        closure = generateClosure globalName evalFnName arity []
+      in
+      addExtDecl closure state
 
     Opt.Int value ->
       addShared (CE.SharedInt value) $
@@ -393,8 +393,6 @@ addDef global@(Opt.Global home' name') expr state =
     -- impossible in global scope
     Opt.VarLocal _ -> undefined
     Opt.TailCall _ _ -> undefined
-
-    _ -> state
 
 
 generateInitFn :: Opt.Global -> Opt.Expr -> State -> State
