@@ -85,7 +85,7 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 stateToBuilder :: State -> B.Builder
 stateToBuilder state =
   let
-    -- revInitGlobals = _revInitGlobals state
+    initGlobals = _revInitGlobals state
     ctorNames = map CN.ctorId $ Set.toList $ _ctorNames state
     fieldNames = map CN.fieldId $ Set.toList $
       Set.foldl' (List.foldl' $ flip Set.insert) Set.empty $
@@ -99,6 +99,7 @@ stateToBuilder state =
   prependExtDecls (generateEnum kernelNames) $
   prependExtDecls sharedDefs $
   prependExtDecls (_revExtDecls state) $
+  prependExtDecls [generateCMain initGlobals] $
     ""
 
 
@@ -110,6 +111,37 @@ prependExtDecls revExtDecls monolith =
 {-
     Accumulated values
 -}
+
+
+generateCMain :: [Opt.Global] -> C.ExternalDeclaration
+generateCMain initGlobals =
+  let
+    exitCode = CN.fromBuilder "exit_code"
+    exitCodeDef = C.BlockDecl $ C.Decl [C.TypeSpec C.CInt]
+      (Just $ C.Declr (Just exitCode) [])
+      (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "GC_init") [])
+    initCalls = List.foldl' generateInitCall [] initGlobals
+    body =
+      [exitCodeDef]
+      ++ initCalls
+      ++ [C.BlockStmt $ C.Return $ Just $ C.Var exitCode]
+  in
+  C.FDefExt $ C.FunDef
+    [C.TypeSpec C.CInt]
+    (C.Declr (Just $ CN.fromBuilder "main") [C.FunDeclr []])
+    (C.Compound body)
+
+
+generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
+generateInitCall acc (Opt.Global home name) =
+  let
+    initCall = C.BlockStmt $ C.Expr $ Just $
+      C.Call (C.Var CN.utilsInitGlobal)
+      [ C.Unary C.AddrOp $ C.Var $ CN.global home name
+      , C.Unary C.AddrOp $ C.Var $ CN.globalInitFn home name
+      ]
+  in
+  initCall : acc
 
 
 generateEnum :: [CN.Name] -> [C.ExternalDeclaration]

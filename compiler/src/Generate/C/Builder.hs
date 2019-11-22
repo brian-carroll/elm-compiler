@@ -240,6 +240,7 @@ fromTypeSpecifier :: TypeSpecifier -> B.Builder
 fromTypeSpecifier typeSpec =
   case typeSpec of
     Void -> "void"
+    CInt -> "int"
 
     Enum names ->
       "enum {"
@@ -273,12 +274,10 @@ fromTypeQualifier typeQual =
 
 
 fromDeclarator :: Declarator -> B.Builder
-fromDeclarator (Declr maybeIdent derivedDeclrs) =
-  let
-    identBuilder =
-      maybe "" CN.toBuilder maybeIdent
+fromDeclarator (Declr maybeName derivedDeclrs) =
+  let nameBuilder = maybe "" CN.toBuilder maybeName
   in
-    List.foldl' fromDerivedDeclr identBuilder derivedDeclrs
+  List.foldl' fromDerivedDeclr nameBuilder derivedDeclrs
 
 
 fromDerivedDeclr :: B.Builder -> DerivedDeclarator -> B.Builder
@@ -320,8 +319,11 @@ fromExtDecl extDecl =
     FDefExt (FunDef declSpecs declarator statement) ->
       mconcat $
         (map fromDeclSpec declSpecs)
-        ++ [fromDeclarator declarator]
-        ++ [" ", fromStatement "" statement, "\n"]
+        ++ [ " "
+           , fromDeclarator declarator
+           , " "
+           , fromStatement "" statement, "\n"
+           ]
 
     DefineExt name expr ->
       "#define " <> CN.toBuilder name <> " " <> fromExpr expr <> "\n"
