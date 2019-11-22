@@ -81,50 +81,42 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   in
     stateToBuilder state
 
-
+-- TODO: put fromExtDecl inside the fold
 stateToBuilder :: State -> B.Builder
 stateToBuilder state =
-  prependBuilders
-    (map CB.fromExtDecl $ generateHeader state)
+  let
+    -- revInitGlobals = _revInitGlobals state
+    ctorNames = map CN.ctorId $ Set.toList $ _ctorNames state
+    fieldNames = map CN.fieldId $ Set.toList $
+      Set.foldl' (List.foldl' $ flip Set.insert) Set.empty $
+      _fieldGroups state
+    kernelNames = map CN.jsKernelValue $ Set.toList $ _jsKernelVars state
+    sharedDefs = map generateSharedDef $ Set.toList $ _sharedDefs state
+  in
+  prependExtDecls [C.IncludeExt CN.KernelH] $
+  prependExtDecls (generateEnum fieldNames) $
+  prependExtDecls (generateEnum ctorNames) $
+  prependExtDecls (generateEnum kernelNames) $
+  prependExtDecls sharedDefs $
+  prependExtDecls (_revExtDecls state) $
     ""
 
-  --  <> (
-    -- prependBuilders (_revExtDecls state) $
-    -- generateCMain (_revInitGlobals state)
-  -- )
 
-
-prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
-prependBuilders revBuilders monolith =
-  List.foldl' (\m b -> b <> m) monolith revBuilders
+prependExtDecls :: [C.ExternalDeclaration] -> B.Builder -> B.Builder
+prependExtDecls revExtDecls monolith =
+  List.foldl' (\m ext -> (CB.fromExtDecl ext) <> m) monolith revExtDecls
 
 
 {-
     Accumulated values
 -}
-generateHeader :: State -> [C.ExternalDeclaration]
-generateHeader state =
-  let
-    -- revInitGlobals = _revInitGlobals state
-    kernelNames = map CN.jsKernelValue $ Set.toList $ _jsKernelVars state
-    ctorNames = map CN.ctorId $ Set.toList $ _ctorNames state
-    fieldGroups = _fieldGroups state
-    fieldNames = map CN.fieldId $ Set.toList $
-      Set.foldl' (List.foldl' $ flip Set.insert) Set.empty fieldGroups
-    -- fieldGroupBuilders = map generateFieldGroup (toList fieldGroups)
-    -- fieldGroupsArray = ""
-  in
-    -- revInitGlobals
-    (_revExtDecls state)
-    ++ (map generateSharedDef $ Set.toList $ _sharedDefs state)
-    ++ (map generateEnum [kernelNames, ctorNames, fieldNames])
-    ++ [ C.IncludeExt CN.KernelH ]
 
 
-generateEnum :: [CN.Name] -> C.ExternalDeclaration
+generateEnum :: [CN.Name] -> [C.ExternalDeclaration]
 generateEnum names =
-  C.DeclExt $ C.Decl [C.TypeSpec $ C.Enum names] Nothing Nothing
-
+  case names of
+    [] -> []
+    _ -> [C.DeclExt $ C.Decl [C.TypeSpec $ C.Enum names] Nothing Nothing]
 
 
 generateSharedDef :: CE.SharedDef -> C.ExternalDeclaration
