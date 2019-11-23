@@ -86,17 +86,17 @@ stateToBuilder :: State -> B.Builder
 stateToBuilder state =
   let
     initGlobals = _revInitGlobals state
+    kernelNames = map CN.jsKernelValue $ Set.toList $ _jsKernelVars state
     ctorNames = map CN.ctorId $ Set.toList $ _ctorNames state
     fieldNames = map CN.fieldId $ Set.toList $
       Set.foldl' (List.foldl' $ flip Set.insert) Set.empty $
       _fieldGroups state
-    kernelNames = map CN.jsKernelValue $ Set.toList $ _jsKernelVars state
     sharedDefs = map generateSharedDef $ Set.toList $ _sharedDefs state
   in
   prependExtDecls [C.IncludeExt CN.KernelH] $
-  prependExtDecls (generateEnum fieldNames) $
-  prependExtDecls (generateEnum ctorNames) $
   prependExtDecls (generateEnum kernelNames) $
+  prependExtDecls (generateEnum ctorNames) $
+  prependExtDecls (generateEnum fieldNames) $
   prependExtDecls sharedDefs $
   prependExtDecls (_revExtDecls state) $
   prependExtDecls [generateCMain initGlobals] $
@@ -120,16 +120,20 @@ generateCMain initGlobals =
     exitCodeDef = C.BlockDecl $ C.Decl [C.TypeSpec C.CInt]
       (Just $ C.Declr (Just exitCode) [])
       (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "GC_init") [])
+    earlyReturn = C.BlockStmt $ C.If (C.Var exitCode)
+      (C.Return $ Just $ C.Var exitCode) Nothing
     initCalls = List.foldl' generateInitCall [] initGlobals
-    body =
-      [exitCodeDef]
-      ++ initCalls
-      ++ [C.BlockStmt $ C.Return $ Just $ C.Var exitCode]
   in
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.CInt]
     (C.Declr (Just $ CN.fromBuilder "main") [C.FunDeclr []])
-    (C.Compound body)
+    (C.Compound (
+      [ exitCodeDef
+      , earlyReturn
+      ]
+      ++ initCalls
+      ++ [C.BlockStmt $ C.Return $ Just $ C.Var exitCode]
+    ))
 
 
 generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
@@ -137,7 +141,7 @@ generateInitCall acc (Opt.Global home name) =
   let
     initCall = C.BlockStmt $ C.Expr $ Just $
       C.Call (C.Var CN.utilsInitGlobal)
-      [ C.Unary C.AddrOp $ C.Var $ CN.global home name
+      [ C.Unary C.AddrOp $ C.Var $ CN.globalInitPtr home name
       , C.Unary C.AddrOp $ C.Var $ CN.globalInitFn home name
       ]
   in
@@ -346,7 +350,11 @@ addDef global@(Opt.Global home' name') expr state =
       addExtDecl (C.DefineExt globalName $ C.Var alias) state 
 
     runtimeInit =
-      generateInitFn global expr state
+      generateInitFn global expr $
+      addExtDecl
+        (C.DefineExt globalName $ C.Parens $
+          C.Unary C.DerefOp $ C.Var $ CN.globalInitPtr home' name')
+        state
   in
   case expr of
     Opt.Function args body ->

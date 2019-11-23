@@ -104,6 +104,9 @@ fromExpr expression =
       fromInitList initList
 
     StatExpr statement -> "/*StatExpr*/"
+
+    Parens expr -> "(" <> (fromExpr expr) <> ")"
+
     CommentExpr builder -> "/* " <> builder <> " */" 
 
 

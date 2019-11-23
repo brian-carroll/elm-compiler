@@ -1,3 +1,17 @@
+# TODO 23 Nov 2019
+
+- proper global initialisation with pointers and `#define`
+- figure out how to deal with `WasmWrapper.element`
+  - maybe special-case in `addMain` for top function call
+  - maybe make it a kernel function and unlock from elm and elm-explorations, add a wasm thing to the safe list
+- remaining sharedDefs
+  - SharedFieldGroup, SharedChr, SharedStr
+- expressions!
+- output two files instead of one
+- generate emscripten wrapper JS code
+- maybe get rid of emscripten JS altogether
+  - hard part is probably debugging with printf/console.log
+
 # 14 Nov 2019
 
 - Need to approach this more systematically
@@ -18,8 +32,9 @@
 - C Builder
   - It's mainly for Expressions really, Nodes can be more low-tech
   - However could put an enum thing here
-  - make it about writing C strings from Haskell. No Elm specifics.
-    - Elm stuff goes in C and Expression
+  - ~~make it about writing C strings from Haskell. No Elm specifics.~~
+    - ~~Elm stuff goes in C and Expression~~
+  - Always going through C AST results in much fewer micro-decisions and is better type-checked so easier to debug. Make ExternalDeclarations and build those.
 
 # TODO 9 Nov 2019
 

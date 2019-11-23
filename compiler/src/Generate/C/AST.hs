@@ -55,6 +55,7 @@ data Expression
   | Const       Constant           -- ^ integer, character, floating point and string constants
   | CompoundLit InitializerList    -- initialiser list
   | StatExpr    Statement        -- ^ GNU C compound statement as expr
+  | Parens      Expression       -- wrap an expr in parentheses
   | CommentExpr B.Builder
 
 
