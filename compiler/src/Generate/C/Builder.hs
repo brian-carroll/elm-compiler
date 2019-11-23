@@ -142,7 +142,7 @@ fromStatement indent statement =
         <> (joinMap (";" <> nDeeper)
             (fromBlockItem deeper) blockItems)
         <> ";" <> nIndent
-        <> "}" <> nIndent
+        <> "}"
 
     If condition thenStmt maybeElseStmt ->
       "if (" <> (fromExpr condition) <> ") "
@@ -172,19 +172,18 @@ fromStatement indent statement =
       "break"
 
     Return maybeExpr ->
-      indent <> (join " " $
-        "return" : (map fromExpr $ maybeToList maybeExpr)
-      )
+      (join " " $
+        "return" : (map fromExpr $ maybeToList maybeExpr))
 
     CommentStatement builder ->
-      "// " <> builder <> ""
+      "// " <> builder
 
 
 fromBlockItem :: B.Builder -> CompoundBlockItem -> B.Builder
 fromBlockItem indent item =
   case item of
     BlockStmt statement -> fromStatement indent statement
-    BlockDecl declaration -> indent <> (fromDeclaration declaration)
+    BlockDecl declaration -> fromDeclaration declaration
 
 
 fromDeclaration :: Declaration -> B.Builder
@@ -206,9 +205,11 @@ fromInitializer init =
 
 fromInitList :: InitializerList -> B.Builder
 fromInitList initList =
-  "{"
-  <> (join ", " $ map fromInitListItem initList)
-  <> "}"
+  mconcat (
+    "{ "
+    : (map fromInitListItem initList)
+    ++ ["}"]
+  )
 
 
 fromInitListItem :: ([PartDesignator], Initializer) -> B.Builder
@@ -216,6 +217,7 @@ fromInitListItem (parts, init) =
   (mconcat $ map fromPartDesignator parts)
   <> " = "
   <> fromInitializer init
+  <> ", "
 
 
 fromPartDesignator :: PartDesignator -> B.Builder
@@ -314,7 +316,7 @@ fromExtDecl :: ExternalDeclaration -> B.Builder
 fromExtDecl extDecl =
   case extDecl of
     DeclExt decl ->
-      (fromDeclaration decl) <> ";\n"
+      (fromDeclaration decl) <> ";\n\n"
 
     FDefExt (FunDef declSpecs declarator statement) ->
       mconcat $
@@ -322,15 +324,16 @@ fromExtDecl extDecl =
         ++ [ " "
            , fromDeclarator declarator
            , " "
-           , fromStatement "" statement, "\n"
+           , fromStatement "" statement
+           , "\n\n"
            ]
 
     DefineExt name expr ->
-      "#define " <> CN.toBuilder name <> " " <> fromExpr expr <> "\n"
+      "#define " <> CN.toBuilder name <> " " <> fromExpr expr <> "\n\n"
 
     IncludeExt headerFile ->
-      "#include \"" <> fromHeaderFile headerFile <> "\"\n"
+      "#include \"" <> fromHeaderFile headerFile <> "\"\n\n"
 
     CommentExt comment ->
-      "// " <> comment <> "\n"
+      "// " <> comment <> "\n\n"
 
