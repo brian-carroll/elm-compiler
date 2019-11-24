@@ -28,6 +28,8 @@ module Generate.C.Name
   , utilsAccessEval
   , appFieldGroups
   , nullPtr
+  , wrapperRegisterFieldGroups
+  , wrapperRegisterMainRecord
   , KernelTypeDef(..)
   , HeaderFile(..)
   )
@@ -224,6 +226,16 @@ appFieldGroups =
 nullPtr :: Name
 nullPtr =
   Name "NULL"
+
+
+wrapperRegisterFieldGroups :: Name
+wrapperRegisterFieldGroups =
+  Name "Wrapper_registerFieldGroups"
+
+
+wrapperRegisterMainRecord :: Name
+wrapperRegisterMainRecord =
+  Name "Wrapper_registerMainRecord"
 
       
 -- C KERNEL TYPE DEFINITIONS

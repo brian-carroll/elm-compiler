@@ -124,6 +124,7 @@ generateCMain initGlobals =
     earlyReturn = C.BlockStmt $ C.If (C.Var exitCode)
       (C.Return $ Just $ C.Var exitCode) Nothing
     initCalls = List.foldl' generateInitCall [] initGlobals
+    regFG = C.Call (C.Var CN.wrapperRegisterFieldGroups) [C.Var CN.appFieldGroups]
   in
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.CInt]
@@ -131,9 +132,11 @@ generateCMain initGlobals =
     (C.Compound (
       [ exitCodeDef
       , earlyReturn
+      ] ++
+      initCalls ++
+      [ C.BlockStmt $ C.Expr $ Just $ regFG
+      , C.BlockStmt $ C.Return $ Just $ C.Var exitCode
       ]
-      ++ initCalls
-      ++ [C.BlockStmt $ C.Return $ Just $ C.Var exitCode]
     ))
 
 
