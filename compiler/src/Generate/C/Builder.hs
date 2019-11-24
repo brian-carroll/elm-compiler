@@ -249,7 +249,7 @@ fromTypeSpecifier :: TypeSpecifier -> B.Builder
 fromTypeSpecifier typeSpec =
   case typeSpec of
     Void -> "void"
-    CInt -> "int"
+    Int -> "int"
 
     Enum names ->
       "enum {"

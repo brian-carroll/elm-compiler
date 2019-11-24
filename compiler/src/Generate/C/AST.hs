@@ -112,7 +112,7 @@ data DeclarationSpecifier
 data TypeSpecifier
   = TypeDef KernelTypeDef
   | Void
-  | CInt
+  | Int
   | Enum [Name]
 
 

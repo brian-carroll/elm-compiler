@@ -118,7 +118,7 @@ generateCMain :: [Opt.Global] -> C.ExternalDeclaration
 generateCMain initGlobals =
   let
     exitCode = CN.fromBuilder "exit_code"
-    exitCodeDef = C.BlockDecl $ C.Decl [C.TypeSpec C.CInt]
+    exitCodeDef = C.BlockDecl $ C.Decl [C.TypeSpec C.Int]
       (Just $ C.Declr (Just exitCode) [])
       (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "GC_init") [])
     earlyReturn = C.BlockStmt $ C.If (C.Var exitCode)
@@ -127,7 +127,7 @@ generateCMain initGlobals =
     regFG = C.Call (C.Var CN.wrapperRegisterFieldGroups) [C.Var CN.appFieldGroups]
   in
   C.FDefExt $ C.FunDef
-    [C.TypeSpec C.CInt]
+    [C.TypeSpec C.Int]
     (C.Declr (Just $ CN.fromBuilder "main") [C.FunDeclr []])
     (C.Compound (
       [ exitCodeDef
