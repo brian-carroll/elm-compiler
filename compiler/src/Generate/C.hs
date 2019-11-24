@@ -115,7 +115,7 @@ prependExtDecls revExtDecls monolith =
 
 
 generateCMain :: [Opt.Global] -> C.ExternalDeclaration
-generateCMain initGlobals =
+generateCMain revInitGlobals =
   let
     exitCode = CN.fromBuilder "exit_code"
     exitCodeDef = C.BlockDecl $ C.Decl [C.TypeSpec C.Int]
@@ -123,7 +123,7 @@ generateCMain initGlobals =
       (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "GC_init") [])
     earlyReturn = C.BlockStmt $ C.If (C.Var exitCode)
       (C.Return $ Just $ C.Var exitCode) Nothing
-    initCalls = List.foldl' generateInitCall [] initGlobals
+    fwdInitCalls = List.foldl' generateInitCall [] revInitGlobals
     regFG = C.Call (C.Var CN.wrapperRegisterFieldGroups) [C.Var CN.appFieldGroups]
   in
   C.FDefExt $ C.FunDef
@@ -133,7 +133,7 @@ generateCMain initGlobals =
       [ exitCodeDef
       , earlyReturn
       ] ++
-      initCalls ++
+      fwdInitCalls ++
       [ C.BlockStmt $ C.Expr $ Just $ regFG
       , C.BlockStmt $ C.Return $ Just $ C.Var exitCode
       ]
