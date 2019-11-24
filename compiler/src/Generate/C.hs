@@ -76,8 +76,7 @@ emptyState =
 generate :: Opt.GlobalGraph -> Mains -> B.Builder
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
-    -- state = Map.foldrWithKey (addMain graph) emptyState mains
-    state = Map.foldrWithKey (addMain FakeAST.graph) emptyState FakeAST.mains
+    state = Map.foldrWithKey (addMain graph) emptyState mains
   in
     stateToBuilder state
 

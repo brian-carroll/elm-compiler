@@ -1,11 +1,10 @@
 # TODO 23 Nov 2019
 
 - proper global initialisation with pointers and `#define`
+- JS kernel
 - figure out how to deal with `WasmWrapper.element`
   - maybe special-case in `addMain` for top function call
   - maybe make it a kernel function and unlock from elm and elm-explorations, add a wasm thing to the safe list
-- remaining sharedDefs
-  - SharedFieldGroup, SharedChr, SharedStr
 - expressions!
 - output two files instead of one
 - generate emscripten wrapper JS code
