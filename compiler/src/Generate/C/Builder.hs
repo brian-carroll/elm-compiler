@@ -217,10 +217,14 @@ fromInitList initList =
 
 fromInitListItem :: ([PartDesignator], Initializer) -> B.Builder
 fromInitListItem (parts, init) =
-  (mconcat $ map fromPartDesignator parts)
-  <> " = "
-  <> fromInitializer init
-  <> ", "
+  case parts of
+    [] ->
+      (fromInitializer init) <> ", "
+    _ ->
+      (mconcat $ map fromPartDesignator parts)
+      <> " = "
+      <> fromInitializer init
+      <> ", "
 
 
 fromPartDesignator :: PartDesignator -> B.Builder

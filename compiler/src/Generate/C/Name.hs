@@ -26,6 +26,8 @@ module Generate.C.Name
   , false
   , utilsInitGlobal
   , utilsAccessEval
+  , appFieldGroups
+  , nullPtr
   , KernelTypeDef(..)
   , HeaderFile(..)
   )
@@ -212,8 +214,18 @@ utilsInitGlobal =
 utilsAccessEval :: Name
 utilsAccessEval =
   cKernelValue Name.utils (Name.fromChars "access_eval")
-  
 
+
+appFieldGroups :: Name
+appFieldGroups =
+  Name "app_field_groups"
+
+
+nullPtr :: Name
+nullPtr =
+  Name "NULL"
+
+      
 -- C KERNEL TYPE DEFINITIONS
 
 data KernelTypeDef

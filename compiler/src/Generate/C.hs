@@ -98,6 +98,7 @@ stateToBuilder state =
   prependExtDecls (generateEnum ctorNames) $
   prependExtDecls (generateEnum fieldNames) $
   prependExtDecls sharedDefs $
+  prependExtDecls [generateFieldGroupArray (_fieldGroups state)] $
   prependExtDecls (_revExtDecls state) $
   prependExtDecls [generateCMain initGlobals] $
     ""
@@ -183,7 +184,9 @@ generateSharedDef def =
         2 [CE.castAsVoidPtr $ CN.fieldId name]
 
     CE.SharedFieldGroup names ->
-      C.CommentExt "SharedFieldGroup"
+      generateStructDef CN.FieldGroup (CN.fieldGroup names)
+        [("size", C.Const $ C.IntConst $ length names)]
+        (Just ("fields", map (C.Var . CN.fieldId) names))
 
 
 generateClosure :: CN.Name -> CN.Name -> Int -> [C.Expression] -> C.ExternalDeclaration
@@ -221,25 +224,19 @@ generateStructDef structName varName fixedMembers flexibleMembers =
     (Just $ C.InitExpr $ C.CompoundLit $ (fixed ++ flexible))
 
 
+generateFieldGroupArray :: Set.Set [Name.Name] -> C.ExternalDeclaration
+generateFieldGroupArray fieldGroups =
+  let
+    pointerArray = Set.foldr
+      (\fields acc -> ([], C.InitExpr $ C.Unary C.AddrOp $ C.Var $ CN.fieldGroup fields) : acc)
+      [([], C.InitExpr $ C.Var CN.nullPtr)]
+      fieldGroups
+  in
+  C.DeclExt $ C.Decl
+  [C.TypeSpec $ C.TypeDef CN.FieldGroup]
+  (Just $ C.Declr (Just $ CN.appFieldGroups) [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
+  (Just $ C.InitExpr $ C.CompoundLit $ pointerArray)
 
--- generateCMain :: [Opt.Global] -> B.Builder
--- generateCMain revInitGlobals =
---   let
---     globalNames =
---       map (\(Opt.Global home name) -> CN.global home name) revInitGlobals
---     registrations = map
---       (\g -> CB.nIndent1 <> "GC_register_root(&" <> (CN.toBuilder $ CN.globalInitPtr g) <> ");")
---       globalNames
---     inits = map
---       (\g -> CB.nIndent1 <> (CN.toBuilder $ CN.globalInitFn g) <> "();")
---       globalNames
---     body =
---       CB.nIndent1 <> "GC_init();" <>
---       (prependBuilders registrations $
---         prependBuilders inits $
---         "\n")
---   in
---   "int main() {" <> body <> "}\n"
 
 
 -- {-
