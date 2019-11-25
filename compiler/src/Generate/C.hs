@@ -33,7 +33,6 @@ import qualified Elm.Package as Pkg
 -- import qualified Reporting.Doc as D
 -- import qualified Reporting.Render.Type as RT
 -- import qualified Reporting.Render.Type.Localizer as L
-import qualified Generate.C.FakeAST as FakeAST
 
 
 
@@ -289,8 +288,8 @@ addGlobalHelp graph global state =
       state
 
     Opt.Kernel chunks deps ->
-      addDeps deps state
-      -- state
+      -- addDeps deps state
+      state
     --  addKernel (addDeps deps state) $
     --    generateKernel global
 
