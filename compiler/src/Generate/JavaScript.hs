@@ -268,9 +268,18 @@ addGlobalHelp mode graph global state =
       else
         let
           (Opt.Global home name) = global
+
+          depsBuilder =
+            mconcat $ List.intersperse ", " $
+            map
+              (\(Opt.Global home name) ->
+                  JsName.toBuilder $ JsName.fromGlobal home name)
+              (Set.toList deps)
+  
           comment beginOrEnd =
             "\n// " <> beginOrEnd <> " Kernel "
             <> (JsName.toBuilder $ JsName.fromGlobal home name)
+            <> " deps: " <> depsBuilder
             <> "\n"
         in
           addKernel (addDeps deps state) (

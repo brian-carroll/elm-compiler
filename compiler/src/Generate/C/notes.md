@@ -1,7 +1,9 @@
 # TODO 23 Nov 2019
 
-- proper global initialisation with pointers and `#define`
-- JS kernel
+- JS kernel (without deps!)
+  - Call `Generate.JavaScript.addGlobal` with the real graph so it can find deps
+  - Maintain full JS generation state, not just builders
+  - Skip this completely for C kernels because JS has a separate `_seenGlobals` and will take care of itself
 - figure out how to deal with `WasmWrapper.element`
   - maybe special-case in `addMain` for top function call
   - maybe make it a kernel function and unlock from elm and elm-explorations, add a wasm thing to the safe list
@@ -13,7 +15,6 @@
 
 # 14 Nov 2019
 
-- Need to approach this more systematically
 - C Names module
 
   - What are all the things I need names for?
