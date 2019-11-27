@@ -79,7 +79,7 @@ prod root details (Build.Artifacts pkg _ roots modules) =
       return $ JS.generate mode graph mains
 
 
-c  :: FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
+c  :: FilePath -> Details.Details -> Build.Artifacts -> Task (B.Builder, B.Builder)
 c root details (Build.Artifacts pkg _ roots modules) =
   do  objects <- finalizeObjects =<< loadObjects root details modules
       checkForDebugUses objects

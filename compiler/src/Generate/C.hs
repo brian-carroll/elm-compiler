@@ -19,6 +19,9 @@ import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
 import qualified Generate.C.Expression as CE
 import qualified Generate.C.AST as C
+
+import qualified Generate.JavaScript as JS
+
 -- import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 -- import qualified Data.Index as Index
@@ -29,7 +32,7 @@ import qualified Elm.Package as Pkg
 -- import qualified Generate.JavaScript.Expression as Expr
 -- import qualified Generate.JavaScript.Functions as Functions
 -- import qualified Generate.JavaScript.Name as JsName
--- import qualified Generate.Mode as Mode
+import qualified Generate.Mode as Mode
 -- import qualified Reporting.Doc as D
 -- import qualified Reporting.Render.Type as RT
 -- import qualified Reporting.Render.Type.Localizer as L
@@ -51,10 +54,10 @@ data State =
     , _sharedDefs :: Set.Set CE.SharedDef
     , _revInitGlobals :: [Opt.Global]
     , _revExtDecls :: [C.ExternalDeclaration]
-    , _revJsKernels :: [B.Builder]
     , _jsKernelVars :: Set.Set (Name.Name, Name.Name)
     , _fieldGroups :: Set.Set [Name.Name]
     , _ctorNames :: Set.Set Name.Name
+    , _jsState :: JS.State
     }
 
 
@@ -65,21 +68,23 @@ emptyState =
     , _sharedDefs = Set.empty
     , _revInitGlobals = []
     , _revExtDecls = []
-    , _revJsKernels = []
     , _jsKernelVars = Set.empty
     , _fieldGroups = Set.empty
     , _ctorNames = Set.empty
+    , _jsState = JS.emptyState
     }
 
 
-generate :: Opt.GlobalGraph -> Mains -> B.Builder
+generate :: Opt.GlobalGraph -> Mains -> (B.Builder, B.Builder)
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
     state = Map.foldrWithKey (addMain graph) emptyState mains
+    cBuilder = stateToBuilder state
+    jsBuilder = JS.stateToBuilder (_jsState state)
   in
-    stateToBuilder state
+    (cBuilder, jsBuilder)
 
--- TODO: put fromExtDecl inside the fold
+
 stateToBuilder :: State -> B.Builder
 stateToBuilder state =
   let
@@ -266,6 +271,7 @@ addGlobalHelp graph global state =
   let
     addDeps deps someState =
       Set.foldl' (addGlobal graph) someState deps
+    jsMode = Mode.Dev Nothing
   in
   case graph ! global of
     Opt.Define expr deps ->
@@ -285,13 +291,17 @@ addGlobalHelp graph global state =
       addDeps deps state
 
     Opt.Manager effectsType ->
-      state
+      state { _jsState =
+        JS.addGlobal jsMode graph (_jsState state) global }
 
     Opt.Kernel chunks deps ->
-      -- addDeps deps state
-      state
-    --  addKernel (addDeps deps state) $
-    --    generateKernel global
+      let (Opt.Global home _) = global
+      in
+      if Set.member home cKernelModules then
+        state  -- do nothing! handled in C via #include
+      else
+        state { _jsState =
+          JS.addGlobal jsMode graph (_jsState state) global }
 
     Opt.Enum index ->
       state
@@ -304,6 +314,16 @@ addGlobalHelp graph global state =
 
     Opt.PortOutgoing encoder deps ->
       addDeps deps state
+
+
+cKernelModules :: Set.Set ModuleName.Canonical
+cKernelModules =
+  Set.fromList
+    [ ModuleName.basics
+    , ModuleName.list
+    , ModuleName.string
+    , ModuleName.char
+    ]
 
 
 -- addKernel :: State -> B.Builder -> State

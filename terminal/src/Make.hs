@@ -49,7 +49,7 @@ data Flags =
 data Output
   = JS FilePath
   | Html FilePath
-  | C FilePath
+  | C FilePath FilePath
   | DevNull
 
 
@@ -113,12 +113,13 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
                     name:names ->
                       Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
 
-                Just (C target) ->
+                Just (C cTarget jsTarget) ->
                   case getNoMains artifacts of
                     [] ->
-                      do  builder <- Task.mapError Exit.MakeBadGenerate $
+                      do  (cBuilder, jsBuilder) <- Task.mapError Exit.MakeBadGenerate $
                                       Generate.c root details artifacts
-                          generate style target builder (Build.getRootNames artifacts)
+                          generate style cTarget cBuilder (Build.getRootNames artifacts)
+                          generate style jsTarget jsBuilder (Build.getRootNames artifacts)
 
                     name:names ->
                       Task.throw (Exit.MakeNonMainFilesIntoC name names)
@@ -305,7 +306,7 @@ parseOutput name
   | isDevNull name      = Just DevNull
   | hasExt ".html" name = Just (Html name)
   | hasExt ".js"   name = Just (JS name)
-  | hasExt ".c"    name = Just (C name)
+  | hasExt ".c"    name = Just (C name (FP.replaceExtension name ".js"))
   | otherwise           = Nothing
 
 

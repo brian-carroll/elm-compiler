@@ -3,6 +3,10 @@ module Generate.JavaScript
   ( generate
   , generateForRepl
   , generateForReplEndpoint
+  , State
+  , emptyState
+  , stateToBuilder
+  , addGlobal
   )
   where
 
