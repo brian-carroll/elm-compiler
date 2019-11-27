@@ -186,7 +186,8 @@ generateSharedDef def =
       C.CommentExt "SharedStr"
 
     CE.SharedAccessor name ->
-      generateClosure (CN.accessor name) CN.utilsAccessEval
+      generateClosure (CN.accessor name)
+        (C.Unary C.AddrOp $ C.Var CN.utilsAccessEval)
         2 [CE.castAsVoidPtr $ CN.fieldId name]
 
     CE.SharedFieldGroup names ->
@@ -195,15 +196,15 @@ generateSharedDef def =
         (Just ("fields", map (C.Var . CN.fieldId) names))
 
 
-generateClosure :: CN.Name -> CN.Name -> Int -> [C.Expression] -> C.ExternalDeclaration
-generateClosure name evalName maxValues values =
+generateClosure :: CN.Name -> C.Expression -> Int -> [C.Expression] -> C.ExternalDeclaration
+generateClosure name evalFnPtr maxValues values =
   let nValues = length values
   in
   generateStructDef CN.Closure name
     [ ("header", CE.generateHeader $ CE.HEADER_CLOSURE nValues)
     , ("n_values", C.Const $ C.IntConst nValues)
     , ("max_values", C.Const $ C.IntConst maxValues)
-    , ("evaluator",  C.Unary C.AddrOp $ C.Var evalName)
+    , ("evaluator", evalFnPtr)
     ]
     (if nValues > 0 then Just ("values", values) else Nothing)
 
@@ -326,22 +327,6 @@ cKernelModules =
     ]
 
 
--- addKernel :: State -> B.Builder -> State
--- addKernel state kernel =
---   state { _revKernelsC = kernel : _revKernelsC state }
-
-
--- generateKernel :: Opt.Global -> B.Builder
--- generateKernel (Opt.Global home _) =
---   generateKernelInclude $
---   CN.toBuilder $
---   CN.kernelHeaderFile home
-
-
--- generateKernelInclude :: B.Builder -> B.Builder
--- generateKernelInclude filename =
---   "#include \"../kernel/" <> filename <> "\"\n"
-
 addExtDecl :: C.ExternalDeclaration -> State -> State
 addExtDecl extDecl state =
   state { _revExtDecls = extDecl : _revExtDecls state }
@@ -377,9 +362,10 @@ addDef global@(Opt.Global home' name') expr state =
   case expr of
     Opt.Function args body ->
       let
-        evalFnName = CN.globalEvaluator home' name'
+        evalFnPtr = C.Unary C.AddrOp $ C.Var $
+          CN.globalEvaluator home' name'
         arity = length args
-        closure = generateClosure globalName evalFnName arity []
+        closure = generateClosure globalName evalFnPtr arity []
       in
       addExtDecl closure state
 
@@ -437,8 +423,16 @@ addDef global@(Opt.Global home' name') expr state =
       defineAlias (CN.global home name) state
 
     Opt.VarKernel home name ->
-      -- TODO: decide if C or JS, generate either #define or Closure
-      defineAlias (CN.cKernelValue home name) state
+      if Set.member home' cKernelModules then
+        defineAlias (CN.cKernelValue home name) state
+      else
+        addExtDecl
+          (generateClosure globalName
+            (CE.castAsVoidPtr $ CN.jsKernelValue (home, name))
+            0xffff [])
+          (state { _jsKernelVars =
+            Set.insert (home, name) (_jsKernelVars state)
+          })
 
     -- impossible in global scope
     Opt.VarLocal _ -> undefined
@@ -458,50 +452,3 @@ generateInitFn global@(Opt.Global home name) expr state =
     { _revExtDecls = initFn : _revExtDecls state
     , _revInitGlobals = global : _revInitGlobals state
     }
-
-
--- {-
---                 RECORD FIELDGROUP
--- -}
-
--- generateFieldGroup :: [Name.Name] -> C.Ident -> CExtDecl
--- generateFieldGroup fields fieldGroupName =
---   let
---     -- const FieldGroup
---     declarationSpecifiers :: [CDeclSpec]
---     declarationSpecifiers =
---       [ CTypeQual $ CConstQual undefNode
---       , CTypeSpec $ CTypeDef (CN.toIdent CN.typeFieldGroup) undefNode
---       ]
-
---     -- fg3
---     declarator :: CDeclr
---     declarator =
---       CDeclr (Just fieldGroupName) [] Nothing [] undefNode
-
---     -- {Field_aardvaark, Field_banana}
---     fieldsInitList :: CInitList
---     fieldsInitList =
---         map
---           (\f ->
---             let ident = CN.toIdent $ CN.asField $ CN.fromLocal f in
---             ([] , CInitExpr (CVar ident undefNode) undefNode))
---           fields
-  
---     -- { 2, {Field_aardvaark, Field_banana} }
---     initializer :: CInit
---     initializer =
---       CInitList
---         [ ([], CInitExpr (CB.intLiteral $ length fields) undefNode)
---         , ([], CInitList fieldsInitList undefNode)
---         ]
---         undefNode
-
---     -- const FieldGroup fg3 = { 2, {Field_aardvaark, Field_banana} }
---     declaration :: CDecl
---     declaration = CDecl
---       declarationSpecifiers
---       [(Just declarator, Just initializer, Nothing)]
---       undefNode
---   in
---     CDeclExt declaration

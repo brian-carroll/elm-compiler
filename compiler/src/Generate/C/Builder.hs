@@ -56,7 +56,8 @@ fromExpr expression =
 
     Binary op lhs rhs -> "/*Binary*/"
 
-    Cast typeNameDecl expr -> "/*Cast*/"
+    Cast typeNameDecl expr ->
+      "(" <> fromDeclaration typeNameDecl <> ")" <> fromExpr expr
 
     Unary op expr ->
       let e = fromExpr expr in
@@ -254,8 +255,8 @@ fromTypeSpecifier typeSpec =
     Enum names ->
       "enum {"
         <> (List.foldl'
-            (\acc name -> acc <> nIndent1 <> CN.toBuilder name)
-              "" names)
+            (\acc name -> acc <> nIndent1 <> CN.toBuilder name <> ",")
+            "" names)
         <> "}"
 
     TypeDef kernelTypeDef ->
