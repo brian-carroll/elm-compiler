@@ -282,7 +282,7 @@ generateEvalFn fname params bodyExpr =
   FDefExt $ FunDef
     [TypeSpec Void]
     funcDeclarator
-    (Compound $ paramRenames ++ body)
+    (paramRenames ++ body)
 
 
 generateParamRename :: Ident -> N.Name -> Int -> Declaration

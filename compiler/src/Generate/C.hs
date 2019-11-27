@@ -131,16 +131,15 @@ generateCMain revInitGlobals =
   in
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.Int]
-    (C.Declr (Just $ CN.fromBuilder "main") [C.FunDeclr []])
-    (C.Compound (
-      [ exitCodeDef
+    (C.Declr (Just $ CN.fromBuilder "main") [C.FunDeclr []]) $
+    ( [ exitCodeDef
       , earlyReturn
       ] ++
       fwdInitCalls ++
       [ C.BlockStmt $ C.Expr $ Just $ regFG
       , C.BlockStmt $ C.Return $ Just $ C.Var exitCode
       ]
-    ))
+    )
 
 
 generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
@@ -446,7 +445,7 @@ generateInitFn global@(Opt.Global home name) expr state =
     initFn = C.FDefExt $ C.FunDef
       [C.TypeSpec C.Void]
       (C.Declr (Just $ CN.globalInitFn home name) [C.PtrDeclr [], C.FunDeclr []])
-      (C.Compound [C.BlockStmt $ C.Return $ Just $ CE.generate expr])
+      [C.BlockStmt $ C.Return $ Just $ CE.generate expr]
   in
   state
     { _revExtDecls = initFn : _revExtDecls state

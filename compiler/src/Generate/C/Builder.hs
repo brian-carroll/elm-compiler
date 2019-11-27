@@ -326,13 +326,13 @@ fromExtDecl extDecl =
     DeclExt decl ->
       (fromDeclaration decl) <> ";\n\n"
 
-    FDefExt (FunDef declSpecs declarator statement) ->
+    FDefExt (FunDef declSpecs declarator blockItems) ->
       mconcat $
         (map fromDeclSpec declSpecs)
         ++ [ " "
            , fromDeclarator declarator
            , " "
-           , fromStatement "" statement
+           , fromStatement "" (Compound blockItems)
            , "\n\n"
            ]
 

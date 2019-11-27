@@ -190,7 +190,7 @@ data FunctionDef =
   FunDef
     [DeclarationSpecifier] -- type specifier and qualifier
     Declarator           -- declarator
-    Statement            -- compound statement
+    [CompoundBlockItem]
 
 data ExternalDeclaration
   = DeclExt Declaration
