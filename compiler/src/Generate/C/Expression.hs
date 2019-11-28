@@ -70,10 +70,12 @@ data SharedDef
 
 data ExprState =
   ExprState
-    { _code :: Code
-    , _extDecls :: [C.ExternalDeclaration]
+    { _cExpr :: C.Expression
+    , _revBlockItems :: [C.CompoundBlockItem]
+    , _revExtDecls :: [C.ExternalDeclaration]
     , _sharedDefs :: Set SharedDef
     , _scope :: Set N.Name
+    , _tmpVarIndex :: Int
     }
 
 

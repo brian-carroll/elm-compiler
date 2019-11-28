@@ -27,7 +27,7 @@ Different possible approaches
 - Depth first search, folding over child exprs, collecting their pre-decls in a list
 - whenever C needs a decl, the return expr is a Var reference.
 - whenever the Elm expr is also a C expr, just don't add any pre-decls
-- will also need global pre-decls
+- will also need global pre-decls for lambdas
 
 # TODO 23 Nov 2019
 
