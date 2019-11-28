@@ -8,8 +8,8 @@ module Generate.C.Name
   , global
   , globalInitFn
   , globalInitPtr
-  , jsKernelValue
-  , cKernelValue
+  , jsKernelEval
+  , kernelValue
   , cycleVar
   , ctorId
   , fieldId
@@ -99,13 +99,13 @@ cycleVar home name =
     ++ ["cyclic", Name.toBuilder name]
 
 
-jsKernelValue :: (Name.Name, Name.Name) -> Name
-jsKernelValue (home, name) =
+jsKernelEval :: Name.Name -> Name.Name -> Name
+jsKernelEval home name =
   Name ("JS_" <> (join $ map Name.toBuilder [home, name]))
 
 
-cKernelValue :: Name.Name -> Name.Name -> Name
-cKernelValue home name =
+kernelValue :: Name.Name -> Name.Name -> Name
+kernelValue home name =
   Name $ join $ map Name.toBuilder [home, name]
 
 
@@ -210,12 +210,12 @@ false = Name "False"
 
 utilsInitGlobal :: Name
 utilsInitGlobal =
-  cKernelValue Name.utils (Name.fromChars "initGlobal")
+  kernelValue Name.utils (Name.fromChars "initGlobal")
 
 
 utilsAccessEval :: Name
 utilsAccessEval =
-  cKernelValue Name.utils (Name.fromChars "access_eval")
+  kernelValue Name.utils (Name.fromChars "access_eval")
 
 
 appFieldGroups :: Name

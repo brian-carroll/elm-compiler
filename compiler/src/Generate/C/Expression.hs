@@ -64,6 +64,7 @@ data SharedDef
   | SharedStr ES.String
   | SharedAccessor N.Name
   | SharedFieldGroup [N.Name]
+  | SharedJsThunk N.Name N.Name
   deriving (Eq, Ord)
 
 

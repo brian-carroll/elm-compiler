@@ -54,7 +54,6 @@ data State =
     , _sharedDefs :: Set.Set CE.SharedDef
     , _revInitGlobals :: [Opt.Global]
     , _revExtDecls :: [C.ExternalDeclaration]
-    , _jsKernelVars :: Set.Set (Name.Name, Name.Name)
     , _fieldGroups :: Set.Set [Name.Name]
     , _ctorNames :: Set.Set Name.Name
     , _jsState :: JS.State
@@ -68,7 +67,6 @@ emptyState =
     , _sharedDefs = Set.empty
     , _revInitGlobals = []
     , _revExtDecls = []
-    , _jsKernelVars = Set.empty
     , _fieldGroups = Set.empty
     , _ctorNames = Set.empty
     , _jsState = JS.emptyState
@@ -88,22 +86,36 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 stateToBuilder :: State -> B.Builder
 stateToBuilder state =
   let
-    initGlobals = _revInitGlobals state
-    kernelNames = map CN.jsKernelValue $ Set.toList $ _jsKernelVars state
-    ctorNames = map CN.ctorId $ Set.toList $ _ctorNames state
-    fieldNames = map CN.fieldId $ Set.toList $
+    ctorNames =
+      map CN.ctorId $ Set.toList $ _ctorNames state
+
+    fieldNames =
+      map CN.fieldId $ Set.toList $
       Set.foldl' (List.foldl' $ flip Set.insert) Set.empty $
       _fieldGroups state
-    sharedDefs = map generateSharedDef $ Set.toList $ _sharedDefs state
+
+    jsKernelNames =
+      Set.foldr
+        (\def acc ->
+          case def of
+            CE.SharedJsThunk home name -> (CN.jsKernelEval home name) : acc
+            _ -> acc
+        )
+        [] (_sharedDefs state)
+
+    sharedDefDecls =
+      Set.foldl'
+        (\acc def -> (generateSharedDef def) : acc)
+        [] (_sharedDefs state)
   in
   prependExtDecls [C.IncludeExt CN.KernelH] $
-  prependExtDecls (generateEnum kernelNames) $
   prependExtDecls (generateEnum ctorNames) $
   prependExtDecls (generateEnum fieldNames) $
-  prependExtDecls sharedDefs $
+  prependExtDecls (generateEnum jsKernelNames) $
+  prependExtDecls sharedDefDecls $
   prependExtDecls [generateFieldGroupArray (_fieldGroups state)] $
   prependExtDecls (_revExtDecls state) $
-  prependExtDecls [generateCMain initGlobals] $
+  prependExtDecls [generateCMain (_revInitGlobals state)] $
     ""
 
 
@@ -193,6 +205,12 @@ generateSharedDef def =
       generateStructDef CN.FieldGroup (CN.fieldGroup names)
         [("size", C.Const $ C.IntConst $ length names)]
         (Just ("fields", map (C.Var . CN.fieldId) names))
+
+    CE.SharedJsThunk home name ->
+      generateClosure (CN.kernelValue home name)
+        (CE.castAsVoidPtr $ CN.jsKernelEval home name)
+        0xffff  -- ridiculously high arity (never evaluate in C)
+        []      -- no applied args
 
 
 generateClosure :: CN.Name -> C.Expression -> Int -> [C.Expression] -> C.ExternalDeclaration
@@ -422,16 +440,11 @@ addDef global@(Opt.Global home' name') expr state =
       defineAlias (CN.global home name) state
 
     Opt.VarKernel home name ->
+      defineAlias (CN.kernelValue home name) $
       if Set.member home' cKernelModules then
-        defineAlias (CN.cKernelValue home name) state
+        state
       else
-        addExtDecl
-          (generateClosure globalName
-            (CE.castAsVoidPtr $ CN.jsKernelValue (home, name))
-            0xffff [])
-          (state { _jsKernelVars =
-            Set.insert (home, name) (_jsKernelVars state)
-          })
+        addShared (CE.SharedJsThunk home name) state
 
     -- impossible in global scope
     Opt.VarLocal _ -> undefined
