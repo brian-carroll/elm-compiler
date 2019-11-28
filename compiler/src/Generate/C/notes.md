@@ -1,3 +1,34 @@
+# Elm expressions vs C expressions/statements/declarations
+
+Different possible approaches
+
+## Same as JS generator
+
+- Create a `Code` type and have codeToExpr, codeToBlockItems
+- Tricky part is the `return` statement. Different from JS.
+- JS generator has a nice symmetry that I don't have in C
+  - uses `return` both to return from a function and as part of converting statements to expressions (IIFE)
+  - but in C we convert statement to expression using curlies _without_ `return` keyword. Need `return` only at end of function. So we have more syntax permutations to manage.
+- don't have a good solution yet
+
+## Everything is a declaration! Create 1 var per subexpression
+
+- Create temp names for all subexpressions, making them into declarations
+- Makes everything very uniform, easy to generate. Every recursive call returns the name of its result variable, parent expression is a combination of child variable names.
+- C code may be harder to read, less idiomatic.
+- But actually easy to debug the compiler!
+- Rely on C compiler register allocation to optimise away most of the intermediate variables (experiment with this!)
+- **This is nice because it restores 1:1 correspondence between the Elm syntax and the C syntax.** No fancy conversion stuff.
+- Do depth-first search, maintain a reverse list of declarations. Deeper calls return a list up to caller. First fold over children and add their decls, then add your own.
+
+## return expr + preceding decls/stmts
+
+- Like the "everything as decl" version but more readable
+- Depth first search, folding over child exprs, collecting their pre-decls in a list
+- whenever C needs a decl, the return expr is a Var reference.
+- whenever the Elm expr is also a C expr, just don't add any pre-decls
+- will also need global pre-decls
+
 # TODO 23 Nov 2019
 
 - JS kernel (without deps!)
