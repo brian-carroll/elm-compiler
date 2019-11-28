@@ -10,7 +10,7 @@ data Statement
   | Cases [Expression] Statement
   | Default Statement
   | Expr (Maybe Expression)
-  | Compound [CompoundBlockItem]
+  | Compound [CompoundBlockItem] -- reversed decls & statements
   | If Expression Statement (Maybe Statement)
   | Switch Expression Statement
   | While Expression Statement
@@ -190,7 +190,7 @@ data FunctionDef =
   FunDef
     [DeclarationSpecifier] -- type specifier and qualifier
     Declarator           -- declarator
-    [CompoundBlockItem]
+    [CompoundBlockItem]  -- reverse body decls/statements
 
 data ExternalDeclaration
   = DeclExt Declaration

@@ -5,6 +5,9 @@ module Generate.C.Expression
  , HeaderMacro(..)
  , generateHeader
  , castAsVoidPtr
+ , ExprState(..)
+ , initState
+
 -- , generateEvalFn
 -- , generateConstClosure
 -- , generateConstInt
@@ -70,18 +73,140 @@ data SharedDef
 
 data ExprState =
   ExprState
-    { _cExpr :: C.Expression
+    { _expr :: C.Expression
     , _revBlockItems :: [C.CompoundBlockItem]
     , _revExtDecls :: [C.ExternalDeclaration]
     , _sharedDefs :: Set SharedDef
     , _scope :: Set N.Name
     , _tmpVarIndex :: Int
+    , _parentGlobal :: Opt.Global
     }
 
 
-generate :: Opt.Expr -> C.Expression
-generate expr =
-  C.CommentExpr "Expression"
+initState :: Opt.Global -> [C.ExternalDeclaration] -> Set SharedDef -> ExprState
+initState global revExtDecls sharedDefs =
+  ExprState
+    { _expr = C.CommentExpr "empty expr"
+    , _revBlockItems = []
+    , _revExtDecls = revExtDecls
+    , _sharedDefs = sharedDefs
+    , _scope = Set.empty
+    , _tmpVarIndex = 0
+    , _parentGlobal = global
+    }
+
+
+leafExpr :: ExprState -> C.Expression -> ExprState
+leafExpr state expr =
+  state { _expr = expr }
+
+
+addSharedExpr :: ExprState -> SharedDef -> CN.Name -> ExprState
+addSharedExpr state shared name =
+  state
+    { _expr = C.Unary C.AddrOp $ C.Var name
+    , _sharedDefs = Set.insert shared (_sharedDefs state)
+    }
+
+
+generate :: ExprState -> Opt.Expr -> ExprState
+generate state expr =
+  let
+    todo = (leafExpr state) . C.CommentExpr
+  in
+  case expr of
+    Opt.Bool bool ->
+      leafExpr state $
+        C.Unary C.AddrOp $ C.Var $ if bool then CN.true else CN.false
+
+    Opt.Chr char ->
+      addSharedExpr state (SharedChr char) (CN.literalChr char)
+
+    Opt.Str string ->
+      addSharedExpr state (SharedStr string) (CN.literalStr string)
+
+    Opt.Int int ->
+      addSharedExpr state (SharedInt int) (CN.literalInt int)
+
+    Opt.Float float ->
+      addSharedExpr state (SharedFloat float) (CN.literalFloat float)
+
+    Opt.VarLocal name ->
+      todo "VarLocal"
+      -- Var $ Ident $ CN.toBuilder $ CN.local name
+
+    Opt.VarGlobal (Opt.Global home name) ->
+      todo "VarGlobal"
+      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+
+    Opt.VarEnum (Opt.Global home name) _ ->
+      todo "VarEnum"
+      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+
+    Opt.VarBox (Opt.Global home name) ->
+      todo "VarBox"
+      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+
+    Opt.VarCycle home name ->
+      todo "VarCycle"
+      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+
+    Opt.VarDebug name home _ _ ->
+      todo "VarDebug"
+      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+
+    Opt.VarKernel home name ->
+      todo "VarKernel"
+      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromKernel home name
+
+    Opt.List entries ->
+      todo "List"
+
+    Opt.Function args body ->
+      todo "Function"
+
+    Opt.Call func args ->
+      todo "Call"
+      -- leafExpr state $ Call
+        -- (Var $ Ident ("A" <> B.intDec (length args)))
+        -- (generate func : map generate args)
+
+    Opt.TailCall name args ->
+      todo "TailCall"
+
+    Opt.If branches final ->
+      todo "If"
+
+    Opt.Let def body ->
+      todo "Let"
+
+    Opt.Destruct (Opt.Destructor name path) body ->
+      todo "Destruct"
+
+    Opt.Case label root decider jumps ->
+      todo "Case"
+
+    Opt.Accessor field ->
+      todo "Accessor"
+
+    Opt.Access record field ->
+      todo "Access"
+
+    Opt.Update record fields ->
+      todo "Update"
+
+    Opt.Record fields ->
+      todo "Record"
+
+    Opt.Unit ->
+      todo "Unit"
+
+    Opt.Tuple a b maybeC ->
+      todo "Tuple"
+
+    Opt.Shader src attributes uniforms ->
+      todo "Shader"
+  
 {-
 
   Very similar to the JS setup, only Record is different
@@ -118,86 +243,6 @@ generate expr =
   case expr of
     Opt.Bool bool ->
       Unary AddrOp $ Var $ Ident $ if bool then "True" else "False"
-
-    Opt.Chr char ->
-      CommentExpr "Chr"
-
-    Opt.Str string ->
-      CommentExpr "Str"
-
-    Opt.Int int ->
-      Call (m_NEW_ELM_INT) [Const $ IntConst $ int]
-
-    Opt.Float float ->
-      CommentExpr "Float"
-
-    Opt.VarLocal name ->
-      Var $ Ident $ CN.toBuilder $ CN.local name
-
-    Opt.VarGlobal (Opt.Global home name) ->
-      Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
-
-    Opt.VarEnum (Opt.Global home name) _ ->
-      Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
-
-    Opt.VarBox (Opt.Global home name) ->
-      Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
-
-    Opt.VarCycle home name ->
-      Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
-
-    Opt.VarDebug name home _ _ ->
-      Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
-
-    Opt.VarKernel home name ->
-      Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromKernel home name
-
-    Opt.List entries ->
-      CommentExpr "List"
-
-    Opt.Function args body ->
-      CommentExpr "Function"
-
-    Opt.Call func args ->
-      Call
-        (Var $ Ident ("A" <> B.intDec (length args)))
-        (generate func : map generate args)
-
-    Opt.TailCall name args ->
-      CommentExpr "TailCall"
-
-    Opt.If branches final ->
-      CommentExpr "If"
-
-    Opt.Let def body ->
-      CommentExpr "Let"
-
-    Opt.Destruct (Opt.Destructor name path) body ->
-      CommentExpr "Destruct"
-
-    Opt.Case label root decider jumps ->
-      CommentExpr "Case"
-
-    Opt.Accessor field ->
-      CommentExpr "Accessor"
-
-    Opt.Access record field ->
-      CommentExpr "Access"
-
-    Opt.Update record fields ->
-      CommentExpr "Update"
-
-    Opt.Record fields ->
-      CommentExpr "Record"
-
-    Opt.Unit ->
-      CommentExpr "Unit"
-
-    Opt.Tuple a b maybeC ->
-      CommentExpr "Tuple"
-
-    Opt.Shader src attributes uniforms ->
-      CommentExpr "Shader"
 
 
 generateLiteralInt :: Int -> Expression

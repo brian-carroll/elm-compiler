@@ -454,13 +454,37 @@ addDef global@(Opt.Global home' name') expr state =
 generateInitFn :: Opt.Global -> Opt.Expr -> State -> State
 generateInitFn global@(Opt.Global home name) expr state =
   let
+    (bodyState, revBody) = 
+      generateFuncBody global expr state
+
     initFn :: C.ExternalDeclaration
     initFn = C.FDefExt $ C.FunDef
       [C.TypeSpec C.Void]
       (C.Declr (Just $ CN.globalInitFn home name) [C.PtrDeclr [], C.FunDeclr []])
-      [C.BlockStmt $ C.Return $ Just $ CE.generate expr]
+      revBody
   in
-  state
-    { _revExtDecls = initFn : _revExtDecls state
-    , _revInitGlobals = global : _revInitGlobals state
+  bodyState
+    { _revExtDecls = initFn : _revExtDecls bodyState
+    , _revInitGlobals = global : _revInitGlobals bodyState
     }
+
+
+generateFuncBody :: Opt.Global -> Opt.Expr -> State -> (State, [C.CompoundBlockItem])
+generateFuncBody global elmExpr state =
+  let
+    initExprState =
+      CE.initState global (_revExtDecls state) (_sharedDefs state)
+
+    (CE.ExprState cExpr revBlockItems revExtDecls sharedDefs _ _ _) =
+      CE.generate initExprState elmExpr
+
+    returnStmt =
+      C.BlockStmt $ C.Return $ Just cExpr
+
+    newState =
+      state
+        { _revExtDecls = revExtDecls
+        , _sharedDefs = sharedDefs
+        }
+  in
+    (newState, returnStmt : revBlockItems)

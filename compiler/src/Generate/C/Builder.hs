@@ -141,12 +141,16 @@ fromStatement indent statement =
     Expr maybeExpression -> 
       maybe "" fromExpr maybeExpression
 
-    Compound blockItems ->
-      "{" <> nDeeper
-        <> (joinMap (";" <> nDeeper)
-            (fromBlockItem deeper) blockItems)
-        <> ";" <> nIndent
-        <> "}"
+    Compound revBlockItems ->
+      let
+        block =
+          List.foldl'
+            (\acc item ->
+              nDeeper <> (fromBlockItem deeper item) <> ";" <> acc)
+            ""
+            revBlockItems
+      in
+      "{" <> block <> nIndent <> "}"
 
     If condition thenStmt maybeElseStmt ->
       "if (" <> (fromExpr condition) <> ") "
