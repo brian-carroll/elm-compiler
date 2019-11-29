@@ -32,6 +32,7 @@ module Generate.C.Name
   , wrapperRegisterMainRecord
   , KernelTypeDef(..)
   , HeaderFile(..)
+  , args
   )
   where
 
@@ -64,7 +65,7 @@ fromBuilder = Name
 
 local :: Name.Name -> Name
 local name =
-  Name $ "x" <> Name.toBuilder name
+  Name $ "x_" <> Name.toBuilder name
 
 
 global :: ModuleName.Canonical -> Name.Name -> Name
@@ -236,6 +237,11 @@ wrapperRegisterFieldGroups =
 wrapperRegisterMainRecord :: Name
 wrapperRegisterMainRecord =
   Name "Wrapper_registerMainRecord"
+
+
+args :: Name
+args =
+  Name "args"
 
       
 -- C KERNEL TYPE DEFINITIONS

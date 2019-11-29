@@ -132,26 +132,35 @@ prependExtDecls revExtDecls monolith =
 generateCMain :: [Opt.Global] -> C.ExternalDeclaration
 generateCMain revInitGlobals =
   let
-    exitCode = CN.fromBuilder "exit_code"
-    exitCodeDef = C.BlockDecl $ C.Decl [C.TypeSpec C.Int]
-      (Just $ C.Declr (Just exitCode) [])
-      (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "GC_init") [])
-    earlyReturn = C.BlockStmt $ C.If (C.Var exitCode)
-      (C.Return $ Just $ C.Var exitCode) Nothing
-    fwdInitCalls = List.foldl' generateInitCall [] revInitGlobals
-    regFG = C.Call (C.Var CN.wrapperRegisterFieldGroups) [C.Var CN.appFieldGroups]
+    exitCode =
+      CN.fromBuilder "exit_code"
+    initGC =
+      C.BlockDecl $ C.Decl [C.TypeSpec C.Int]
+        (Just $ C.Declr (Just exitCode) [])
+        (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "GC_init") [])
+    returnFail =
+      C.BlockStmt $ C.If (C.Var exitCode)
+        (C.Return $ Just $ C.Var exitCode) Nothing
+    fwdInitCalls =
+      List.foldl' generateInitCall [] revInitGlobals
+    registerFieldGroups =
+      C.BlockStmt $ C.Expr $ Just $
+      C.Call (C.Var CN.wrapperRegisterFieldGroups) [C.Var CN.appFieldGroups]
+    returnSuccess =
+      C.BlockStmt $ C.Return $ Just $ C.Const (C.IntConst 0)
+    body =
+      [ initGC
+      , returnFail
+      ] ++
+      fwdInitCalls ++
+      [ registerFieldGroups
+      , returnSuccess
+      ]
   in
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.Int]
     (C.Declr (Just $ CN.fromBuilder "main") [C.FunDeclr []]) $
-    ( [ exitCodeDef
-      , earlyReturn
-      ] ++
-      fwdInitCalls ++
-      [ C.BlockStmt $ C.Expr $ Just $ regFG
-      , C.BlockStmt $ C.Return $ Just $ C.Var exitCode
-      ]
-    )
+    (List.reverse body)
 
 
 generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
@@ -379,12 +388,14 @@ addDef global@(Opt.Global home' name') expr state =
   case expr of
     Opt.Function args body ->
       let
-        evalFnPtr = C.Unary C.AddrOp $ C.Var $
-          CN.globalEvaluator home' name'
-        arity = length args
-        closure = generateClosure globalName evalFnPtr arity []
+        closure = generateClosure
+          globalName
+          (C.Unary C.AddrOp $ C.Var $ CN.globalEvaluator home' name')
+          (length args)
+          []
       in
-      addExtDecl closure state
+      addExtDecl closure $
+        generateEvalFn global args body state
 
     Opt.Int value ->
       addShared (CE.SharedInt value) $
@@ -451,11 +462,36 @@ addDef global@(Opt.Global home' name') expr state =
     Opt.TailCall _ _ -> undefined
 
 
+generateEvalFn :: Opt.Global -> [Name.Name] -> Opt.Expr -> State -> State
+generateEvalFn global@(Opt.Global home name) params expr state =
+  let
+    (bodyState, revBody) = 
+      generateFuncBody global params expr state
+    
+    argsArray :: C.Declaration
+    argsArray =
+      C.Decl
+        [C.TypeSpec C.Void]
+        (Just $ C.Declr
+          (Just CN.args)
+          [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
+        Nothing
+
+    evalFn :: C.ExternalDeclaration
+    evalFn = C.FDefExt $ C.FunDef
+      [C.TypeSpec C.Void]
+      (C.Declr (Just $ CN.globalEvaluator home name)
+          [C.PtrDeclr [], C.FunDeclr [argsArray]])
+        revBody
+  in
+  addExtDecl evalFn bodyState
+
+
 generateInitFn :: Opt.Global -> Opt.Expr -> State -> State
 generateInitFn global@(Opt.Global home name) expr state =
   let
     (bodyState, revBody) = 
-      generateFuncBody global expr state
+      generateFuncBody global [] expr state
 
     initFn :: C.ExternalDeclaration
     initFn = C.FDefExt $ C.FunDef
@@ -467,13 +503,27 @@ generateInitFn global@(Opt.Global home name) expr state =
     { _revExtDecls = initFn : _revExtDecls bodyState
     , _revInitGlobals = global : _revInitGlobals bodyState
     }
+    
 
-
-generateFuncBody :: Opt.Global -> Opt.Expr -> State -> (State, [C.CompoundBlockItem])
-generateFuncBody global elmExpr state =
+generateFuncBody :: Opt.Global -> [Name.Name] -> Opt.Expr -> State -> (State, [C.CompoundBlockItem])
+generateFuncBody global params elmExpr state =
   let
+    (_, paramDestructDecls) =
+      List.foldl'
+        (\(index, blockItems) param ->
+          ( index + 1
+          , (C.BlockDecl $ C.Decl
+              [C.TypeSpec C.Void]
+              (Just $ C.Declr (Just $ CN.local param) [C.PtrDeclr []])
+              (Just $ C.InitExpr $
+                C.Index (C.Var CN.args) (C.Const $ C.IntConst index))
+            ) : blockItems
+          ))
+        (0, [])
+        params
+
     initExprState =
-      CE.initState global (_revExtDecls state) (_sharedDefs state)
+      CE.initState global paramDestructDecls (_revExtDecls state) (_sharedDefs state)
 
     (CE.ExprState cExpr revBlockItems revExtDecls sharedDefs _ _ _) =
       CE.generate initExprState elmExpr

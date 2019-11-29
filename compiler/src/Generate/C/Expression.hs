@@ -83,11 +83,11 @@ data ExprState =
     }
 
 
-initState :: Opt.Global -> [C.ExternalDeclaration] -> Set SharedDef -> ExprState
-initState global revExtDecls sharedDefs =
+initState :: Opt.Global -> [C.CompoundBlockItem] -> [C.ExternalDeclaration] -> Set SharedDef -> ExprState
+initState global initBlockItems revExtDecls sharedDefs =
   ExprState
     { _expr = C.CommentExpr "empty expr"
-    , _revBlockItems = []
+    , _revBlockItems = initBlockItems
     , _revExtDecls = revExtDecls
     , _sharedDefs = sharedDefs
     , _scope = Set.empty
