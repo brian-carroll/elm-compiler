@@ -34,6 +34,7 @@ module Generate.C.Name
   , HeaderFile(..)
   , args
   , applyMacro
+  , utilsListFromArray
   )
   where
 
@@ -218,6 +219,11 @@ utilsInitGlobal =
 utilsAccessEval :: Name
 utilsAccessEval =
   kernelValue Name.utils (Name.fromChars "access_eval")
+
+
+utilsListFromArray :: Name
+utilsListFromArray =
+  kernelValue Name.utils (Name.fromChars "fromArray")
 
 
 appFieldGroups :: Name

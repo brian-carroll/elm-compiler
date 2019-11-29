@@ -26,7 +26,7 @@ import qualified Data.ByteString.Builder as B
   -- import qualified Data.IntMap as IntMap
 import Data.Set (Set)
 import qualified Data.Set as Set
--- import qualified Data.List as List
+import qualified Data.List as List
 -- import Data.Map ((!))
 -- import qualified Data.Map as Map
 import qualified Data.Name as N
@@ -159,7 +159,7 @@ generate state expr =
       leafExprAddr state $ CN.kernelValue home name
 
     Opt.List entries ->
-      todo state "List"
+      generateList state entries
 
     Opt.Function args body ->
       todo state "Function"
@@ -206,23 +206,45 @@ generate state expr =
       todo state "Shader"
 
 
+generateChildren :: ExprState -> [Opt.Expr] -> (ExprState, [C.Expression], Int)
+generateChildren state elmChildren =
+  foldr
+    (\child (accState, accExprs, childCount) ->
+      let childState = generate accState child
+      in
+      ( childState
+      , _expr childState : accExprs
+      , childCount + 1
+      ))
+    (state, [], 0)
+    elmChildren
+
+
+generateList :: ExprState -> [Opt.Expr] -> ExprState
+generateList state entries =
+  if List.null entries then
+    leafExprAddr state $ CN.fromBuilder "Nil"
+  else
+    let
+      (newState, cEntries, nEntries) =
+        generateChildren state entries
+      entriesArray =
+        C.CompoundLit $
+        map (\cEntry -> ([], C.InitExpr cEntry)) cEntries
+    in
+    leafExpr newState $
+      C.Call (C.Var CN.utilsListFromArray)
+        [C.Const $ C.IntConst nEntries, entriesArray]
+
+
 generateCall :: ExprState -> Opt.Expr -> [Opt.Expr] -> ExprState
 generateCall state func args =
   let
-    (nArgs, argListState, argExprs) =
-      foldr
-        (\arg (argCount, accState, accExprs) ->
-          let argState = generate accState arg
-          in
-          ( argCount + 1
-          , argState
-          , _expr argState : accExprs
-          ))
-        (0, state, [])
-        args
+    (argsState, argExprs, nArgs) =
+      generateChildren state args
 
     funcState =
-      generate argListState func
+      generate argsState func
   in
   funcState
     { _expr =
