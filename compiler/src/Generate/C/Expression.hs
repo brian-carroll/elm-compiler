@@ -209,9 +209,6 @@ generate state expr =
 generateCall :: ExprState -> Opt.Expr -> [Opt.Expr] -> ExprState
 generateCall state func args =
   let
-    funcState =
-      generate state func
-
     (nArgs, argListState, argExprs) =
       foldr
         (\arg (argCount, accState, accExprs) ->
@@ -221,13 +218,16 @@ generateCall state func args =
           , argState
           , _expr argState : accExprs
           ))
-        (0, funcState, [])
+        (0, state, [])
         args
+
+    funcState =
+      generate argListState func
   in
-  argListState
+  funcState
     { _expr =
         C.Call (C.Var $ CN.applyMacro nArgs)
-          (_expr argListState : argExprs)
+          (_expr funcState : argExprs)
     }
 
 
