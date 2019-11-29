@@ -165,10 +165,7 @@ generate state expr =
       todo state "Function"
 
     Opt.Call func args ->
-      todo state "Call"
-      -- leafExpr state $ Call
-        -- (Var $ Ident ("A" <> B.intDec (length args)))
-        -- (generate func : map generate args)
+      generateCall state func args
 
     Opt.TailCall name args ->
       todo state "TailCall"
@@ -207,6 +204,31 @@ generate state expr =
 
     Opt.Shader src attributes uniforms ->
       todo state "Shader"
+
+
+generateCall :: ExprState -> Opt.Expr -> [Opt.Expr] -> ExprState
+generateCall state func args =
+  let
+    funcState =
+      generate state func
+
+    (nArgs, argListState, argExprs) =
+      foldr
+        (\arg (argCount, accState, accExprs) ->
+          let argState = generate accState arg
+          in
+          ( argCount + 1
+          , argState
+          , _expr argState : accExprs
+          ))
+        (0, funcState, [])
+        args
+  in
+  argListState
+    { _expr =
+        C.Call (C.Var $ CN.applyMacro nArgs)
+          (_expr argListState : argExprs)
+    }
 
 
 generateDef :: ExprState -> Opt.Def -> ExprState

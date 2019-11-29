@@ -33,6 +33,7 @@ module Generate.C.Name
   , KernelTypeDef(..)
   , HeaderFile(..)
   , args
+  , applyMacro
   )
   where
 
@@ -243,7 +244,12 @@ args :: Name
 args =
   Name "args"
 
-      
+
+applyMacro :: Int -> Name
+applyMacro n =
+  Name $ "A" <> B.intDec n
+
+ 
 -- C KERNEL TYPE DEFINITIONS
 
 data KernelTypeDef
