@@ -378,11 +378,19 @@ addDef global@(Opt.Global home' name') expr state =
     defineAlias alias state =
       addExtDecl (C.DefineExt globalName $ C.Var alias) state 
 
+    initPtrName =
+      CN.globalInitPtr home' name'
+
     runtimeInit =
       generateInitFn global expr $
+      addExtDecl (C.DeclExt $ C.Decl
+        [C.TypeSpec $ C.TypeDef CN.ElmValue]
+        (Just $ C.Declr (Just initPtrName) [C.PtrDeclr []])
+        Nothing
+      ) $
       addExtDecl
         (C.DefineExt globalName $ C.Parens $
-          C.Unary C.DerefOp $ C.Var $ CN.globalInitPtr home' name')
+          C.Unary C.DerefOp $ C.Var initPtrName)
         state
   in
   case expr of
