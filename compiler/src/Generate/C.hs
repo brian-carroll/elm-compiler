@@ -242,6 +242,7 @@ generateStructDef structName varName fixedMembers flexibleMembers =
       (\(memberBuilder, memberExpr) ->
         ([C.MemberDesig memberBuilder], C.InitExpr $ memberExpr))
       fixedMembers
+
     flexible = maybe []
       (\(memberBuilder, memberExprs) ->
         [( [C.MemberDesig memberBuilder]

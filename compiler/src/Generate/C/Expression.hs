@@ -101,6 +101,16 @@ leafExpr state expr =
   state { _expr = expr }
 
 
+todo :: ExprState -> B.Builder -> ExprState
+todo state comment =
+  leafExpr state $ C.CommentExpr comment
+
+
+leafExprAddr :: ExprState -> CN.Name -> ExprState
+leafExprAddr state name =
+  state { _expr = C.Unary C.AddrOp $ C.Var name }
+
+
 addSharedExpr :: ExprState -> SharedDef -> CN.Name -> ExprState
 addSharedExpr state shared name =
   state
@@ -111,13 +121,9 @@ addSharedExpr state shared name =
 
 generate :: ExprState -> Opt.Expr -> ExprState
 generate state expr =
-  let
-    todo = (leafExpr state) . C.CommentExpr
-  in
   case expr of
     Opt.Bool bool ->
-      leafExpr state $
-        C.Unary C.AddrOp $ C.Var $ if bool then CN.true else CN.false
+      leafExprAddr state $ if bool then CN.true else CN.false
 
     Opt.Chr char ->
       addSharedExpr state (SharedChr char) (CN.literalChr char)
@@ -132,81 +138,102 @@ generate state expr =
       addSharedExpr state (SharedFloat float) (CN.literalFloat float)
 
     Opt.VarLocal name ->
-      todo "VarLocal"
-      -- Var $ Ident $ CN.toBuilder $ CN.local name
+      leafExpr state $ C.Var $ CN.local name
 
     Opt.VarGlobal (Opt.Global home name) ->
-      todo "VarGlobal"
-      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+      leafExprAddr state $ CN.global home name
 
     Opt.VarEnum (Opt.Global home name) _ ->
-      todo "VarEnum"
-      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+      leafExprAddr state $ CN.global home name
 
     Opt.VarBox (Opt.Global home name) ->
-      todo "VarBox"
-      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+      leafExprAddr state $ CN.global home name
 
     Opt.VarCycle home name ->
-      todo "VarCycle"
-      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+      leafExprAddr state $ CN.cycleVar home name
 
     Opt.VarDebug name home _ _ ->
-      todo "VarDebug"
-      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromGlobal home name
+      leafExprAddr state $ CN.global home name
 
     Opt.VarKernel home name ->
-      todo "VarKernel"
-      -- Unary AddrOp $ Var $ Ident $ CN.toBuilder $ CN.fromKernel home name
+      leafExprAddr state $ CN.kernelValue home name
 
     Opt.List entries ->
-      todo "List"
+      todo state "List"
 
     Opt.Function args body ->
-      todo "Function"
+      todo state "Function"
 
     Opt.Call func args ->
-      todo "Call"
+      todo state "Call"
       -- leafExpr state $ Call
         -- (Var $ Ident ("A" <> B.intDec (length args)))
         -- (generate func : map generate args)
 
     Opt.TailCall name args ->
-      todo "TailCall"
+      todo state "TailCall"
 
     Opt.If branches final ->
-      todo "If"
+      todo state "If"
 
     Opt.Let def body ->
-      todo "Let"
+      generate 
+        (generateDef state def)
+        body
 
     Opt.Destruct (Opt.Destructor name path) body ->
-      todo "Destruct"
+      todo state "Destruct"
 
     Opt.Case label root decider jumps ->
-      todo "Case"
+      todo state "Case"
 
     Opt.Accessor field ->
-      todo "Accessor"
+      todo state "Accessor"
 
     Opt.Access record field ->
-      todo "Access"
+      todo state "Access"
 
     Opt.Update record fields ->
-      todo "Update"
+      todo state "Update"
 
     Opt.Record fields ->
-      todo "Record"
+      todo state "Record"
 
     Opt.Unit ->
-      todo "Unit"
+      todo state "Unit"
 
     Opt.Tuple a b maybeC ->
-      todo "Tuple"
+      todo state "Tuple"
 
     Opt.Shader src attributes uniforms ->
-      todo "Shader"
-  
+      todo state "Shader"
+
+
+generateDef :: ExprState -> Opt.Def -> ExprState
+generateDef state def =
+  case def of
+    Opt.Def name body ->
+      let
+        bodyState =
+          generate state body
+        bodyExpr =
+          _expr bodyState
+        decl =
+          C.BlockDecl $ C.Decl
+            [C.TypeSpec C.Void]
+            (Just $ C.Declr
+              (Just $ CN.local name)
+              [C.PtrDeclr []])
+            (Just $ C.InitExpr bodyExpr)
+      in
+      bodyState
+        { _revBlockItems = decl : _revBlockItems bodyState
+        }
+
+    Opt.TailDef name argNames body ->
+      todo state "TailDef"
+
+
 {-
 
   Very similar to the JS setup, only Record is different
