@@ -223,7 +223,7 @@ utilsAccessEval =
 
 utilsListFromArray :: Name
 utilsListFromArray =
-  kernelValue Name.utils (Name.fromChars "fromArray")
+  kernelValue Name.list (Name.fromChars "fromArray")
 
 
 appFieldGroups :: Name
