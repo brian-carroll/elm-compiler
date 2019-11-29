@@ -328,7 +328,7 @@ fromExtDecl :: ExternalDeclaration -> B.Builder
 fromExtDecl extDecl =
   case extDecl of
     DeclExt decl ->
-      (fromDeclaration decl) <> ";\n\n"
+      (fromDeclaration decl) <> ";\n"
 
     FDefExt (FunDef declSpecs declarator blockItems) ->
       mconcat $
@@ -337,15 +337,17 @@ fromExtDecl extDecl =
            , fromDeclarator declarator
            , " "
            , fromStatement "" (Compound blockItems)
-           , "\n\n"
+           , "\n"
            ]
 
     DefineExt name expr ->
-      "#define " <> CN.toBuilder name <> " " <> fromExpr expr <> "\n\n"
+      "#define " <> CN.toBuilder name <> " " <> fromExpr expr <> "\n"
 
     IncludeExt headerFile ->
-      "#include \"" <> fromHeaderFile headerFile <> "\"\n\n"
+      "#include \"" <> fromHeaderFile headerFile <> "\"\n"
 
     CommentExt comment ->
-      "// " <> comment <> "\n\n"
+      "// " <> comment <> "\n"
 
+    BlankLineExt ->
+      "\n"

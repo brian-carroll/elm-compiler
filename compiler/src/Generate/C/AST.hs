@@ -198,3 +198,4 @@ data ExternalDeclaration
   | DefineExt Name Expression
   | IncludeExt HeaderFile
   | CommentExt B.Builder
+  | BlankLineExt

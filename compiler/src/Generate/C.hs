@@ -115,7 +115,7 @@ stateToBuilder state =
   prependExtDecls sharedDefDecls $
   prependExtDecls [generateFieldGroupArray (_fieldGroups state)] $
   prependExtDecls (_revExtDecls state) $
-  prependExtDecls [generateCMain (_revInitGlobals state)] $
+  prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt] $
     ""
 
 
@@ -272,9 +272,9 @@ generateFieldGroupArray fieldGroups =
 
 
 
--- {-
---                 ELM 'MAIN' VALUES
--- -}
+{-
+                ELM 'MAIN' VALUES
+-}
 
 addMain :: Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
 addMain graph home _ state =
@@ -290,7 +290,10 @@ addGlobal graph state global =
     state
   else
     addGlobalHelp graph global $
-      state { _seenGlobals = Set.insert global seen }
+      state
+        { _seenGlobals = Set.insert global seen
+        , _revExtDecls = C.BlankLineExt : _revExtDecls state
+        }
 
 
 addGlobalHelp :: Graph -> Opt.Global -> State -> State
