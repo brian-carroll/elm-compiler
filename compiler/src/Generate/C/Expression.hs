@@ -27,8 +27,8 @@ import qualified Data.ByteString.Builder as B
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.List as List
--- import Data.Map ((!))
--- import qualified Data.Map as Map
+import Data.Map ((!), Map)
+import qualified Data.Map as Map
 import qualified Data.Name as N
 -- import qualified Data.Utf8 as Utf8
 
@@ -194,7 +194,7 @@ generate state expr =
       todo state "Update"
 
     Opt.Record fields ->
-      todo state "Record"
+      generateRecord state fields
 
     Opt.Unit ->
       leafExprAddr state CN.unit
@@ -218,6 +218,32 @@ generateChildren state elmChildren =
       ))
     (state, [], 0)
     elmChildren
+
+
+generateRecord :: ExprState -> Map N.Name Opt.Expr -> ExprState
+generateRecord state fields =
+  let
+    children = Map.elems fields
+
+    fieldNames = Map.keys fields
+
+    fieldGroupName = CN.fieldGroup fieldNames
+
+    (childrenState, childExprs, nChildren) =
+      generateChildren state children
+  in
+  childrenState
+    { _sharedDefs =
+        Set.insert (SharedFieldGroup fieldNames)
+          (_sharedDefs childrenState)
+    , _expr =
+        C.Call (C.Var $ CN.fromBuilder "ctorRecord")
+          [ C.Unary C.AddrOp $ C.Var fieldGroupName
+          , C.Const $ C.IntConst nChildren
+          , C.CompoundLit $
+              map (\child -> ([], C.InitExpr child)) childExprs
+          ]
+    }
 
 
 generateTuple :: ExprState -> Opt.Expr -> Opt.Expr -> Maybe Opt.Expr -> ExprState
