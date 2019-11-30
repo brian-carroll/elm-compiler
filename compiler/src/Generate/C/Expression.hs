@@ -200,7 +200,7 @@ generate state expr =
       leafExprAddr state CN.unit
 
     Opt.Tuple a b maybeC ->
-      todo state "Tuple"
+      generateTuple state a b maybeC
 
     Opt.Shader src attributes uniforms ->
       todo state "Shader"
@@ -218,6 +218,21 @@ generateChildren state elmChildren =
       ))
     (state, [], 0)
     elmChildren
+
+
+generateTuple :: ExprState -> Opt.Expr -> Opt.Expr -> Maybe Opt.Expr -> ExprState
+generateTuple state a b maybeC =
+  let
+    (ctorName, children) =
+      case maybeC of
+        Nothing -> ( "ctorTuple2", [a,b] )
+        Just c -> ( "ctorTuple3", [a,b,c] )
+
+    (childrenState, childExprs, nChildren) =
+      generateChildren state children
+  in
+  leafExpr childrenState $
+    C.Call (C.Var $ CN.fromBuilder ctorName) childExprs
 
 
 generateIf :: ExprState -> [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> ExprState
