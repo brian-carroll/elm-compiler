@@ -54,7 +54,8 @@ fromExpr expression =
       <> " ? " <> (fromExpr expr1)
       <> " : " <> (fromExpr expr0)
 
-    Binary op lhs rhs -> "/*Binary*/"
+    Binary op lhs rhs ->
+      fromBinop op lhs rhs
 
     Cast typeNameDecl expr ->
       "(" <> fromDeclaration typeNameDecl <> ")" <> fromExpr expr
@@ -110,6 +111,32 @@ fromExpr expression =
 
     CommentExpr builder -> "/* " <> builder <> " */" 
 
+
+fromBinop :: BinaryOp -> Expression -> Expression -> B.Builder
+fromBinop op lhs rhs =
+  let
+    bl = fromExpr lhs
+    br = fromExpr rhs
+  in
+  case op of
+    MulOp  -> bl <> " * " <> br
+    DivOp  -> bl <> " / " <> br
+    RmdOp  -> bl <> " % " <> br
+    AddOp  -> bl <> " + " <> br
+    SubOp  -> bl <> " - " <> br
+    ShlOp  -> bl <> " << " <> br
+    ShrOp  -> bl <> " >> " <> br
+    LtOp   -> bl <> " < " <> br
+    GtOp   -> bl <> " > " <> br
+    LeOp   -> bl <> " <= " <> br
+    GeOp   -> bl <> " >= " <> br
+    EqOp   -> bl <> " == " <> br
+    NeqOp  -> bl <> " != " <> br
+    AndOp  -> bl <> " && " <> br
+    XorOp  -> bl <> " ^ " <> br
+    OrOp   -> bl <> " || " <> br
+    LandOp -> bl <> " & " <> br
+    LorOp  -> bl <> " | " <> br
 
 -- STATEMENT
 

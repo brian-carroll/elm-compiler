@@ -171,7 +171,7 @@ generate state expr =
       todo state "TailCall"
 
     Opt.If branches final ->
-      todo state "If"
+      generateIf state branches final
 
     Opt.Let def body ->
       generate 
@@ -197,7 +197,7 @@ generate state expr =
       todo state "Record"
 
     Opt.Unit ->
-      todo state "Unit"
+      leafExprAddr state CN.unit
 
     Opt.Tuple a b maybeC ->
       todo state "Tuple"
@@ -218,6 +218,23 @@ generateChildren state elmChildren =
       ))
     (state, [], 0)
     elmChildren
+
+
+generateIf :: ExprState -> [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> ExprState
+generateIf state branches final =
+  foldr generateIfBranch (generate state final) branches
+
+
+generateIfBranch :: (Opt.Expr, Opt.Expr) -> ExprState -> ExprState
+generateIfBranch (condElm, thenElm) elseState =
+  let
+    condState = generate elseState condElm
+    thenState = generate condState thenElm
+    condC = C.Binary C.EqOp (_expr condState)
+      (C.Unary C.AddrOp $ C.Var CN.true)
+  in
+  thenState
+    { _expr = C.Cond condC (_expr thenState) (_expr elseState) }
 
 
 generateList :: ExprState -> [Opt.Expr] -> ExprState
