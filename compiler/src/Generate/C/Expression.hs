@@ -4,7 +4,6 @@ module Generate.C.Expression
  , SharedDef(..)
  , HeaderMacro(..)
  , generateHeader
- , castAsVoidPtr
  , ExprState(..)
  , initState
 
@@ -222,12 +221,6 @@ generateChildren state elmChildren =
     elmChildren
 
 
-generateArrayLiteral :: [C.Expression] -> C.Expression
-generateArrayLiteral elements =
-  C.CompoundLit $
-  map (\elem -> ([], C.InitExpr elem)) elements
-
-
 generateRecord :: ExprState -> Map N.Name Opt.Expr -> ExprState
 generateRecord state fields =
   let
@@ -248,7 +241,7 @@ generateRecord state fields =
         C.Call (C.Var $ CN.fromBuilder "ctorRecord")
           [ C.Unary C.AddrOp $ C.Var fieldGroupName
           , C.Const $ C.IntConst nChildren
-          , generateArrayLiteral childExprs
+          , C.arrayLiteral childExprs
           ]
     }
 
@@ -311,8 +304,8 @@ generatePath path =
 
     Opt.Field field subPath ->
       C.Call (C.Var CN.utilsAccessEval)
-        [ generateArrayLiteral
-          [ castAsVoidPtr $ CN.fieldId field
+        [ C.arrayLiteral
+          [ C.nameAsVoidPtr $ CN.fieldId field
           , generatePath subPath
           ]
         ]
@@ -321,7 +314,7 @@ generatePath path =
       -- ((Custom*)subPath)->values[0]
       C.Index
         (C.MemberArrow
-          (C.Parens $ castAsPtrTo (C.TypeDef CN.Custom) (generatePath subPath))
+          (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) (generatePath subPath))
           (CN.fromBuilder "values"))
         (C.Const $ C.IntConst 0)
 
@@ -338,7 +331,7 @@ generateList state entries =
     leafExpr newState $
       C.Call (C.Var CN.utilsListFromArray)
         [ C.Const $ C.IntConst nEntries
-        , generateArrayLiteral cEntries
+        , C.arrayLiteral cEntries
         ]
 
 
@@ -518,19 +511,6 @@ generateParamRename argsArray name index =
   in
     Decl [TypeSpec Void] (Just declarator) (Just $ InitExpr init)
 -}
-
-
-castAsPtrTo :: C.TypeSpecifier -> C.Expression -> C.Expression
-castAsPtrTo typespec expr =
-  C.Cast
-    (C.Decl [C.TypeSpec typespec]
-      (Just $ C.Declr Nothing [C.PtrDeclr []]) Nothing)
-    expr
-
-
-castAsVoidPtr :: CN.Name -> C.Expression
-castAsVoidPtr name =
-  castAsPtrTo C.Void (C.Var name)
 
 
 data HeaderMacro

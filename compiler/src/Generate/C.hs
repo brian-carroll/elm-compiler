@@ -208,7 +208,7 @@ generateSharedDef def =
     CE.SharedAccessor name ->
       generateClosure (CN.accessor name)
         (C.Unary C.AddrOp $ C.Var CN.utilsAccessEval)
-        2 [CE.castAsVoidPtr $ CN.fieldId name]
+        2 [C.nameAsVoidPtr $ CN.fieldId name]
 
     CE.SharedFieldGroup names ->
       generateStructDef CN.FieldGroup (CN.fieldGroup names)
@@ -217,7 +217,7 @@ generateSharedDef def =
 
     CE.SharedJsThunk home name ->
       generateClosure (CN.kernelValue home name)
-        (CE.castAsVoidPtr $ CN.jsKernelEval home name)
+        (C.nameAsVoidPtr $ CN.jsKernelEval home name)
         0xffff  -- ridiculously high arity (never evaluate in C)
         []      -- no applied args
 

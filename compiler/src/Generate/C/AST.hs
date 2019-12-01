@@ -199,3 +199,24 @@ data ExternalDeclaration
   | IncludeExt HeaderFile
   | CommentExt B.Builder
   | BlankLineExt
+
+
+-- HELPER FUNCTIONS
+  
+arrayLiteral :: [Expression] -> Expression
+arrayLiteral elements =
+  CompoundLit $
+    map (\elem -> ([], InitExpr elem)) elements
+
+
+castAsPtrTo :: TypeSpecifier -> Expression -> Expression
+castAsPtrTo typespec expr =
+  Cast
+    (Decl [TypeSpec typespec]
+      (Just $ Declr Nothing [PtrDeclr []]) Nothing)
+    expr
+
+
+nameAsVoidPtr :: Name -> Expression
+nameAsVoidPtr name =
+  castAsPtrTo Void (Var name)
