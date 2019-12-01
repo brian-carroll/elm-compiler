@@ -43,7 +43,7 @@ import qualified Elm.Float as EF
 import qualified Elm.String as ES
 
 -- import qualified AST.Utils.Shader as Shader
--- import qualified Data.Index as Index
+import qualified Data.Index as Index
 -- import qualified Elm.Compiler.Type as Type
 -- import qualified Elm.Compiler.Type.Extract as Extract
 -- import qualified Elm.Version as V
@@ -179,7 +179,9 @@ generate state expr =
         body
 
     Opt.Destruct (Opt.Destructor name path) body ->
-      todo state "Destruct"
+      generate
+        (generateDestruct state name path)
+        body
 
     Opt.Case label root decider jumps ->
       todo state "Case"
@@ -220,6 +222,12 @@ generateChildren state elmChildren =
     elmChildren
 
 
+generateArrayLiteral :: [C.Expression] -> C.Expression
+generateArrayLiteral elements =
+  C.CompoundLit $
+  map (\elem -> ([], C.InitExpr elem)) elements
+
+
 generateRecord :: ExprState -> Map N.Name Opt.Expr -> ExprState
 generateRecord state fields =
   let
@@ -240,8 +248,7 @@ generateRecord state fields =
         C.Call (C.Var $ CN.fromBuilder "ctorRecord")
           [ C.Unary C.AddrOp $ C.Var fieldGroupName
           , C.Const $ C.IntConst nChildren
-          , C.CompoundLit $
-              map (\child -> ([], C.InitExpr child)) childExprs
+          , generateArrayLiteral childExprs
           ]
     }
 
@@ -278,6 +285,47 @@ generateIfBranch (condElm, thenElm) elseState =
     { _expr = C.Cond condC (_expr thenState) (_expr elseState) }
 
 
+generateDestruct :: ExprState -> N.Name -> Opt.Path -> ExprState
+generateDestruct state name path =
+  let
+    decl =
+      C.BlockDecl $ C.Decl
+        [C.TypeSpec C.Void]
+        (Just $ C.Declr (Just $ CN.local name) [C.PtrDeclr []])
+        (Just $ C.InitExpr $ generatePath path)
+  in
+  state { _revBlockItems = decl : _revBlockItems state }
+
+
+generatePath :: Opt.Path -> C.Expression
+generatePath path =
+  case path of
+    Opt.Index index subPath ->
+      C.Call (C.Var CN.utilsDestructIndex)
+        [ generatePath subPath
+        , C.Const $ C.IntConst $ Index.toMachine index
+        ]
+
+    Opt.Root name ->
+      C.Var $ CN.local name 
+
+    Opt.Field field subPath ->
+      C.Call (C.Var CN.utilsAccessEval)
+        [ generateArrayLiteral
+          [ castAsVoidPtr $ CN.fieldId field
+          , generatePath subPath
+          ]
+        ]
+
+    Opt.Unbox subPath ->
+      -- ((Custom*)subPath)->values[0]
+      C.Index
+        (C.MemberArrow
+          (C.Parens $ castAsPtrTo (C.TypeDef CN.Custom) (generatePath subPath))
+          (CN.fromBuilder "values"))
+        (C.Const $ C.IntConst 0)
+
+
 generateList :: ExprState -> [Opt.Expr] -> ExprState
 generateList state entries =
   if List.null entries then
@@ -286,13 +334,12 @@ generateList state entries =
     let
       (newState, cEntries, nEntries) =
         generateChildren state entries
-      entriesArray =
-        C.CompoundLit $
-        map (\cEntry -> ([], C.InitExpr cEntry)) cEntries
     in
     leafExpr newState $
       C.Call (C.Var CN.utilsListFromArray)
-        [C.Const $ C.IntConst nEntries, entriesArray]
+        [ C.Const $ C.IntConst nEntries
+        , generateArrayLiteral cEntries
+        ]
 
 
 generateCall :: ExprState -> Opt.Expr -> [Opt.Expr] -> ExprState
@@ -473,12 +520,17 @@ generateParamRename argsArray name index =
 -}
 
 
+castAsPtrTo :: C.TypeSpecifier -> C.Expression -> C.Expression
+castAsPtrTo typespec expr =
+  C.Cast
+    (C.Decl [C.TypeSpec typespec]
+      (Just $ C.Declr Nothing [C.PtrDeclr []]) Nothing)
+    expr
+
+
 castAsVoidPtr :: CN.Name -> C.Expression
 castAsVoidPtr name =
-  C.Cast
-    (C.Decl [C.TypeSpec C.Void]
-      (Just $ C.Declr Nothing [C.PtrDeclr []]) Nothing)
-    (C.Var name)
+  castAsPtrTo C.Void (C.Var name)
 
 
 data HeaderMacro

@@ -36,18 +36,16 @@ delayedSetCounter next =
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg _ =
-    case msg of
-        SetCounter newModel ->
-            let
-                cmd =
-                    if newModel == 0 then
-                        Cmd.none
+update (SetCounter newModel) _ =
+    let
+        cmd =
+            if newModel == 0 then
+                Cmd.none
 
-                    else
-                        delayedSetCounter (newModel - 1)
-            in
-            ( newModel, cmd )
+            else
+                delayedSetCounter (newModel - 1)
+    in
+    ( newModel, cmd )
 
 
 view : Model -> Html Msg

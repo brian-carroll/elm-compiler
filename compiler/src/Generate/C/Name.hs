@@ -26,6 +26,7 @@ module Generate.C.Name
   , false
   , utilsInitGlobal
   , utilsAccessEval
+  , utilsDestructIndex
   , appFieldGroups
   , nullPtr
   , wrapperRegisterFieldGroups
@@ -224,6 +225,11 @@ utilsAccessEval =
 utilsListFromArray :: Name
 utilsListFromArray =
   kernelValue Name.list (Name.fromChars "fromArray")
+
+
+utilsDestructIndex :: Name
+utilsDestructIndex =
+  kernelValue Name.utils (Name.fromChars "destruct_index")
 
 
 appFieldGroups :: Name

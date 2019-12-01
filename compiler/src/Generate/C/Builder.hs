@@ -89,9 +89,15 @@ fromExpr expression =
       <> joinMap ", " fromExpr argExprs
       <> ")"
 
-    MemberDot structure member -> "/*MemberDot*/"
+    MemberDot structure member ->
+      (fromExpr structure)
+      <> "."
+      <> (CN.toBuilder member)
 
-    MemberArrow structure member -> "/*MemberArrow*/"
+    MemberArrow structure member ->
+      (fromExpr structure)
+      <> "->"
+      <> (CN.toBuilder member)
 
     Var name -> CN.toBuilder name
 
