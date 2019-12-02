@@ -86,7 +86,8 @@ data ExprState =
     }
 
 
-initState :: Opt.Global -> [C.CompoundBlockItem] -> [C.ExternalDeclaration] -> Set SharedDef -> ExprState
+initState :: Opt.Global -> [C.CompoundBlockItem] -> [C.ExternalDeclaration]
+  -> Set SharedDef -> ExprState
 initState global initBlockItems revExtDecls sharedDefs =
   ExprState
     { _revBlockItems = initBlockItems
@@ -239,7 +240,7 @@ generateRecord fields =
     addShared (SharedFieldGroup fieldNames)
     (childExprs, nChildren) <- generateChildren children
     return $
-      C.Call (C.Var $ CN.fromBuilder "ctorRecord")
+      C.Call (C.Var $ CN.fromBuilder "NEW_RECORD")
         [ C.Unary C.AddrOp $ C.Var fieldGroupName
         , C.Const $ C.IntConst nChildren
         , C.arrayLiteral childExprs
@@ -251,8 +252,8 @@ generateTuple a b maybeC =
   let
     (ctorName, children) =
       case maybeC of
-        Nothing -> ( "ctorTuple2", [a,b] )
-        Just c -> ( "ctorTuple3", [a,b,c] )
+        Nothing -> ( "NEW_TUPLE2", [a,b] )
+        Just c -> ( "NEW_TUPLE3", [a,b,c] )
   in
   do
     (childExprs, nChildren) <- generateChildren children
