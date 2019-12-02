@@ -103,8 +103,9 @@ fromExpr expression =
 
     Const constant ->
       case constant of
-        IntConst int -> "0x" <> (B.wordHex $ fromIntegral int)
-        CharConst int -> "0x" <> (B.wordHex $ fromIntegral int)
+        IntConst int -> B.intDec int
+        IntHexConst int -> "0x" <> (B.wordHex $ fromIntegral int)
+        CharConst chr -> "'" <> (B.char7 chr) <> "'"
         FloatConst float -> EF.toBuilder float
         StrConst builder -> "\"" <> builder <> "\""
 

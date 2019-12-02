@@ -233,7 +233,7 @@ generateSharedDef def =
 
 generateUtf16 :: ES.String -> [C.Expression]
 generateUtf16 str =
-  map (C.Const . C.IntConst) $ concatMap encodeUtf16 (ES.toChars str)
+  map (C.Const . C.IntHexConst) $ concatMap encodeUtf16 (ES.toChars str)
 
 
 encodeUtf16 :: Char -> [Int]
@@ -256,8 +256,8 @@ generateClosure name evalFnPtr maxValues values =
   in
   generateStructDef CN.Closure name
     [ ("header", CE.generateHeader $ CE.HEADER_CLOSURE nValues)
-    , ("n_values", C.Const $ C.IntConst nValues)
-    , ("max_values", C.Const $ C.IntConst maxValues)
+    , ("n_values", C.Const $ C.IntHexConst nValues)
+    , ("max_values", C.Const $ C.IntHexConst maxValues)
     , ("evaluator", evalFnPtr)
     ]
     (if nValues > 0 then Just ("values", values) else Nothing)
