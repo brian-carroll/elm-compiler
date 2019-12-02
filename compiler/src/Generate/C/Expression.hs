@@ -20,7 +20,7 @@ module Generate.C.Expression
 )
 where
 
-import Control.Monad.State (State)
+import Control.Monad.State (State, get, put, gets, modify)
 import qualified Control.Monad.State as State
 
 
@@ -168,7 +168,7 @@ generate expr =
       generateList entries
 
     Opt.Function args body ->
-      todo "Function"
+      generateFunction args body
 
     Opt.Call func args ->
       generateCall func args
@@ -227,6 +227,83 @@ generateChildrenHelp elmChildExpr acc =
     (children, nChildren) <- acc
     child <- generate elmChildExpr
     return (child : children, nChildren + 1)
+
+
+generateFunction :: [N.Name] -> Opt.Expr -> State ExprState C.Expression
+generateFunction params body =
+  do
+    (fname, nValues, maxValues) <- generateEvalFn params body
+    return $
+      C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
+        [ C.Const $ C.IntConst nValues
+        , C.Const $ C.IntConst maxValues
+        , C.Unary C.AddrOp $ C.Var fname
+        , C.arrayLiteral []
+        ]
+
+
+generateEvalFn :: [N.Name] -> Opt.Expr -> State ExprState (CN.Name, Int, Int)
+generateEvalFn params body =
+  do
+    origState <- get
+    put $ origState { _revBlockItems = generateDestructParams params }
+    returnExpr <- generate body
+    fnState <- get
+    let (fname, evalFn) = generateEvalFnDecl returnExpr fnState
+    put $
+      fnState
+        { _revExtDecls = evalFn : (_revExtDecls fnState)
+        , _tmpVarIndex = 1 + (_tmpVarIndex fnState)
+        , _revBlockItems = _revBlockItems origState
+        }
+    let maxValues = (Set.size (_scope fnState)) + (length params)
+    let nValues = 0
+    return (fname, nValues, maxValues)
+
+
+generateEvalFnDecl :: C.Expression -> ExprState -> (CN.Name, C.ExternalDeclaration)
+generateEvalFnDecl returnExpr fnState =
+  let
+    returnStmt = C.BlockStmt $ C.Return $ Just returnExpr
+    (Opt.Global gHome gName) = _parentGlobal fnState
+    fname = CN.localEvaluator gHome gName (_tmpVarIndex fnState)
+  in
+  ( fname
+  , C.FDefExt $ C.FunDef
+      [C.TypeSpec C.Void]
+      (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr [argsArray]])
+      (returnStmt : (_revBlockItems fnState))
+  )
+
+
+argsArray :: C.Declaration
+argsArray =
+  C.Decl
+    [C.TypeSpec C.Void]
+    (Just $ C.Declr
+      (Just CN.args)
+      [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
+    Nothing
+
+
+generateDestructParams :: [N.Name] -> [C.CompoundBlockItem]
+generateDestructParams params =
+  let
+    (_, revParamDecls) =
+      List.foldl'
+        (\(index, decls) param ->
+          ( index + 1
+          , (C.BlockDecl $ C.Decl
+              [C.TypeSpec C.Void]
+              (Just $ C.Declr (Just $ CN.local param) [C.PtrDeclr []])
+              (Just $ C.InitExpr $
+                C.Index (C.Var CN.args) (C.Const $ C.IntConst index))
+            ) : decls
+          ))
+        (0, [])
+        params
+  in
+  revParamDecls
 
 
 generateRecord :: Map N.Name Opt.Expr -> State ExprState C.Expression

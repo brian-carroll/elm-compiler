@@ -533,7 +533,7 @@ generateEvalFn global@(Opt.Global home name) params expr state =
   let
     (bodyState, revBody) = 
       generateFuncBody global params expr state
-    
+
     argsArray :: C.Declaration
     argsArray =
       C.Decl
@@ -548,7 +548,7 @@ generateEvalFn global@(Opt.Global home name) params expr state =
       [C.TypeSpec C.Void]
       (C.Declr (Just $ CN.globalEvaluator home name)
           [C.PtrDeclr [], C.FunDeclr [argsArray]])
-        revBody
+      revBody
   in
   addExtDecl evalFn bodyState
 
