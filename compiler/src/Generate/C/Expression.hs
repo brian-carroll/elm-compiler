@@ -20,6 +20,9 @@ module Generate.C.Expression
 )
 where
 
+import Control.Monad.State (State)
+import qualified Control.Monad.State as State
+
 
 import qualified Data.ByteString.Builder as B
   -- import qualified Data.IntMap as IntMap
@@ -74,8 +77,7 @@ data SharedDef
 
 data ExprState =
   ExprState
-    { _expr :: C.Expression
-    , _revBlockItems :: [C.CompoundBlockItem]
+    { _revBlockItems :: [C.CompoundBlockItem]
     , _revExtDecls :: [C.ExternalDeclaration]
     , _sharedDefs :: Set SharedDef
     , _scope :: Set N.Name
@@ -87,8 +89,7 @@ data ExprState =
 initState :: Opt.Global -> [C.CompoundBlockItem] -> [C.ExternalDeclaration] -> Set SharedDef -> ExprState
 initState global initBlockItems revExtDecls sharedDefs =
   ExprState
-    { _expr = C.CommentExpr "empty expr"
-    , _revBlockItems = initBlockItems
+    { _revBlockItems = initBlockItems
     , _revExtDecls = revExtDecls
     , _sharedDefs = sharedDefs
     , _scope = Set.empty
@@ -97,199 +98,191 @@ initState global initBlockItems revExtDecls sharedDefs =
     }
 
 
-leafExpr :: ExprState -> C.Expression -> ExprState
-leafExpr state expr =
-  state { _expr = expr }
+todo :: B.Builder -> State ExprState C.Expression
+todo comment =
+  return $ C.CommentExpr comment
 
 
-todo :: ExprState -> B.Builder -> ExprState
-todo state comment =
-  leafExpr state $ C.CommentExpr comment
+addShared :: SharedDef -> State ExprState ()
+addShared shared =
+  State.modify (\state ->
+    state { _sharedDefs = Set.insert shared (_sharedDefs state) }
+  )
 
 
-leafExprAddr :: ExprState -> CN.Name -> ExprState
-leafExprAddr state name =
-  state { _expr = C.Unary C.AddrOp $ C.Var name }
+addSharedExpr :: SharedDef -> CN.Name -> State ExprState C.Expression
+addSharedExpr shared name =
+  do
+    addShared shared
+    return $ C.addrOf name
+    
+
+addBlockItem :: C.CompoundBlockItem -> State ExprState ()
+addBlockItem blockItem =
+  State.modify (\state ->
+    state { _revBlockItems = blockItem : (_revBlockItems state) }
+  )
 
 
-addSharedExpr :: ExprState -> SharedDef -> CN.Name -> ExprState
-addSharedExpr state shared name =
-  state
-    { _expr = C.Unary C.AddrOp $ C.Var name
-    , _sharedDefs = Set.insert shared (_sharedDefs state)
-    }
-
-
-generate :: ExprState -> Opt.Expr -> ExprState
-generate state expr =
+generate :: Opt.Expr -> State ExprState C.Expression
+generate expr =
   case expr of
     Opt.Bool bool ->
-      leafExprAddr state $ if bool then CN.true else CN.false
+      return $ C.addrOf $ if bool then CN.true else CN.false
 
     Opt.Chr char ->
-      addSharedExpr state (SharedChr char) (CN.literalChr char)
+      addSharedExpr (SharedChr char) (CN.literalChr char)
 
     Opt.Str string ->
-      addSharedExpr state (SharedStr string) (CN.literalStr string)
+      addSharedExpr (SharedStr string) (CN.literalStr string)
 
     Opt.Int int ->
-      addSharedExpr state (SharedInt int) (CN.literalInt int)
+      addSharedExpr (SharedInt int) (CN.literalInt int)
 
     Opt.Float float ->
-      addSharedExpr state (SharedFloat float) (CN.literalFloat float)
+      addSharedExpr (SharedFloat float) (CN.literalFloat float)
 
     Opt.VarLocal name ->
-      leafExpr state $ C.Var $ CN.local name
+      return $ C.Var $ CN.local name
 
     Opt.VarGlobal (Opt.Global home name) ->
-      leafExprAddr state $ CN.global home name
+      return $ C.addrOf $ CN.global home name
 
     Opt.VarEnum (Opt.Global home name) _ ->
-      leafExprAddr state $ CN.global home name
+      return $ C.addrOf $ CN.global home name
 
     Opt.VarBox (Opt.Global home name) ->
-      leafExprAddr state $ CN.global home name
+      return $ C.addrOf $ CN.global home name
 
     Opt.VarCycle home name ->
-      leafExprAddr state $ CN.cycleVar home name
+      return $ C.addrOf $ CN.cycleVar home name
 
     Opt.VarDebug name home _ _ ->
-      leafExprAddr state $ CN.global home name
+      return $ C.addrOf $ CN.global home name
 
     Opt.VarKernel home name ->
-      leafExprAddr state $ CN.kernelValue home name
+      return $ C.addrOf $ CN.kernelValue home name
 
     Opt.List entries ->
-      generateList state entries
+      generateList entries
 
     Opt.Function args body ->
-      todo state "Function"
+      todo "Function"
 
     Opt.Call func args ->
-      generateCall state func args
+      generateCall func args
 
     Opt.TailCall name args ->
-      todo state "TailCall"
+      todo "TailCall"
 
     Opt.If branches final ->
-      generateIf state branches final
+      generateIf branches final
 
     Opt.Let def body ->
-      generate 
-        (generateDef state def)
-        body
+      do
+        generateDef def
+        generate body
 
     Opt.Destruct (Opt.Destructor name path) body ->
-      generate
-        (generateDestruct state name path)
-        body
+      do
+        generateDestruct name path
+        generate body
 
     Opt.Case label root decider jumps ->
-      todo state "Case"
+      todo "Case"
 
     Opt.Accessor field ->
-      todo state "Accessor"
+      todo "Accessor"
 
     Opt.Access record field ->
-      todo state "Access"
+      todo "Access"
 
     Opt.Update record fields ->
-      todo state "Update"
+      todo "Update"
 
     Opt.Record fields ->
-      generateRecord state fields
+      generateRecord fields
 
     Opt.Unit ->
-      leafExprAddr state CN.unit
+      return $ C.addrOf CN.unit
 
     Opt.Tuple a b maybeC ->
-      generateTuple state a b maybeC
+      generateTuple a b maybeC
 
     Opt.Shader src attributes uniforms ->
-      todo state "Shader"
+      todo "Shader"
 
 
-generateChildren :: ExprState -> [Opt.Expr] -> (ExprState, [C.Expression], Int)
-generateChildren state elmChildren =
-  foldr
-    (\child (accState, accExprs, childCount) ->
-      let childState = generate accState child
-      in
-      ( childState
-      , _expr childState : accExprs
-      , childCount + 1
-      ))
-    (state, [], 0)
-    elmChildren
+generateChildren :: [Opt.Expr] -> State ExprState ([C.Expression], Int)
+generateChildren elmChildren =
+  foldr generateChildrenHelp (pure ([], 0)) elmChildren
 
 
-generateRecord :: ExprState -> Map N.Name Opt.Expr -> ExprState
-generateRecord state fields =
+generateChildrenHelp :: Opt.Expr
+  -> State ExprState ([C.Expression], Int)
+  -> State ExprState ([C.Expression], Int)
+generateChildrenHelp elmChildExpr acc =
+  do
+    (children, nChildren) <- acc
+    child <- generate elmChildExpr
+    return (child : children, nChildren + 1)
+
+
+generateRecord :: Map N.Name Opt.Expr -> State ExprState C.Expression
+generateRecord fields =
   let
     children = Map.elems fields
-
     fieldNames = Map.keys fields
-
     fieldGroupName = CN.fieldGroup fieldNames
-
-    (childrenState, childExprs, nChildren) =
-      generateChildren state children
   in
-  childrenState
-    { _sharedDefs =
-        Set.insert (SharedFieldGroup fieldNames)
-          (_sharedDefs childrenState)
-    , _expr =
-        C.Call (C.Var $ CN.fromBuilder "ctorRecord")
-          [ C.Unary C.AddrOp $ C.Var fieldGroupName
-          , C.Const $ C.IntConst nChildren
-          , C.arrayLiteral childExprs
-          ]
-    }
+  do
+    addShared (SharedFieldGroup fieldNames)
+    (childExprs, nChildren) <- generateChildren children
+    return $
+      C.Call (C.Var $ CN.fromBuilder "ctorRecord")
+        [ C.Unary C.AddrOp $ C.Var fieldGroupName
+        , C.Const $ C.IntConst nChildren
+        , C.arrayLiteral childExprs
+        ]
 
 
-generateTuple :: ExprState -> Opt.Expr -> Opt.Expr -> Maybe Opt.Expr -> ExprState
-generateTuple state a b maybeC =
+generateTuple :: Opt.Expr -> Opt.Expr -> Maybe Opt.Expr -> State ExprState C.Expression
+generateTuple a b maybeC =
   let
     (ctorName, children) =
       case maybeC of
         Nothing -> ( "ctorTuple2", [a,b] )
         Just c -> ( "ctorTuple3", [a,b,c] )
-
-    (childrenState, childExprs, nChildren) =
-      generateChildren state children
   in
-  leafExpr childrenState $
-    C.Call (C.Var $ CN.fromBuilder ctorName) childExprs
+  do
+    (childExprs, nChildren) <- generateChildren children
+    return $ C.Call (C.Var $ CN.fromBuilder ctorName) childExprs
 
 
-generateIf :: ExprState -> [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> ExprState
-generateIf state branches final =
-  foldr generateIfBranch (generate state final) branches
+generateIf :: [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> State ExprState C.Expression
+generateIf branches final =
+  foldr generateIfBranch (generate final) branches
 
 
-generateIfBranch :: (Opt.Expr, Opt.Expr) -> ExprState -> ExprState
+generateIfBranch :: (Opt.Expr, Opt.Expr)
+  -> State ExprState C.Expression
+  -> State ExprState C.Expression
 generateIfBranch (condElm, thenElm) elseState =
-  let
-    condState = generate elseState condElm
-    thenState = generate condState thenElm
-    condC = C.Binary C.EqOp (_expr condState)
-      (C.Unary C.AddrOp $ C.Var CN.true)
-  in
-  thenState
-    { _expr = C.Cond condC (_expr thenState) (_expr elseState) }
+  do
+    condExpr <- generate condElm
+    thenExpr <- generate thenElm
+    elseExpr <- elseState
+    let condTest = C.Binary C.EqOp condExpr (C.Unary C.AddrOp $ C.Var CN.true)
+    return $ C.Cond condTest thenExpr elseExpr
 
 
-generateDestruct :: ExprState -> N.Name -> Opt.Path -> ExprState
-generateDestruct state name path =
-  let
-    decl =
-      C.BlockDecl $ C.Decl
-        [C.TypeSpec C.Void]
-        (Just $ C.Declr (Just $ CN.local name) [C.PtrDeclr []])
-        (Just $ C.InitExpr $ generatePath path)
-  in
-  state { _revBlockItems = decl : _revBlockItems state }
+generateDestruct :: N.Name -> Opt.Path -> State ExprState ()
+generateDestruct name path =
+  addBlockItem $ C.BlockDecl $
+    C.Decl
+      [C.TypeSpec C.Void]
+      (Just $ C.Declr (Just $ CN.local name) [C.PtrDeclr []])
+      (Just $ C.InitExpr $ generatePath path)
 
 
 generatePath :: Opt.Path -> C.Expression
@@ -321,198 +314,45 @@ generatePath path =
         (C.Const $ C.IntConst 0)
 
 
-generateList :: ExprState -> [Opt.Expr] -> ExprState
-generateList state entries =
+generateList :: [Opt.Expr] -> State ExprState C.Expression
+generateList entries =
   if List.null entries then
-    leafExprAddr state $ CN.fromBuilder "Nil"
+    return $ C.addrOf $ CN.fromBuilder "Nil"
   else
-    let
-      (newState, cEntries, nEntries) =
-        generateChildren state entries
-    in
-    leafExpr newState $
-      C.Call (C.Var CN.utilsListFromArray)
-        [ C.Const $ C.IntConst nEntries
-        , C.arrayLiteral cEntries
-        ]
+    do
+      (cEntries, nEntries) <- generateChildren entries
+      return $
+        C.Call (C.Var CN.utilsListFromArray)
+          [ C.Const $ C.IntConst nEntries
+          , C.arrayLiteral cEntries
+          ]
 
 
-generateCall :: ExprState -> Opt.Expr -> [Opt.Expr] -> ExprState
-generateCall state func args =
-  let
-    (argsState, argExprs, nArgs) =
-      generateChildren state args
-
-    funcState =
-      generate argsState func
-  in
-  funcState
-    { _expr =
-        C.Call (C.Var $ CN.applyMacro nArgs)
-          (_expr funcState : argExprs)
-    }
+generateCall :: Opt.Expr -> [Opt.Expr] -> State ExprState C.Expression
+generateCall func args =
+  do
+    (argExprs, nArgs) <- generateChildren args
+    funcExpr <- generate func
+    return $ C.Call (C.Var $ CN.applyMacro nArgs)
+              (funcExpr : argExprs)
 
 
-generateDef :: ExprState -> Opt.Def -> ExprState
-generateDef state def =
+generateDef :: Opt.Def -> State ExprState ()
+generateDef def =
   case def of
     Opt.Def name body ->
-      let
-        bodyState =
-          generate state body
-        bodyExpr =
-          _expr bodyState
-        decl =
+      do
+        bodyExpr <- generate body
+        addBlockItem $
           C.BlockDecl $ C.Decl
             [C.TypeSpec C.Void]
             (Just $ C.Declr
               (Just $ CN.local name)
               [C.PtrDeclr []])
             (Just $ C.InitExpr bodyExpr)
-      in
-      bodyState
-        { _revBlockItems = decl : _revBlockItems bodyState
-        }
 
     Opt.TailDef name argNames body ->
-      todo state "TailDef"
-
-
-{-
-
-  Very similar to the JS setup, only Record is different
-
-  Bool        expr
-  Chr         expr + literal
-  Str         expr + literal
-  Int         expr + literal
-  Float       expr + literal
-  VarLocal    expr
-  VarGlobal   expr
-  VarEnum     expr
-  VarBox      expr
-  VarCycle    expr (call)
-  VarDebug    expr
-  VarKernel   expr (not only top level rename, also core .elm files)
-  List        expr
-  Function    expr (Closure ref) & statement (alloc) & decl (closure) & extdecl (eval)
-  Call        expr
-  TailCall    statements (assignments to args[i])
-  If          statement
-  Let         decls
-  Destruct    decls & exprs
-  Case        statement
-  Accessor    expr (Closure ref) & ext decl (Closure) - agh, this is another shared thing like literals
-  Access      expr (call)
-  Update      expr (call)
-  Record      decl & statements & fieldGroup
-  Unit        expr
-  Tuple       expr (call)
-  Shader
-
-
-  case expr of
-    Opt.Bool bool ->
-      Unary AddrOp $ Var $ Ident $ if bool then "True" else "False"
-
-
-generateLiteralInt :: Int -> Expression
-generateLiteralInt value =
-  CompoundLit
-    [ ( [MemberDesig $ Ident "header"] , InitExpr m_HEADER_INT )
-    , ( [MemberDesig $ Ident "value"] , InitExpr $ Const $ IntConst value )
-    ]
-
-
-generateConstInt :: CN.Name -> Int -> Declaration
-generateConstInt name value =
-  let
-    declSpecs = [TypeQual ConstQual, TypeSpec ElmInt]
-    declarator = Declr (Just $ CN.toIdentAST name) []
-    init = generateLiteralInt value
-  in
-  Decl declSpecs (Just declarator) (Just $ InitExpr init)
-
-
-generateLiteralClosure :: Int -> Ident -> Expression
-generateLiteralClosure maxValues evaluator =
-  CompoundLit
-    [ ( [MemberDesig $ Ident "header"] , InitExpr $ Call m_HEADER_CLOSURE [Const $ IntConst 0] )
-    , ( [MemberDesig $ Ident "evaluator"] , InitExpr $ Unary AddrOp $ Var $ evaluator )
-    , ( [MemberDesig $ Ident "max_values"] , InitExpr $ Const $ IntConst maxValues )
-    ]
-
-
-generateConstClosure :: CN.Name -> CN.Name -> Int -> Declaration
-generateConstClosure closureName evalName maxValues =
-  let
-    declSpecs = [TypeQual ConstQual, TypeSpec Closure]
-    declarator = Declr (Just $ CN.toIdentAST closureName) []
-    init = generateLiteralClosure maxValues $ CN.toIdentAST evalName
-  in
-  Decl declSpecs (Just declarator) (Just $ InitExpr init)
-
-
-
-generateEvalFn :: CN.Name -> [N.Name] -> Opt.Expr -> ExternalDeclaration
-generateEvalFn fname params bodyExpr =
-  let
-    nparams = length params
-
-    argsArray :: Ident
-    argsArray = Ident "args"
-
-    -- *args[2]
-    argsArrayDeclarator :: Declarator
-    argsArrayDeclarator =
-      Declr (Just argsArray)
-        [ ArrDeclr
-            [ConstQual] -- TODO: needed?
-            (ArrSize $ Const $ IntConst nparams)
-        , PtrDeclr []
-        ]
-
-    -- void *args[2]
-    argsArrayDeclaration :: Declaration
-    argsArrayDeclaration =
-      Decl
-        [TypeSpec Void]
-        (Just argsArrayDeclarator)  -- declarator (may be omitted)
-        Nothing -- optional initialize
-
-    -- *fname(void *args[2])
-    funcDeclarator :: Declarator
-    funcDeclarator =
-      Declr
-        (Just $ CN.toIdentAST fname)
-        [ FunDeclr [argsArrayDeclaration]
-        , PtrDeclr []
-        ]
-
-    paramRenames :: [CompoundBlockItem]
-    paramRenames =
-      zipWith
-        (\name idx -> BlockDecl $ generateParamRename argsArray name idx)
-        params [0..]
-    
-    body :: [CompoundBlockItem]
-    body = [BlockStmt $ Return $ Just $ generate bodyExpr]
-  in
-  FDefExt $ FunDef
-    [TypeSpec Void]
-    funcDeclarator
-    (paramRenames ++ body)
-
-
-generateParamRename :: Ident -> N.Name -> Int -> Declaration
-generateParamRename argsArray name index =
-  let
-    id = CN.toIdentAST $ CN.local name
-    declarator = Declr (Just id) [PtrDeclr []]
-    init = Index (Var argsArray) (Const $ IntConst index)
-  in
-    Decl [TypeSpec Void] (Just declarator) (Just $ InitExpr init)
--}
+      undefined
 
 
 data HeaderMacro

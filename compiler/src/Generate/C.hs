@@ -5,6 +5,8 @@ module Generate.C
   where
 
 import Prelude hiding (cycle, print)
+import qualified Control.Monad.State as State
+
 import qualified Data.ByteString.Builder as B
 import Data.Monoid ((<>))
 import qualified Data.List as List
@@ -589,8 +591,8 @@ generateFuncBody global params elmExpr state =
     initExprState =
       CE.initState global paramDestructDecls (_revExtDecls state) (_sharedDefs state)
 
-    (CE.ExprState cExpr revBlockItems revExtDecls sharedDefs _ _ _) =
-      CE.generate initExprState elmExpr
+    (cExpr, CE.ExprState revBlockItems revExtDecls sharedDefs _ _ _) =
+      State.runState (CE.generate elmExpr) initExprState
 
     returnStmt =
       C.BlockStmt $ C.Return $ Just cExpr

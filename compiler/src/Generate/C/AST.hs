@@ -221,3 +221,8 @@ castAsPtrTo typespec expr =
 nameAsVoidPtr :: Name -> Expression
 nameAsVoidPtr name =
   castAsPtrTo Void (Var name)
+
+
+addrOf :: Name -> Expression
+addrOf name =
+  Unary AddrOp $ Var name
