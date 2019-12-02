@@ -206,8 +206,11 @@ data ExternalDeclaration
   
 arrayLiteral :: [Expression] -> Expression
 arrayLiteral elements =
-  CompoundLit $
-    map (\elem -> ([], InitExpr elem)) elements
+  Cast
+    (Decl [TypeSpec Void]
+      (Just $ Declr Nothing [PtrDeclr [], ArrDeclr [] NoArrSize]) Nothing)
+    (CompoundLit $
+      map (\elem -> ([], InitExpr elem)) elements)
 
 
 castAsPtrTo :: TypeSpecifier -> Expression -> Expression
