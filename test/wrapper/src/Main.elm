@@ -56,7 +56,7 @@ view model =
 
         str =
             if isZero then
-                "Click the button!"
+                "Click the button! 😊"
 
             else
                 String.fromInt model

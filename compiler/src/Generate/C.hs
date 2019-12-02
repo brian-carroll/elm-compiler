@@ -13,6 +13,8 @@ import qualified Data.Map as Map
 import qualified Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
+import qualified Data.Bits as Bits
+import qualified Data.Char as Char
 -- import qualified Data.Utf8 as Utf8
 
 import qualified Generate.C.Builder as CB
@@ -28,6 +30,7 @@ import qualified AST.Optimized as Opt
 -- import qualified Elm.Kernel as K
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
+import qualified Elm.String as ES
 -- import qualified Generate.JavaScript.Builder as JS
 -- import qualified Generate.JavaScript.Expression as Expr
 -- import qualified Generate.JavaScript.Functions as Functions
@@ -200,11 +203,17 @@ generateSharedDef def =
         Nothing
 
     CE.SharedChr value ->
-      C.CommentExt "SharedChr"
+      generateStructDef CN.ElmChar (CN.literalChr value)
+        [("header", CE.generateHeader CE.HEADER_CHAR)]
+        (Just ("words16", generateUtf16 value))
 
     CE.SharedStr value ->
-      C.CommentExt "SharedStr"
-
+      let words16 = generateUtf16 value
+      in
+      generateStructDef CN.ElmString16 (CN.literalStr value)
+        [("header", CE.generateHeader $ CE.HEADER_STRING (length words16))]
+        (Just ("words16", words16))
+  
     CE.SharedAccessor name ->
       generateClosure (CN.accessor name)
         (C.Unary C.AddrOp $ C.Var CN.utilsAccessEval)
@@ -220,6 +229,25 @@ generateSharedDef def =
         (C.nameAsVoidPtr $ CN.jsKernelEval home name)
         0xffff  -- ridiculously high arity (never evaluate in C)
         []      -- no applied args
+
+
+generateUtf16 :: ES.String -> [C.Expression]
+generateUtf16 str =
+  map (C.Const . C.IntConst) $ concatMap encodeUtf16 (ES.toChars str)
+
+
+encodeUtf16 :: Char -> [Int]
+encodeUtf16 chr =
+  let
+    codepoint = Char.ord chr
+    (high, low) = quotRem (codepoint - 0x10000) 0x400
+  in
+  if codepoint < 0x10000 then
+    [codepoint]
+  else
+    [ high + 0xD800
+    , low + 0xDC00
+    ]
 
 
 generateClosure :: CN.Name -> C.Expression -> Int -> [C.Expression] -> C.ExternalDeclaration

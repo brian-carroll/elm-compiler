@@ -270,6 +270,7 @@ data KernelTypeDef
   | ElmFloat
   | ElmChar
   | ElmString
+  | ElmString16
   | Cons
   | Tuple2
   | Tuple3

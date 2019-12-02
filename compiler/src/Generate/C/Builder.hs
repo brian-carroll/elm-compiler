@@ -103,8 +103,8 @@ fromExpr expression =
 
     Const constant ->
       case constant of
-        IntConst int -> B.intDec int
-        CharConst int -> B.intDec int
+        IntConst int -> "0x" <> (B.wordHex $ fromIntegral int)
+        CharConst int -> "0x" <> (B.wordHex $ fromIntegral int)
         FloatConst float -> EF.toBuilder float
         StrConst builder -> "\"" <> builder <> "\""
 
@@ -303,6 +303,7 @@ fromTypeSpecifier typeSpec =
         ElmFloat -> "ElmFloat"
         ElmChar -> "ElmChar"
         ElmString -> "ElmString"
+        ElmString16 -> "ElmString16"
         Cons -> "Cons"
         Tuple2 -> "Tuple2"
         Tuple3 -> "Tuple3"
