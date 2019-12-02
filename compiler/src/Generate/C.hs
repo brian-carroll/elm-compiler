@@ -57,7 +57,6 @@ data State =
     , _sharedDefs :: Set.Set CE.SharedDef
     , _revInitGlobals :: [Opt.Global]
     , _revExtDecls :: [C.ExternalDeclaration]
-    , _fieldGroups :: Set.Set [Name.Name]
     , _ctorNames :: Set.Set Name.Name
     , _jsState :: JS.State
     }
@@ -70,7 +69,6 @@ emptyState =
     , _sharedDefs = Set.empty
     , _revInitGlobals = []
     , _revExtDecls = []
-    , _fieldGroups = Set.empty
     , _ctorNames = Set.empty
     , _jsState = JS.emptyState
     }
@@ -91,91 +89,60 @@ stateToBuilder state =
   let
     ctorNames =
       map CN.ctorId $ Set.toList $ _ctorNames state
-
-    fieldNames =
-      map CN.fieldId $ Set.toList $
-      Set.foldl' (List.foldl' $ flip Set.insert) Set.empty $
-      _fieldGroups state
-
-    jsKernelNames =
-      Set.foldr
-        (\def acc ->
-          case def of
-            CE.SharedJsThunk home name -> (CN.jsKernelEval home name) : acc
-            _ -> acc
-        )
-        [] (_sharedDefs state)
-
-    sharedDefDecls =
-      Set.foldl'
-        (\acc def -> (generateSharedDef def) : acc)
-        [] (_sharedDefs state)
   in
   prependExtDecls [C.IncludeExt CN.KernelH] $
   prependExtDecls (generateEnum ctorNames) $
-  prependExtDecls (generateEnum fieldNames) $
-  prependExtDecls (generateEnum jsKernelNames) $
-  prependExtDecls sharedDefDecls $
-  prependExtDecls [generateFieldGroupArray (_fieldGroups state)] $
+  prependSharedDefs (_sharedDefs state) $
   prependExtDecls (_revExtDecls state) $
   prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt] $
-    ""
+  ""
 
 
 prependExtDecls :: [C.ExternalDeclaration] -> B.Builder -> B.Builder
 prependExtDecls revExtDecls monolith =
   List.foldl' (\m ext -> (CB.fromExtDecl ext) <> m) monolith revExtDecls
-
+      
 
 {-
-    Accumulated values
+    Shared definitions at top of file
 -}
 
-
-generateCMain :: [Opt.Global] -> C.ExternalDeclaration
-generateCMain revInitGlobals =
+prependSharedDefs :: Set.Set CE.SharedDef -> B.Builder -> B.Builder
+prependSharedDefs defs builder =
   let
-    exitCode =
-      CN.fromBuilder "exit_code"
-    initGC =
-      C.BlockDecl $ C.Decl [C.TypeSpec C.Int]
-        (Just $ C.Declr (Just exitCode) [])
-        (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "GC_init") [])
-    returnFail =
-      C.BlockStmt $ C.If (C.Var exitCode)
-        (C.Return $ Just $ C.Var exitCode) Nothing
-    fwdInitCalls =
-      List.foldl' generateInitCall [] revInitGlobals
-    registerFieldGroups =
-      C.BlockStmt $ C.Expr $ Just $
-      C.Call (C.Var CN.wrapperRegisterFieldGroups) [C.Var CN.appFieldGroups]
-    returnSuccess =
-      C.BlockStmt $ C.Return $ Just $ C.Const (C.IntConst 0)
-    body =
-      [ initGC
-      , returnFail
-      ] ++
-      fwdInitCalls ++
-      [ registerFieldGroups
-      , returnSuccess
-      ]
+    (jsKernelNames, elmFields, fieldGroups, decls) =
+      Set.foldr' iterateSharedDefs ([], Set.empty, [], []) defs
+    cFields =
+      Set.foldr' (\elmField acc -> (CN.fieldId elmField) : acc) [] elmFields
   in
-  C.FDefExt $ C.FunDef
-    [C.TypeSpec C.Int]
-    (C.Declr (Just $ CN.fromBuilder "main") [C.FunDeclr []]) $
-    (List.reverse body)
+  prependExtDecls (generateEnum jsKernelNames) $
+  prependExtDecls (generateEnum cFields) $
+  prependExtDecls decls $
+  prependExtDecls [generateFieldGroupArray fieldGroups] $
+  builder
 
 
-generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
-generateInitCall acc (Opt.Global home name) =
-  let
-    initCall = C.BlockStmt $ C.Expr $ Just $
-      C.Call (C.Var CN.utilsInitGlobal)
-      [ C.Unary C.AddrOp $ C.Var $ CN.globalInitPtr home name
-      , C.Unary C.AddrOp $ C.Var $ CN.globalInitFn home name
-      ]
+iterateSharedDefs :: CE.SharedDef
+  -> ([CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
+  -> ([CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
+iterateSharedDefs def acc@(jsKernelNames, fieldNames, fieldGroups, decls) =
+  let newDecls = (generateSharedDefItem def) : decls
   in
-  initCall : acc
+  case def of
+    CE.SharedJsThunk home name ->
+      ( (CN.jsKernelEval home name) : jsKernelNames
+      , fieldNames
+      , fieldGroups
+      , newDecls
+      )
+    CE.SharedFieldGroup fields ->
+      ( jsKernelNames
+      , List.foldr Set.insert fieldNames fields
+      , fields : fieldGroups
+      , newDecls
+      )
+    _ ->
+      ( jsKernelNames, fieldNames, fieldGroups, newDecls )
 
 
 generateEnum :: [CN.Name] -> [C.ExternalDeclaration]
@@ -185,8 +152,25 @@ generateEnum names =
     _ -> [C.DeclExt $ C.Decl [C.TypeSpec $ C.Enum names] Nothing Nothing]
 
 
-generateSharedDef :: CE.SharedDef -> C.ExternalDeclaration
-generateSharedDef def =
+generateFieldGroupArray :: [[Name.Name]] -> C.ExternalDeclaration
+generateFieldGroupArray fieldGroups =
+  let
+    pointerArray = foldr
+      (\fields acc ->
+        ([], C.InitExpr $ C.Unary C.AddrOp $ C.Var $ CN.fieldGroup fields)
+        : acc
+      )
+      [([], C.InitExpr $ C.Var CN.nullPtr)]
+      fieldGroups
+  in
+  C.DeclExt $ C.Decl
+  [C.TypeSpec $ C.TypeDef CN.FieldGroup]
+  (Just $ C.Declr (Just $ CN.appFieldGroups) [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
+  (Just $ C.InitExpr $ C.CompoundLit $ pointerArray)
+    
+
+generateSharedDefItem :: CE.SharedDef -> C.ExternalDeclaration
+generateSharedDefItem def =
   case def of
     CE.SharedInt value ->
       generateStructDef CN.ElmInt (CN.literalInt value)
@@ -286,18 +270,55 @@ generateStructDef structName varName fixedMembers flexibleMembers =
     (Just $ C.InitExpr $ C.CompoundLit $ (fixed ++ flexible))
 
 
-generateFieldGroupArray :: Set.Set [Name.Name] -> C.ExternalDeclaration
-generateFieldGroupArray fieldGroups =
+{-
+    C 'main' function (program initialisation)
+-}
+
+generateCMain :: [Opt.Global] -> C.ExternalDeclaration
+generateCMain revInitGlobals =
   let
-    pointerArray = Set.foldr
-      (\fields acc -> ([], C.InitExpr $ C.Unary C.AddrOp $ C.Var $ CN.fieldGroup fields) : acc)
-      [([], C.InitExpr $ C.Var CN.nullPtr)]
-      fieldGroups
+    exitCode =
+      CN.fromBuilder "exit_code"
+    initGC =
+      C.BlockDecl $ C.Decl [C.TypeSpec C.Int]
+        (Just $ C.Declr (Just exitCode) [])
+        (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "GC_init") [])
+    returnFail =
+      C.BlockStmt $ C.If (C.Var exitCode)
+        (C.Return $ Just $ C.Var exitCode) Nothing
+    fwdInitCalls =
+      List.foldl' generateInitCall [] revInitGlobals
+    registerFieldGroups =
+      C.BlockStmt $ C.Expr $ Just $
+      C.Call (C.Var CN.wrapperRegisterFieldGroups) [C.Var CN.appFieldGroups]
+    returnSuccess =
+      C.BlockStmt $ C.Return $ Just $ C.Const (C.IntConst 0)
+    body =
+      [ initGC
+      , returnFail
+      ] ++
+      fwdInitCalls ++
+      [ registerFieldGroups
+      , returnSuccess
+      ]
   in
-  C.DeclExt $ C.Decl
-  [C.TypeSpec $ C.TypeDef CN.FieldGroup]
-  (Just $ C.Declr (Just $ CN.appFieldGroups) [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
-  (Just $ C.InitExpr $ C.CompoundLit $ pointerArray)
+  C.FDefExt $ C.FunDef
+    [C.TypeSpec C.Int]
+    (C.Declr (Just $ CN.fromBuilder "main") [C.FunDeclr []]) $
+    (List.reverse body)
+
+
+generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
+generateInitCall acc (Opt.Global home name) =
+  let
+    initCall = C.BlockStmt $ C.Expr $ Just $
+      C.Call (C.Var CN.utilsInitGlobal)
+      [ C.Unary C.AddrOp $ C.Var $ CN.globalInitPtr home name
+      , C.Unary C.AddrOp $ C.Var $ CN.globalInitFn home name
+      ]
+  in
+  initCall : acc
+
 
 
 
