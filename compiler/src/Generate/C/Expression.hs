@@ -59,6 +59,7 @@ data Code
   | CBlock [C.CompoundBlockItem]
 
 
+-- Things that are globals in C but not in JS
 data SharedDef
   = SharedInt Int
   | SharedFloat EF.Float
@@ -66,6 +67,7 @@ data SharedDef
   | SharedStr ES.String
   | SharedAccessor N.Name
   | SharedFieldGroup [N.Name]
+  | SharedCtor N.Name
   | SharedJsThunk N.Name N.Name
   deriving (Eq, Ord)
 

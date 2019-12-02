@@ -57,7 +57,6 @@ data State =
     , _sharedDefs :: Set.Set CE.SharedDef
     , _revInitGlobals :: [Opt.Global]
     , _revExtDecls :: [C.ExternalDeclaration]
-    , _ctorNames :: Set.Set Name.Name
     , _jsState :: JS.State
     }
 
@@ -69,7 +68,6 @@ emptyState =
     , _sharedDefs = Set.empty
     , _revInitGlobals = []
     , _revExtDecls = []
-    , _ctorNames = Set.empty
     , _jsState = JS.emptyState
     }
 
@@ -86,12 +84,7 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 
 stateToBuilder :: State -> B.Builder
 stateToBuilder state =
-  let
-    ctorNames =
-      map CN.ctorId $ Set.toList $ _ctorNames state
-  in
   prependExtDecls [C.IncludeExt CN.KernelH] $
-  prependExtDecls (generateEnum ctorNames) $
   prependSharedDefs (_sharedDefs state) $
   prependExtDecls (_revExtDecls state) $
   prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt] $
@@ -110,12 +103,13 @@ prependExtDecls revExtDecls monolith =
 prependSharedDefs :: Set.Set CE.SharedDef -> B.Builder -> B.Builder
 prependSharedDefs defs builder =
   let
-    (jsKernelNames, elmFields, fieldGroups, decls) =
-      Set.foldr' iterateSharedDefs ([], Set.empty, [], []) defs
+    (jsKernelNames, ctorNames, elmFields, fieldGroups, decls) =
+      Set.foldr' iterateSharedDefs ([], [], Set.empty, [], []) defs
     cFields =
       Set.foldr' (\elmField acc -> (CN.fieldId elmField) : acc) [] elmFields
   in
   prependExtDecls (generateEnum jsKernelNames) $
+  prependExtDecls (generateEnum ctorNames) $
   prependExtDecls (generateEnum cFields) $
   prependExtDecls decls $
   prependExtDecls [generateFieldGroupArray fieldGroups] $
@@ -123,26 +117,35 @@ prependSharedDefs defs builder =
 
 
 iterateSharedDefs :: CE.SharedDef
-  -> ([CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
-  -> ([CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
-iterateSharedDefs def acc@(jsKernelNames, fieldNames, fieldGroups, decls) =
+  -> ([CN.Name], [CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
+  -> ([CN.Name], [CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
+iterateSharedDefs def acc@(jsKernelNames, ctorNames, fieldNames, fieldGroups, decls) =
   let newDecls = (generateSharedDefItem def) : decls
   in
   case def of
     CE.SharedJsThunk home name ->
       ( (CN.jsKernelEval home name) : jsKernelNames
+      , ctorNames
+      , fieldNames
+      , fieldGroups
+      , newDecls
+      )
+    CE.SharedCtor name ->
+      ( jsKernelNames
+      , (CN.ctorId name) : ctorNames
       , fieldNames
       , fieldGroups
       , newDecls
       )
     CE.SharedFieldGroup fields ->
       ( jsKernelNames
+      , ctorNames
       , List.foldr Set.insert fieldNames fields
       , fields : fieldGroups
       , newDecls
       )
     _ ->
-      ( jsKernelNames, fieldNames, fieldGroups, newDecls )
+      ( jsKernelNames, ctorNames, fieldNames, fieldGroups, newDecls )
 
 
 generateEnum :: [CN.Name] -> [C.ExternalDeclaration]
