@@ -1,3 +1,11 @@
+# TODO 1 Dec 2019
+
+- `generateIf`: blockItems in `else` branches will get hoisted to the top, getting eagerly evaluated when they shouldn't be. Need to detect blockItems and create a new block for them.
+  - might be a new concept here of resetting the block state or something
+- maybe investigate State monad for expression stuff
+- generate functions in local scope
+- free variables
+
 # Elm expressions vs C expressions/statements/declarations
 
 Different possible approaches
