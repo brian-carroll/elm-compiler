@@ -162,7 +162,9 @@ generate expr =
       return $ C.addrOf $ CN.global home name
 
     Opt.VarKernel home name ->
-      return $ C.addrOf $ CN.kernelValue home name
+      addSharedExpr
+        (SharedJsThunk home name)
+        (CN.kernelValue home name)
 
     Opt.List entries ->
       generateList entries

@@ -1,3 +1,25 @@
+# TODO 3 Dec 2019
+
+## errors thrown by C compiler
+
+- [ ] universal character stuff is wrong, not allowed to use `\u` format for basic charset
+  - can just make up a custom encoding with underscores, using double underscore for underscore itself
+- [ ] need code gen for custom constructor like `author_project_Main_SetCounter`
+  - they are uncurried in JS version I think
+  - need the shared enum stuff too
+- [ ] need to implement free vars for `x_func` inside `eval_elm_core_Task_map_lambda0`
+- [ ] `macro "NEW_RECORD" passed 7 arguments, but takes just 3` (array literal)
+  - `‘NEW_RECORD’ undeclared` is this related?
+  - very weird, this works fine for function calls
+- missing values
+  - [ ] elm_core_Task_command
+  - [ ] elm_core_Task_Perform
+  - [x] VirtualDom_node
+  - [ ] elm_virtual_dom_VirtualDom_Normal
+- wrong names
+  - [x] Utils_equal
+  - [x] String_fromNumber
+
 # TODO 1 Dec 2019
 
 - `generateIf`: blockItems in `else` branches will get hoisted to the top, getting eagerly evaluated when they shouldn't be. Need to detect blockItems and create a new block for them.
