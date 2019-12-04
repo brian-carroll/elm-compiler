@@ -356,12 +356,13 @@ addGlobalHelp graph global state =
   let
     addDeps deps someState =
       Set.foldl' (addGlobal graph) someState deps
-    jsMode = Mode.Dev Nothing
+    jsMode =
+      Mode.Dev Nothing
   in
   case graph ! global of
     Opt.Define expr deps ->
       addDef global expr $
-      (addDeps deps state)
+      addDeps deps state
 
     Opt.DefineTailFunc argNames body deps ->
       addDeps deps state
@@ -427,6 +428,30 @@ addShared sharedDef state =
 -}
 
 
+generateRuntimeInit :: Opt.Global -> Opt.Expr -> State -> State
+generateRuntimeInit global@(Opt.Global home' name') expr state =
+  let
+    initPtrName =
+      CN.globalInitPtr home' name'
+
+    declarePtr :: C.ExternalDeclaration
+    declarePtr =
+      C.DeclExt $ C.Decl
+        [C.TypeSpec $ C.TypeDef CN.ElmValue]
+        (Just $ C.Declr (Just initPtrName) [C.PtrDeclr []])
+        Nothing
+
+    defineGlobal :: C.ExternalDeclaration
+    defineGlobal =
+      C.DefineExt (CN.global home' name') $ C.Parens $
+      C.Unary C.DerefOp $ C.Var initPtrName
+  in
+  generateInitFn global expr $
+  addExtDecl declarePtr $
+  addExtDecl defineGlobal $
+    state
+
+
 addDef :: Opt.Global -> Opt.Expr -> State -> State
 addDef global@(Opt.Global home' name') expr state =
   let
@@ -434,22 +459,7 @@ addDef global@(Opt.Global home' name') expr state =
       CN.global home' name'
 
     defineAlias alias state =
-      addExtDecl (C.DefineExt globalName $ C.Var alias) state 
-
-    initPtrName =
-      CN.globalInitPtr home' name'
-
-    runtimeInit =
-      generateInitFn global expr $
-      addExtDecl (C.DeclExt $ C.Decl
-        [C.TypeSpec $ C.TypeDef CN.ElmValue]
-        (Just $ C.Declr (Just initPtrName) [C.PtrDeclr []])
-        Nothing
-      ) $
-      addExtDecl
-        (C.DefineExt globalName $ C.Parens $
-          C.Unary C.DerefOp $ C.Var initPtrName)
-        state
+      addExtDecl (C.DefineExt globalName $ C.Var alias) state
   in
   case expr of
     Opt.Function args body ->
@@ -490,17 +500,17 @@ addDef global@(Opt.Global home' name') expr state =
       addShared (CE.SharedAccessor name) $
         defineAlias (CN.accessor name) state
 
-    Opt.List _ -> runtimeInit
-    Opt.Call _ _ -> runtimeInit
-    Opt.If _ _ -> runtimeInit
-    Opt.Let _ _ -> runtimeInit
-    Opt.Destruct _ _ -> runtimeInit
-    Opt.Case _ _ _ _ -> runtimeInit
-    Opt.Access _ _ -> runtimeInit
-    Opt.Record _ -> runtimeInit
-    Opt.Update _ _ -> runtimeInit
-    Opt.Tuple _ _ _ -> runtimeInit
-    Opt.Shader _ _ _ -> runtimeInit
+    Opt.List _        -> generateRuntimeInit global expr state
+    Opt.Call _ _      -> generateRuntimeInit global expr state
+    Opt.If _ _        -> generateRuntimeInit global expr state
+    Opt.Let _ _       -> generateRuntimeInit global expr state
+    Opt.Destruct _ _  -> generateRuntimeInit global expr state
+    Opt.Case _ _ _ _  -> generateRuntimeInit global expr state
+    Opt.Access _ _    -> generateRuntimeInit global expr state
+    Opt.Record _      -> generateRuntimeInit global expr state
+    Opt.Update _ _    -> generateRuntimeInit global expr state
+    Opt.Tuple _ _ _   -> generateRuntimeInit global expr state
+    Opt.Shader _ _ _  -> generateRuntimeInit global expr state
 
     Opt.VarGlobal (Opt.Global home name) ->
       defineAlias (CN.global home name) state
