@@ -428,30 +428,6 @@ addShared sharedDef state =
 -}
 
 
-generateRuntimeInit :: Opt.Global -> Opt.Expr -> State -> State
-generateRuntimeInit global@(Opt.Global home' name') expr state =
-  let
-    initPtrName =
-      CN.globalInitPtr home' name'
-
-    declarePtr :: C.ExternalDeclaration
-    declarePtr =
-      C.DeclExt $ C.Decl
-        [C.TypeSpec $ C.TypeDef CN.ElmValue]
-        (Just $ C.Declr (Just initPtrName) [C.PtrDeclr []])
-        Nothing
-
-    defineGlobal :: C.ExternalDeclaration
-    defineGlobal =
-      C.DefineExt (CN.global home' name') $ C.Parens $
-      C.Unary C.DerefOp $ C.Var initPtrName
-  in
-  generateInitFn global expr $
-  addExtDecl declarePtr $
-  addExtDecl defineGlobal $
-    state
-
-
 addDef :: Opt.Global -> Opt.Expr -> State -> State
 addDef global@(Opt.Global home' name') expr state =
   let
@@ -537,6 +513,30 @@ addDef global@(Opt.Global home' name') expr state =
     -- impossible in global scope
     Opt.VarLocal _ -> undefined
     Opt.TailCall _ _ -> undefined
+
+
+generateRuntimeInit :: Opt.Global -> Opt.Expr -> State -> State
+generateRuntimeInit global@(Opt.Global home' name') expr state =
+  let
+    initPtrName =
+      CN.globalInitPtr home' name'
+
+    declarePtr :: C.ExternalDeclaration
+    declarePtr =
+      C.DeclExt $ C.Decl
+        [C.TypeSpec $ C.TypeDef CN.ElmValue]
+        (Just $ C.Declr (Just initPtrName) [C.PtrDeclr []])
+        Nothing
+
+    defineGlobal :: C.ExternalDeclaration
+    defineGlobal =
+      C.DefineExt (CN.global home' name') $
+      C.Parens $ C.Unary C.DerefOp $ C.Var initPtrName
+  in
+  generateInitFn global expr $
+  addExtDecl declarePtr $
+  addExtDecl defineGlobal $
+    state
 
 
 generateGlobalFunc :: Opt.Global -> CN.Name -> [Name.Name] -> Opt.Expr -> State -> State
