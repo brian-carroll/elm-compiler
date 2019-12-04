@@ -7,6 +7,7 @@ module Generate.C.Expression
  , ExprState(..)
  , initState
  , generateEvalFn
+ , globalDefsFromExprState
 )
 where
 
@@ -88,6 +89,13 @@ initState global revExtDecls sharedDefs =
     , _tmpVarIndex = 0
     , _parentGlobal = global
     }
+
+
+globalDefsFromExprState :: ExprState -> ([C.ExternalDeclaration], Set SharedDef)
+globalDefsFromExprState state =
+  ( _revExtDecls state
+  , _sharedDefs state
+  )
 
 
 todo :: B.Builder -> State ExprState C.Expression

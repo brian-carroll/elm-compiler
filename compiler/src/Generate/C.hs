@@ -535,8 +535,9 @@ generateGlobalFunc global fname params body state =
     initExprState =
       CE.initState global (_revExtDecls state) (_sharedDefs state)
 
-    (cExpr, CE.ExprState _ revExtDecls sharedDefs _ _ _ _) =
-      State.runState
+    (revExtDecls, sharedDefs) =
+      CE.globalDefsFromExprState $
+      State.execState
         (CE.generateEvalFn fname params body)
         initExprState
   in
