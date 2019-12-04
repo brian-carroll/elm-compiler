@@ -7,7 +7,7 @@
 - [ ] need code gen for custom constructor like `author_project_Main_SetCounter`
   - they are uncurried in JS version I think
   - need the shared enum stuff too
-- [ ] need to implement free vars for `x_func` inside `eval_elm_core_Task_map_lambda0`
+- [x] need to implement free vars for `x_func` inside `eval_elm_core_Task_map_lambda0`
 - [ ] `macro "NEW_RECORD" passed 7 arguments, but takes just 3` (array literal)
   - `‘NEW_RECORD’ undeclared` is this related?
   - very weird, this works fine for function calls

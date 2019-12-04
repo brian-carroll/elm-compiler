@@ -6,17 +6,7 @@ module Generate.C.Expression
  , generateHeader
  , ExprState(..)
  , initState
-
--- , generateEvalFn
--- , generateConstClosure
--- , generateConstInt
--- , generateCtor
--- , generateField
--- , generateTailDef
--- , generateMain
--- , Code
--- , codeToExpr
--- , codeToStmtList
+ , generateEvalFn
 )
 where
 
@@ -87,11 +77,10 @@ data ExprState =
     }
 
 
-initState :: Opt.Global -> [C.CompoundBlockItem] -> [C.ExternalDeclaration]
-  -> Set SharedDef -> ExprState
-initState global initBlockItems revExtDecls sharedDefs =
+initState :: Opt.Global -> [C.ExternalDeclaration] -> Set SharedDef -> ExprState
+initState global revExtDecls sharedDefs =
   ExprState
-    { _revBlockItems = initBlockItems
+    { _revBlockItems = []
     , _revExtDecls = revExtDecls
     , _sharedDefs = sharedDefs
     , _localScope = Set.empty
@@ -127,6 +116,7 @@ addBlockItem blockItem =
   )
 
 
+-- TODO: add tmp var to scope
 nextTmpVarIndex :: State ExprState Int
 nextTmpVarIndex =
   do
@@ -281,18 +271,14 @@ generateEvalFn fname params body =
 
     let freeVarList = Set.toList (_freeVars bodyState)
     let extDecl = generateEvalFnDecl fname returnExpr
-          ( (_revBlockItems bodyState)
-            ++ (generateDestructParams $ freeVarList ++ params)
-          )
+            (_revBlockItems bodyState) (freeVarList ++ params)
 
-    -- If my child function refers to my parent's scope, it's a free var for me too.
+    -- If my child function refers to my parent's scope, I pass it down as a free var.
     let updatedOrigFreeVars = List.foldl'
           (\acc free ->
-            if Set.member free (_localScope origState) then
-              acc
-            else
-              Set.insert free acc
-          )
+            if Set.member free (_localScope origState)
+            then acc
+            else Set.insert free acc)
           (_freeVars origState)
           freeVarList
     put $
@@ -305,13 +291,20 @@ generateEvalFn fname params body =
     return freeVarList
 
 
-generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> C.ExternalDeclaration
-generateEvalFnDecl fname returnExpr blockItems =
+generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> [N.Name] -> C.ExternalDeclaration
+generateEvalFnDecl fname returnExpr blockItems params =
+  let
+    paramDecls =
+      case params of
+        [] -> []
+        _ -> [argsArray]
+  in
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.Void]
-    (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr [argsArray]])
+    (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr paramDecls])
     ( (C.BlockStmt $ C.Return $ Just returnExpr)
       : blockItems
+      ++ (generateDestructParams params)
     )
 
 
