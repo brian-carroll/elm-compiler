@@ -160,14 +160,22 @@ accessor name =
 
 escapeChar :: Char -> B.Builder
 escapeChar c =
-  if Char.isAscii c && (Char.isAlphaNum c || c == '_') then
+  if Char.isAscii c && Char.isAlphaNum c then
     B.char8 c
+  else if c == '_' then
+    "__"
   else
-    let codepoint = Char.ord c in
-    if codepoint <= 0xffff then      
-      "\\u" <> (B.word16HexFixed $ fromIntegral $ codepoint)
-    else
-      "\\U" <> (B.int32HexFixed $ fromIntegral $ codepoint)
+    let
+      codepoint = Char.ord c
+      encoder =
+        if codepoint <= 0xff then
+          B.word8HexFixed . fromIntegral
+        else if codepoint <= 0xffff then      
+          B.word16HexFixed . fromIntegral
+        else
+          B.int32HexFixed . fromIntegral
+    in
+      "_" <> (encoder codepoint)
 
 
 globalBuilder :: ModuleName.Canonical -> Name.Name -> B.Builder
