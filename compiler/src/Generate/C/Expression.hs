@@ -80,7 +80,8 @@ data ExprState =
     { _revBlockItems :: [C.CompoundBlockItem]
     , _revExtDecls :: [C.ExternalDeclaration]
     , _sharedDefs :: Set SharedDef
-    , _scope :: Set N.Name
+    , _localScope :: Set N.Name
+    , _freeVars :: Set N.Name
     , _tmpVarIndex :: Int
     , _parentGlobal :: Opt.Global
     }
@@ -93,7 +94,8 @@ initState global initBlockItems revExtDecls sharedDefs =
     { _revBlockItems = initBlockItems
     , _revExtDecls = revExtDecls
     , _sharedDefs = sharedDefs
-    , _scope = Set.empty
+    , _localScope = Set.empty
+    , _freeVars = Set.empty
     , _tmpVarIndex = 0
     , _parentGlobal = global
     }
@@ -125,6 +127,15 @@ addBlockItem blockItem =
   )
 
 
+nextTmpVarIndex :: State ExprState Int
+nextTmpVarIndex =
+  do
+    state <- get
+    let index = _tmpVarIndex state
+    put $ state { _tmpVarIndex = index + 1 }
+    return index
+
+
 generate :: Opt.Expr -> State ExprState C.Expression
 generate expr =
   case expr of
@@ -144,7 +155,13 @@ generate expr =
       addSharedExpr (SharedFloat float) (CN.literalFloat float)
 
     Opt.VarLocal name ->
-      return $ C.Var $ CN.local name
+      do
+        modify (\state ->
+          if Set.member name (_localScope state) then
+            state
+          else
+            state { _freeVars = Set.insert name (_freeVars state) })
+        return $ C.Var $ CN.local name
 
     Opt.VarGlobal (Opt.Global home name) ->
       return $ C.addrOf $ CN.global home name
@@ -170,7 +187,7 @@ generate expr =
       generateList entries
 
     Opt.Function args body ->
-      generateFunction args body
+      generateLocalFn args body
 
     Opt.Call func args ->
       generateCall func args
@@ -231,51 +248,71 @@ generateChildrenHelp elmChildExpr acc =
     return (child : children, nChildren + 1)
 
 
-generateFunction :: [N.Name] -> Opt.Expr -> State ExprState C.Expression
-generateFunction params body =
+-- LOCAL FUNCTION
+
+
+generateLocalFn :: [N.Name] -> Opt.Expr -> State ExprState C.Expression
+generateLocalFn params body =
   do
-    (fname, nValues, maxValues) <- generateEvalFn params body
+    (Opt.Global gHome gName) <- gets _parentGlobal
+    tmpVarIndex <- nextTmpVarIndex
+    let fname = CN.localEvaluator gHome gName tmpVarIndex
+    freeVars <- generateEvalFn fname params body
     return $
       C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
-        [ C.Const $ C.IntConst nValues
-        , C.Const $ C.IntConst maxValues
+        [ C.Const $ C.IntConst $ length freeVars
+        , C.Const $ C.IntConst $ length freeVars + length params
         , C.Unary C.AddrOp $ C.Var fname
-        , C.arrayLiteral []
+        , C.arrayLiteral (map (C.Var . CN.local) freeVars)
         ]
 
 
-generateEvalFn :: [N.Name] -> Opt.Expr -> State ExprState (CN.Name, Int, Int)
-generateEvalFn params body =
+generateEvalFn :: CN.Name -> [N.Name] -> Opt.Expr -> State ExprState [N.Name]
+generateEvalFn fname params body =
   do
     origState <- get
-    put $ origState { _revBlockItems = generateDestructParams params }
+    put $ origState
+      { _revBlockItems = []
+      , _localScope = Set.fromList params
+      , _freeVars = Set.empty
+      }
     returnExpr <- generate body
-    fnState <- get
-    let (fname, evalFn) = generateEvalFnDecl returnExpr fnState
+    bodyState <- get
+
+    let freeVarList = Set.toList (_freeVars bodyState)
+    let extDecl = generateEvalFnDecl fname returnExpr
+          ( (_revBlockItems bodyState)
+            ++ (generateDestructParams $ freeVarList ++ params)
+          )
+
+    -- If my child function refers to my parent's scope, it's a free var for me too.
+    let updatedOrigFreeVars = List.foldl'
+          (\acc free ->
+            if Set.member free (_localScope origState) then
+              acc
+            else
+              Set.insert free acc
+          )
+          (_freeVars origState)
+          freeVarList
     put $
-      fnState
-        { _revExtDecls = evalFn : (_revExtDecls fnState)
-        , _tmpVarIndex = 1 + (_tmpVarIndex fnState)
+      bodyState
+        { _revExtDecls = extDecl : (_revExtDecls bodyState)
         , _revBlockItems = _revBlockItems origState
+        , _localScope = _localScope origState
+        , _freeVars = updatedOrigFreeVars
         }
-    let maxValues = (Set.size (_scope fnState)) + (length params)
-    let nValues = 0
-    return (fname, nValues, maxValues)
+    return freeVarList
 
 
-generateEvalFnDecl :: C.Expression -> ExprState -> (CN.Name, C.ExternalDeclaration)
-generateEvalFnDecl returnExpr fnState =
-  let
-    returnStmt = C.BlockStmt $ C.Return $ Just returnExpr
-    (Opt.Global gHome gName) = _parentGlobal fnState
-    fname = CN.localEvaluator gHome gName (_tmpVarIndex fnState)
-  in
-  ( fname
-  , C.FDefExt $ C.FunDef
-      [C.TypeSpec C.Void]
-      (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr [argsArray]])
-      (returnStmt : (_revBlockItems fnState))
-  )
+generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> C.ExternalDeclaration
+generateEvalFnDecl fname returnExpr blockItems =
+  C.FDefExt $ C.FunDef
+    [C.TypeSpec C.Void]
+    (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr [argsArray]])
+    ( (C.BlockStmt $ C.Return $ Just returnExpr)
+      : blockItems
+    )
 
 
 argsArray :: C.Declaration
@@ -306,6 +343,9 @@ generateDestructParams params =
         params
   in
   revParamDecls
+
+
+-- RECORD
 
 
 generateRecord :: Map N.Name Opt.Expr -> State ExprState C.Expression
@@ -422,6 +462,8 @@ generateDef def =
   case def of
     Opt.Def name body ->
       do
+        modify (\state ->
+            state { _localScope = Set.insert name (_localScope state) })
         bodyExpr <- generate body
         addBlockItem $
           C.BlockDecl $ C.Decl

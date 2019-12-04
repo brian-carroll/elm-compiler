@@ -591,7 +591,7 @@ generateFuncBody global params elmExpr state =
     initExprState =
       CE.initState global paramDestructDecls (_revExtDecls state) (_sharedDefs state)
 
-    (cExpr, CE.ExprState revBlockItems revExtDecls sharedDefs _ _ _) =
+    (cExpr, CE.ExprState revBlockItems revExtDecls sharedDefs _ _ _ _) =
       State.runState (CE.generate elmExpr) initExprState
 
     returnStmt =
