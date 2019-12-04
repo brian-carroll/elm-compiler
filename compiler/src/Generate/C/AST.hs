@@ -206,6 +206,7 @@ data ExternalDeclaration
   
 arrayLiteral :: [Expression] -> Expression
 arrayLiteral elements =
+  Parens $
   Cast
     (Decl [TypeSpec Void]
       (Just $ Declr Nothing [PtrDeclr [], ArrDeclr [] NoArrSize]) Nothing)

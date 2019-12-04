@@ -8,9 +8,8 @@
   - they are uncurried in JS version I think
   - need the shared enum stuff too
 - [x] need to implement free vars for `x_func` inside `eval_elm_core_Task_map_lambda0`
-- [ ] `macro "NEW_RECORD" passed 7 arguments, but takes just 3` (array literal)
-  - `‘NEW_RECORD’ undeclared` is this related?
-  - very weird, this works fine for function calls
+- [x] `macro "NEW_RECORD" passed 7 arguments, but takes just 3` (array literal)
+  - Adding parens makes it go away
 - missing values
   - [ ] elm_core_Task_command
   - [ ] elm_core_Task_Perform
@@ -22,7 +21,7 @@
 
 # TODO 1 Dec 2019
 
-- `generateIf`: blockItems in `else` branches will get hoisted to the top, getting eagerly evaluated when they shouldn't be. Need to detect blockItems and create a new block for them.
+- [ ] `generateIf`: blockItems in `else` branches will get hoisted to the top, getting eagerly evaluated when they shouldn't be. Need to detect blockItems and create a new block for them.
   - might be a new concept here of resetting the block state or something
 - maybe investigate State monad for expression stuff
 - generate functions in local scope
