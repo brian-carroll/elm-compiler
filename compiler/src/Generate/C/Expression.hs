@@ -119,8 +119,15 @@ addSharedExpr shared name =
 
 addBlockItem :: C.CompoundBlockItem -> State ExprState ()
 addBlockItem blockItem =
-  State.modify (\state ->
+  modify (\state ->
     state { _revBlockItems = blockItem : (_revBlockItems state) }
+  )
+
+
+addLocal :: N.Name -> State ExprState ()
+addLocal name =
+  modify (\state ->
+      state { _localScope = Set.insert name (_localScope state) }
   )
 
 
@@ -399,11 +406,13 @@ generateIfBranch (condElm, thenElm) elseState =
 
 generateDestruct :: N.Name -> Opt.Path -> State ExprState ()
 generateDestruct name path =
-  addBlockItem $ C.BlockDecl $
-    C.Decl
-      [C.TypeSpec C.Void]
-      (Just $ C.Declr (Just $ CN.local name) [C.PtrDeclr []])
-      (Just $ C.InitExpr $ generatePath path)
+  do
+    addLocal name
+    addBlockItem $ C.BlockDecl $
+      C.Decl
+        [C.TypeSpec C.Void]
+        (Just $ C.Declr (Just $ CN.local name) [C.PtrDeclr []])
+        (Just $ C.InitExpr $ generatePath path)
 
 
 generatePath :: Opt.Path -> C.Expression
@@ -463,8 +472,7 @@ generateDef def =
   case def of
     Opt.Def name body ->
       do
-        modify (\state ->
-            state { _localScope = Set.insert name (_localScope state) })
+        addLocal name
         bodyExpr <- generate body
         addBlockItem $
           C.BlockDecl $ C.Decl
