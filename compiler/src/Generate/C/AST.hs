@@ -3,6 +3,7 @@ module Generate.C.AST where
 import qualified Data.ByteString.Builder as B
 import qualified Elm.Float as EF
 import Generate.C.Name (Name, KernelTypeDef, HeaderFile)
+import qualified Generate.C.Name as CN
 
 
 data Statement
@@ -230,3 +231,14 @@ nameAsVoidPtr name =
 addrOf :: Name -> Expression
 addrOf name =
   Unary AddrOp $ Var name
+
+
+argsArray :: Declaration
+argsArray =
+  Decl
+    [TypeSpec Void]
+    (Just $ Declr
+      (Just CN.args)
+      [PtrDeclr [], ArrDeclr [] NoArrSize])
+    Nothing
+  

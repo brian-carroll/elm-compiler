@@ -61,7 +61,6 @@ data SharedDef
   | SharedStr ES.String
   | SharedAccessor N.Name
   | SharedFieldGroup [N.Name]
-  | SharedCtor N.Name
   | SharedJsThunk N.Name N.Name
   deriving (Eq, Ord)
 
@@ -312,7 +311,7 @@ generateEvalFnDecl fname returnExpr blockItems params =
     paramDecls =
       case params of
         [] -> []
-        _ -> [argsArray]
+        _ -> [C.argsArray]
   in
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.Void]
@@ -321,16 +320,6 @@ generateEvalFnDecl fname returnExpr blockItems params =
       : blockItems
       ++ (generateDestructParams params)
     )
-
-
-argsArray :: C.Declaration
-argsArray =
-  C.Decl
-    [C.TypeSpec C.Void]
-    (Just $ C.Declr
-      (Just CN.args)
-      [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
-    Nothing
 
 
 generateDestructParams :: [N.Name] -> [C.CompoundBlockItem]

@@ -33,10 +33,7 @@ import qualified AST.Optimized as Opt
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
 import qualified Elm.String as ES
--- import qualified Generate.JavaScript.Builder as JS
--- import qualified Generate.JavaScript.Expression as Expr
--- import qualified Generate.JavaScript.Functions as Functions
--- import qualified Generate.JavaScript.Name as JsName
+
 import qualified Generate.Mode as Mode
 -- import qualified Reporting.Doc as D
 -- import qualified Reporting.Render.Type as RT
@@ -57,6 +54,7 @@ data State =
   State
     { _seenGlobals :: Set.Set Opt.Global
     , _sharedDefs :: Set.Set CE.SharedDef
+    , _ctors :: Set.Set Name.Name
     , _revInitGlobals :: [Opt.Global]
     , _revExtDecls :: [C.ExternalDeclaration]
     , _jsState :: JS.State
@@ -68,6 +66,7 @@ emptyState =
   State
     { _seenGlobals = Set.empty
     , _sharedDefs = Set.empty
+    , _ctors = Set.empty
     , _revInitGlobals = []
     , _revExtDecls = []
     , _jsState = JS.emptyState
@@ -86,7 +85,11 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
 
 stateToBuilder :: State -> B.Builder
 stateToBuilder state =
+  let
+    ctorNames = map CN.ctorId $ Set.toList $ _ctors state
+  in
   prependExtDecls [C.IncludeExt CN.KernelH] $
+  prependExtDecls (generateEnum ctorNames) $
   prependSharedDefs (_sharedDefs state) $
   prependExtDecls (_revExtDecls state) $
   prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt] $
@@ -105,13 +108,12 @@ prependExtDecls revExtDecls monolith =
 prependSharedDefs :: Set.Set CE.SharedDef -> B.Builder -> B.Builder
 prependSharedDefs defs builder =
   let
-    (jsKernelNames, ctorNames, elmFields, fieldGroups, decls) =
-      Set.foldr' iterateSharedDefs ([], [], Set.empty, [], []) defs
+    (jsKernelNames, elmFields, fieldGroups, decls) =
+      Set.foldr' iterateSharedDefs ([], Set.empty, [], []) defs
     cFields =
-      Set.foldr' (\elmField acc -> (CN.fieldId elmField) : acc) [] elmFields
+      map CN.fieldId $ Set.toList elmFields
   in
   prependExtDecls (generateEnum jsKernelNames) $
-  prependExtDecls (generateEnum ctorNames) $
   prependExtDecls (generateEnum cFields) $
   prependExtDecls decls $
   prependExtDecls [generateFieldGroupArray fieldGroups] $
@@ -119,35 +121,26 @@ prependSharedDefs defs builder =
 
 
 iterateSharedDefs :: CE.SharedDef
-  -> ([CN.Name], [CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
-  -> ([CN.Name], [CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
-iterateSharedDefs def acc@(jsKernelNames, ctorNames, fieldNames, fieldGroups, decls) =
+  -> ([CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
+  -> ([CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
+iterateSharedDefs def acc@(jsKernelNames, fieldNames, fieldGroups, decls) =
   let newDecls = (generateSharedDefItem def) : decls
   in
   case def of
     CE.SharedJsThunk home name ->
       ( (CN.jsKernelEval home name) : jsKernelNames
-      , ctorNames
-      , fieldNames
-      , fieldGroups
-      , newDecls
-      )
-    CE.SharedCtor name ->
-      ( jsKernelNames
-      , (CN.ctorId name) : ctorNames
       , fieldNames
       , fieldGroups
       , newDecls
       )
     CE.SharedFieldGroup fields ->
       ( jsKernelNames
-      , ctorNames
       , List.foldr Set.insert fieldNames fields
       , fields : fieldGroups
       , newDecls
       )
     _ ->
-      ( jsKernelNames, ctorNames, fieldNames, fieldGroups, newDecls )
+      ( jsKernelNames, fieldNames, fieldGroups, newDecls )
 
 
 generateEnum :: [CN.Name] -> [C.ExternalDeclaration]
@@ -367,8 +360,8 @@ addGlobalHelp graph global state =
     Opt.DefineTailFunc argNames body deps ->
       addDeps deps state
 
-    Opt.Ctor index arity ->
-      state
+    Opt.Ctor _ arity ->
+      generateCtor global arity state
 
     Opt.Link (Opt.Global moduleName name) ->
       state
@@ -389,11 +382,11 @@ addGlobalHelp graph global state =
         state { _jsState =
           JS.addGlobal jsMode graph (_jsState state) global }
 
-    Opt.Enum index ->
-      state
+    Opt.Enum _ ->
+      generateCtor global 0 state
 
     Opt.Box ->
-      state
+      generateCtor global 1 state
 
     Opt.PortIncoming decoder deps ->
       addDeps deps state
@@ -563,3 +556,36 @@ generateInitFn global@(Opt.Global home name) body state =
   in
   generateGlobalFunc global fname [] body $
     state { _revInitGlobals = global : _revInitGlobals state }
+
+
+generateCtor :: Opt.Global -> Int -> State -> State
+generateCtor (Opt.Global home name) arity state =
+  let
+    fname =
+      CN.globalEvaluator home name
+
+    ctorCustomCall :: C.Expression
+    ctorCustomCall =
+      C.Call
+        (C.Var $ CN.fromBuilder "NEW_CUSTOM")
+        [ C.Var $ CN.ctorId name
+        , C.Const $ C.IntConst arity
+        , C.Var $ CN.fromBuilder "args"
+        ]
+
+    evalFn :: C.ExternalDeclaration
+    evalFn =
+      C.FDefExt $ C.FunDef
+        [C.TypeSpec C.Void]
+        (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr [C.argsArray]])
+        [C.BlockStmt $ C.Return $ Just ctorCustomCall]
+
+    closure :: C.ExternalDeclaration
+    closure =
+      generateClosure (CN.global home name)
+        (C.addrOf fname) arity []
+  in
+  state
+    { _revExtDecls = closure : evalFn : (_revExtDecls state)
+    , _ctors = Set.insert name (_ctors state)
+    }

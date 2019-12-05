@@ -4,7 +4,7 @@
 
 - [x] universal character stuff is wrong, not allowed to use `\u` format for basic charset
   - can just make up a custom encoding with underscores, using double underscore for underscore itself
-- [ ] need code gen for custom constructor like `author_project_Main_SetCounter`
+- [x] need code gen for custom constructor like `author_project_Main_SetCounter`
   - they are uncurried in JS version I think
   - need the shared enum stuff too
 - [x] need to implement free vars for `x_func` inside `eval_elm_core_Task_map_lambda0`
@@ -12,9 +12,9 @@
   - Adding parens makes it go away
 - missing values
   - [ ] elm_core_Task_command
-  - [ ] elm_core_Task_Perform
+  - [x] elm_core_Task_Perform
   - [x] VirtualDom_node
-  - [ ] elm_virtual_dom_VirtualDom_Normal
+  - [x] elm_virtual_dom_VirtualDom_Normal
 - wrong names
   - [x] Utils_equal
   - [x] String_fromNumber
