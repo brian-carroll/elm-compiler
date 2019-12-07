@@ -39,6 +39,59 @@ import qualified Generate.Mode as Mode
 -- import qualified Reporting.Render.Type as RT
 -- import qualified Reporting.Render.Type.Localizer as L
 
+import Debug.Trace as Debug
+
+traceBuilder :: B.Builder -> a -> a
+traceBuilder builder thing =
+  Debug.trace
+    (show $ B.toLazyByteString builder)
+    thing
+
+
+traceGlobalNode :: Opt.Global -> Opt.Node -> Opt.Node
+traceGlobalNode (Opt.Global home name) node =
+  let
+    tab = "    "
+    msg =
+      (nodeName node)
+      <> tab
+      <> (CN.toBuilder $ CN.global home name)
+  in
+  traceBuilder msg node
+
+
+traceDeps :: Set.Set Opt.Global -> Set.Set Opt.Global
+traceDeps deps =
+  let
+    depBuilders :: [B.Builder]
+    depBuilders =
+      map
+        (\(Opt.Global depHome depName) ->
+          CN.toBuilder $ CN.global depHome depName)
+        (Set.toList deps)
+
+    message :: B.Builder
+    message =
+      "deps: " <>
+      (mconcat $ List.intersperse "," depBuilders)
+  in
+  traceBuilder message deps
+
+
+nodeName :: Opt.Node -> B.Builder
+nodeName node =
+  case node of
+    Opt.Define _ _ -> "Define"
+    Opt.DefineTailFunc _ _ _ -> "DefineTailFunc"
+    Opt.Ctor _ _ -> "Ctor"
+    Opt.Enum _ -> "Enum"
+    Opt.Box -> "Box"
+    Opt.Link _ -> "Link"
+    Opt.Cycle _ _ _ _ -> "Cycle"
+    Opt.Manager _ -> "Manager"
+    Opt.Kernel _ _ -> "Kernel"
+    Opt.PortIncoming _ _ -> "PortIncoming"
+    Opt.PortOutgoing _ _ -> "PortOutgoing"
 
 
 -- GENERATE
@@ -302,7 +355,7 @@ generateCMain revInitGlobals =
   in
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.Int]
-    (C.Declr (Just $ CN.fromBuilder "main") [C.FunDeclr []]) $
+    (C.Declr (Just $ CN.fromBuilder "EMSCRIPTEN_KEEPALIVE main") [C.FunDeclr []]) $
     (List.reverse body)
 
 
@@ -348,11 +401,13 @@ addGlobalHelp :: Graph -> Opt.Global -> State -> State
 addGlobalHelp graph global state =
   let
     addDeps deps someState =
-      Set.foldl' (addGlobal graph) someState deps
+      Set.foldl' (addGlobal graph) someState (traceDeps deps)
     jsMode =
       Mode.Dev Nothing
+    node =
+      traceGlobalNode global $ graph ! global
   in
-  case graph ! global of
+  case node of
     Opt.Define expr deps ->
       addDef global expr $
       addDeps deps state
@@ -363,15 +418,17 @@ addGlobalHelp graph global state =
     Opt.Ctor _ arity ->
       generateCtor global arity state
 
-    Opt.Link (Opt.Global moduleName name) ->
-      state
+    Opt.Link linkedGlobal ->
+      addGlobal graph state linkedGlobal
 
     Opt.Cycle names values functions deps ->
       addDeps deps state
 
     Opt.Manager effectsType ->
+      generateManager global effectsType $
       state { _jsState =
-        JS.addGlobal jsMode graph (_jsState state) global }
+        JS.addGlobal jsMode graph (_jsState state) global
+      }
 
     Opt.Kernel chunks deps ->
       let (Opt.Global home _) = global
@@ -414,6 +471,40 @@ addShared :: CE.SharedDef -> State -> State
 addShared sharedDef state =
   state { _sharedDefs =
     Set.insert sharedDef (_sharedDefs state) }
+
+
+{-
+                EFFECT MANAGER
+-}
+
+generateManager :: Opt.Global -> Opt.EffectsType -> State -> State
+generateManager global effectsType state =
+  case effectsType of
+    Opt.Cmd ->
+      generateLeaf global "command" state
+
+    Opt.Sub ->
+      generateLeaf global "subscription" state
+
+    Opt.Fx ->
+      generateLeaf global "subscription" $
+        generateLeaf global "command" state
+
+
+generateLeaf :: Opt.Global -> Name.Name -> State -> State
+generateLeaf global@(Opt.Global home _) name state =
+  let
+    (ModuleName.Canonical _ moduleName) =
+      home
+    kernelName =
+      CN.kernelValue moduleName name
+    globalName =
+      CN.global home name
+  in
+    addExtDecl (C.DefineExt globalName $ C.Var kernelName) $
+    addShared (CE.SharedJsThunk moduleName name) $
+      state
+
 
 
 {-

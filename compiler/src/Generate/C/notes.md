@@ -1,3 +1,16 @@
+# STATUS 7 Dec 2019
+
+- Generated C code is error-free and compiling to Wasm! Woohoo!
+- has some warnings about pointer types
+- I'm not actually generating code to invoke the wrapper though, so app not working yet.
+
+## TODO
+
+- Generate code to invoke the wrapper
+- [ ] `generateIf`: blockItems in `else` branches hoisted to the top. Perf issue.
+
+---
+
 # TODO 3 Dec 2019
 
 ## errors thrown by C compiler
@@ -11,10 +24,20 @@
 - [x] `macro "NEW_RECORD" passed 7 arguments, but takes just 3` (array literal)
   - Adding parens makes it go away
 - missing values
-  - [ ] elm_core_Task_command
-  - [x] elm_core_Task_Perform
-  - [x] VirtualDom_node
-  - [x] elm_virtual_dom_VirtualDom_Normal
+
+  - [x] elm_core_Task_command
+    - See `generateManager` and `generateLeaf`
+    - looks like we do need a line or two of C as well as the JS
+    ```js
+    var $elm$core$Task$command = _Platform_leaf('Task');
+    var $elm$core$Task$subscription = _Platform_leaf('Task');
+    ```
+    - can implement this as a pre-curried Closure and a string literal.
+    - check existing code for accessor
+
+- [x] elm_core_Task_Perform
+- [x] VirtualDom_node
+- [x] elm_virtual_dom_VirtualDom_Normal
 - wrong names
   - [x] Utils_equal
   - [x] String_fromNumber

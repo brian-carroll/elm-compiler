@@ -385,6 +385,10 @@ generateIfBranch :: (Opt.Expr, Opt.Expr)
   -> State ExprState C.Expression
   -> State ExprState C.Expression
 generateIfBranch (condElm, thenElm) elseState =
+  -- TODO:
+  -- This hoists any statements in branches up to the top
+  -- which means they are eagerly evaluated even if the branch is not chosen
+  -- This is a performance issue (but not a logical bug)
   do
     condExpr <- generate condElm
     thenExpr <- generate thenElm
