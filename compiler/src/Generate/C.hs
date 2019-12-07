@@ -41,6 +41,7 @@ import qualified Generate.Mode as Mode
 
 import Debug.Trace as Debug
 
+
 traceBuilder :: B.Builder -> a -> a
 traceBuilder builder thing =
   Debug.trace
@@ -401,11 +402,12 @@ addGlobalHelp :: Graph -> Opt.Global -> State -> State
 addGlobalHelp graph global state =
   let
     addDeps deps someState =
-      Set.foldl' (addGlobal graph) someState (traceDeps deps)
+      Set.foldl' (addGlobal graph) someState deps -- (traceDeps deps)
     jsMode =
       Mode.Dev Nothing
     node =
-      traceGlobalNode global $ graph ! global
+      -- traceGlobalNode global $
+      graph ! global
   in
   case node of
     Opt.Define expr deps ->
