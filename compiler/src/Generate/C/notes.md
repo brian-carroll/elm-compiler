@@ -7,7 +7,23 @@
 ## TODO
 
 - Generate code to invoke the wrapper
-- [ ] `generateIf`: blockItems in `else` branches hoisted to the top. Perf issue.
+
+  - Approach
+
+    - Just generate `main` in C with no special case (a suspended JS call)
+    - Also generate JS for `main`, which is just reading it from Wasm.
+    - Normal JS platform code will do the right thing from there.
+    - WasmWrapper lib is not needed.
+
+  - Subtasks
+    - get rid of special-case mainRecord stuff
+    - refactor the handwritten example?
+    - refactor the TS and C for the wrapper
+    - create an array of mains just like the array of fieldgroups
+      - oh yeah, need to rename that too, on the Haskell side?
+    - TS just gives you main
+
+* [ ] `generateIf`: blockItems in `else` branches hoisted to the top. Perf issue.
 
 ---
 

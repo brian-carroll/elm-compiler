@@ -82,8 +82,8 @@ traceDeps deps =
 nodeName :: Opt.Node -> B.Builder
 nodeName node =
   case node of
-    Opt.Define _ _ -> "Define"
-    Opt.DefineTailFunc _ _ _ -> "DefineTailFunc"
+    Opt.Define expr _ -> "Define " <> (exprName expr)
+    Opt.DefineTailFunc _ expr _ -> "DefineTailFunc " <> (exprName expr)
     Opt.Ctor _ _ -> "Ctor"
     Opt.Enum _ -> "Enum"
     Opt.Box -> "Box"
@@ -93,6 +93,38 @@ nodeName node =
     Opt.Kernel _ _ -> "Kernel"
     Opt.PortIncoming _ _ -> "PortIncoming"
     Opt.PortOutgoing _ _ -> "PortOutgoing"
+
+
+exprName :: Opt.Expr -> B.Builder
+exprName expr =
+  case expr of    
+    Opt.Bool _ -> "Bool"
+    Opt.Chr _ -> "Chr"
+    Opt.Str _ -> "Str"
+    Opt.Int _ -> "Int"
+    Opt.Float _ -> "Float"
+    Opt.VarLocal _ -> "VarLocal"
+    Opt.VarGlobal _ -> "VarGlobal"
+    Opt.VarEnum _ _ -> "VarEnum"
+    Opt.VarBox _ -> "VarBox"
+    Opt.VarCycle _ _ -> "VarCycle"
+    Opt.VarDebug _ _ _ _ -> "VarDebug"
+    Opt.VarKernel _ _ -> "VarKernel"
+    Opt.List _ -> "List"
+    Opt.Function _ _ -> "Function"
+    Opt.Call _ _ -> "Call"
+    Opt.TailCall _ _ -> "TailCall"
+    Opt.If _ _ -> "If"
+    Opt.Let _ _ -> "Let"
+    Opt.Destruct _ _ -> "Destruct"
+    Opt.Case _ _ _ _ -> "Case"
+    Opt.Accessor _ -> "Accessor"
+    Opt.Access _ _ -> "Access"
+    Opt.Update _ _ -> "Update"
+    Opt.Record _ -> "Record"
+    Opt.Unit -> "Unit"
+    Opt.Tuple _ _ _ -> "Tuple"
+    Opt.Shader _ _ _ -> "Shader"
 
 
 -- GENERATE
@@ -406,7 +438,7 @@ addGlobalHelp graph global state =
     jsMode =
       Mode.Dev Nothing
     node =
-      -- traceGlobalNode global $
+      traceGlobalNode global $
       graph ! global
   in
   case node of

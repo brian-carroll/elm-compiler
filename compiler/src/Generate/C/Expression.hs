@@ -119,15 +119,13 @@ addSharedExpr shared name =
 addBlockItem :: C.CompoundBlockItem -> State ExprState ()
 addBlockItem blockItem =
   modify (\state ->
-    state { _revBlockItems = blockItem : (_revBlockItems state) }
-  )
+    state { _revBlockItems = blockItem : (_revBlockItems state) })
 
 
 addLocal :: N.Name -> State ExprState ()
 addLocal name =
   modify (\state ->
-      state { _localScope = Set.insert name (_localScope state) }
-  )
+    state { _localScope = Set.insert name (_localScope state) })
 
 
 -- TODO: add tmp var to scope
