@@ -1,3 +1,14 @@
+# STATUS 10 Dec 2019
+
+- JS generation
+  - complete! :)
+  - But wrong naming style for manager `command`! Should have dollars, whereas everything else has underscores
+    - Maybe need to amend SharedDefs with a Bool or an ADT or an extra constructor
+    - Or make room for the JS name in the shared defs
+    - Or make it a Map instead of a Set where values are code
+- C generation
+  - missing creation and registration of `mainsArray` (currenty reading out garbage)
+
 # STATUS 7 Dec 2019
 
 - Generated C code is error-free and compiling to Wasm! Woohoo!

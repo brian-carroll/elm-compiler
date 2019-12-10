@@ -23,8 +23,12 @@ import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
 import qualified Generate.C.Expression as CE
 import qualified Generate.C.AST as C
+import qualified Generate.C.JsWrappers as JsWrappers
 
 import qualified Generate.JavaScript as JS
+import qualified Generate.JavaScript.Builder as JSB
+import qualified Generate.JavaScript.Name as JSN
+import qualified Generate.JavaScript.Functions as JsFunctions
 
 -- import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
@@ -159,18 +163,59 @@ emptyState =
     }
 
 
+jsMode :: Mode.Mode
+jsMode =
+  Mode.Dev Nothing
+
+
+data AppEnums =
+  AppEnums
+    { appFields :: Set.Set Name.Name
+    , appFieldGroups :: [[Name.Name]]
+    , appCtors :: [Name.Name]
+    , appKernelVals :: [(Name.Name, Name.Name)]
+    }
+    
+
 generate :: Opt.GlobalGraph -> Mains -> (B.Builder, B.Builder)
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
     state = Map.foldrWithKey (addMain graph) emptyState mains
-    cBuilder = stateToBuilder state
-    jsBuilder = JS.stateToBuilder (_jsState state)
+    appTypes = extractAppEnums state
+    cBuilder = buildC state
+    jsBuilder = buildJs appTypes (_jsState state) mains
   in
     (cBuilder, jsBuilder)
 
 
-stateToBuilder :: State -> B.Builder
-stateToBuilder state =
+extractAppEnums :: State -> AppEnums
+extractAppEnums state =
+  foldr
+    extractAppEnumsHelp
+    (AppEnums Set.empty [] (Set.toList $ _ctors state) [])
+    (_sharedDefs state)
+
+
+extractAppEnumsHelp :: CE.SharedDef -> AppEnums -> AppEnums
+extractAppEnumsHelp def appEnums =
+  case def of
+    CE.SharedJsThunk home name ->
+      appEnums
+        { appKernelVals = (home, name) : (appKernelVals appEnums)
+        }
+      
+    CE.SharedFieldGroup fields ->
+      appEnums
+        { appFields = List.foldr Set.insert (appFields appEnums) fields
+        , appFieldGroups = fields : (appFieldGroups appEnums)
+        }
+
+    _ ->
+      appEnums
+
+
+buildC :: State -> B.Builder
+buildC state =
   let
     ctorNames = map CN.ctorId $ Set.toList $ _ctors state
   in
@@ -185,7 +230,101 @@ stateToBuilder state =
 prependExtDecls :: [C.ExternalDeclaration] -> B.Builder -> B.Builder
 prependExtDecls revExtDecls monolith =
   List.foldl' (\m ext -> (CB.fromExtDecl ext) <> m) monolith revExtDecls
-      
+
+
+{-
+    JS top level
+-}
+
+buildJs :: AppEnums -> JS.State -> Mains -> B.Builder
+buildJs appEnums jsState mains =
+  let
+    emscriptenModule =
+      B.string8 JsWrappers.emscriptenModuleName
+  in
+  "(function(scope){\n'use strict';"
+  <> JsWrappers.emscripten
+  <> (emscriptenModule <> ".postRun = function() {\n")
+  <> JsFunctions.functions
+  <> JS.stateToBuilder jsState
+  <> JsWrappers.wrapper
+  <> jsInitWrapper appEnums
+  <> jsAssignMains mains
+  <> JS.toMainExports jsMode mains
+  <> "}\n"
+  <> "}(this));"
+
+
+wasmWrapperName :: JSN.Name
+wasmWrapperName =
+  JSN.fromLocal $ Name.fromChars "wasmWrapper"
+
+
+jsAssignMains :: Mains -> B.Builder
+jsAssignMains mains =
+  let
+    (_, builder) =
+      Map.foldrWithKey jsAssignMainsHelp (0, "") mains
+  in
+  builder
+
+
+jsAssignMainsHelp :: ModuleName.Canonical -> Opt.Main -> (Int, B.Builder) -> (Int, B.Builder)
+jsAssignMainsHelp moduleName _ (index, builder) =
+  let
+    globalName =
+      JSN.fromGlobal moduleName (Name.fromChars "main")
+    stmt =
+      JSB.Var globalName $
+      JSB.Index
+        (JSB.Access
+          (JSB.Ref wasmWrapperName)
+          (JSN.fromLocal $ Name.fromChars "mains"))
+        (JSB.Int index)
+  in
+  ( index + 1
+  , (JSB.stmtToBuilder stmt) <> builder
+  )
+
+
+jsInitWrapper :: AppEnums -> B.Builder
+jsInitWrapper (AppEnums appFields appFieldGroups appCtors appKernelVals) =
+  let
+    name =
+      JSN.fromLocal . Name.fromChars
+
+    fgStrings = map
+      (\fNames ->
+        JSB.String $
+          mconcat $ List.intersperse "$" $
+          map Name.toBuilder fNames)
+      appFieldGroups
+
+    appTypes =
+      JSB.Object
+        [ ( name "ctors"
+          , JSB.Array $ map (JSB.String . Name.toBuilder) appCtors
+          )
+        , ( name "fields"
+          , JSB.Array $ map (JSB.String . Name.toBuilder) (Set.toList appFields)
+          )
+        , ( name "fieldGroups"
+          , JSB.Array fgStrings
+          )
+        ]
+
+    emscriptenModule =
+      JSB.Ref $ name JsWrappers.emscriptenModuleName
+  in
+  JSB.stmtToBuilder $
+    JSB.Var wasmWrapperName $
+    JSB.Call (JSB.Ref $ name JsWrappers.wrapperFnName) 
+      [ JSB.Access emscriptenModule (name "buffer")
+      , JSB.Access emscriptenModule (name "asm")
+      , appTypes
+      , JSB.Array $ map (JSB.Ref . (uncurry JSN.fromKernel)) appKernelVals  
+      ] 
+
 
 {-
     Shared definitions at top of file
@@ -435,8 +574,6 @@ addGlobalHelp graph global state =
   let
     addDeps deps someState =
       Set.foldl' (addGlobal graph) someState deps -- (traceDeps deps)
-    jsMode =
-      Mode.Dev Nothing
     node =
       traceGlobalNode global $
       graph ! global

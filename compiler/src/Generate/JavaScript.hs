@@ -7,6 +7,7 @@ module Generate.JavaScript
   , emptyState
   , stateToBuilder
   , addGlobal
+  , toMainExports
   )
   where
 
