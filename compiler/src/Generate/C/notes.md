@@ -1,13 +1,28 @@
 # STATUS 10 Dec 2019
 
+- C generation
+  - missing creation and registration of `mainsArray` (currenty reading out garbage)
 - JS generation
   - complete! :)
   - But wrong naming style for manager `command`! Should have dollars, whereas everything else has underscores
-    - Maybe need to amend SharedDefs with a Bool or an ADT or an extra constructor
-    - Or make room for the JS name in the shared defs
-    - Or make it a Map instead of a Set where values are code
-- C generation
-  - missing creation and registration of `mainsArray` (currenty reading out garbage)
+    - Add the command as a JS thunk?
+      - Maybe need to amend SharedDefs with a Bool or an ADT or an extra constructor
+      - Or make room for the JS name in the shared defs
+      - Or make it a Map instead of a Set where values are code
+      - It ends up being pretty awkward to combine these different things. Same but different. Annoying.
+    - Or make `_Platform_leaf` the thunk
+      - The command is a C global
+      - Initialise it by a call, or use a pre-applied Closure
+        - If pre-applied we'll get Platform_leaf as an unused Closure
+          - Wasted code gen but C compiler will DCE
+        - If dynamic call then we get one Closure off heap and one on heap
+      - Also need a string literal
+        - It's tricky to make an ES.String out of a modulename
+        - the types are a pain, need to change phantom type
+          - just add a fn to the Utf8 module but it pollutes the safety
+          - make a local type changer identity function inside a `let`
+        - Maybe use Chars/Builder in the SharedDef (will end up as Chars for escaping)
+          - but need to do the conversion every time
 
 # STATUS 7 Dec 2019
 

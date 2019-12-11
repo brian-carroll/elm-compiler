@@ -17,7 +17,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Bits as Bits
 import qualified Data.Char as Char
--- import qualified Data.Utf8 as Utf8
+import qualified Data.Utf8 as Utf8
 
 import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
@@ -434,8 +434,8 @@ generateSharedDefItem def =
     CE.SharedJsThunk home name ->
       generateClosure (CN.kernelValue home name)
         (C.nameAsVoidPtr $ CN.jsKernelEval home name)
-        0xffff  -- ridiculously high arity (never evaluate in C)
-        []      -- no applied args
+        maxClosureArity
+        []
 
 
 generateUtf16 :: ES.String -> [C.Expression]
@@ -457,6 +457,11 @@ encodeUtf16 chr =
     ]
 
 
+maxClosureArity :: Int
+maxClosureArity =
+  0xffff
+
+
 generateClosure :: CN.Name -> C.Expression -> Int -> [C.Expression] -> C.ExternalDeclaration
 generateClosure name evalFnPtr maxValues values =
   let nValues = length values
@@ -470,7 +475,14 @@ generateClosure name evalFnPtr maxValues values =
     (if nValues > 0 then Just ("values", values) else Nothing)
 
 
-generateStructDef :: CN.KernelTypeDef -> CN.Name -> [(B.Builder, C.Expression)] -> Maybe (B.Builder, [C.Expression]) -> C.ExternalDeclaration
+
+
+
+generateStructDef :: CN.KernelTypeDef
+  -> CN.Name 
+  -> [(B.Builder, C.Expression)]
+  -> Maybe (B.Builder, [C.Expression])
+  -> C.ExternalDeclaration
 generateStructDef structName varName fixedMembers flexibleMembers =
   let
     fixed = map
@@ -649,33 +661,32 @@ addShared sharedDef state =
 -}
 
 generateManager :: Opt.Global -> Opt.EffectsType -> State -> State
-generateManager global effectsType state =
-  case effectsType of
-    Opt.Cmd ->
-      generateLeaf global "command" state
-
-    Opt.Sub ->
-      generateLeaf global "subscription" state
-
-    Opt.Fx ->
-      generateLeaf global "subscription" $
-        generateLeaf global "command" state
-
-
-generateLeaf :: Opt.Global -> Name.Name -> State -> State
-generateLeaf global@(Opt.Global home _) name state =
+generateManager global@(Opt.Global home _) effectsType state =
   let
-    (ModuleName.Canonical _ moduleName) =
-      home
-    kernelName =
-      CN.kernelValue moduleName name
-    globalName =
-      CN.global home name
-  in
-    addExtDecl (C.DefineExt globalName $ C.Var kernelName) $
-    addShared (CE.SharedJsThunk moduleName name) $
-      state
+    (ModuleName.Canonical _ moduleName) = home
 
+    (Utf8.Utf8 moduleNameBytes) = moduleName
+    moduleNameStr = Utf8.Utf8 moduleNameBytes -- different phantom type
+
+    makeClosure name =
+      generateClosure (CN.global home name)
+        (C.nameAsVoidPtr $ CN.jsKernelEval Name.platform "leaf")
+        maxClosureArity
+        [C.addrOf $ CN.literalStr moduleNameStr]
+
+    closures =
+      map makeClosure $
+      case effectsType of
+        Opt.Cmd -> ["command"]
+        Opt.Sub -> ["subscription"]
+        Opt.Fx -> ["subscription", "command"]  
+  in
+  addShared (CE.SharedStr moduleNameStr) $
+  addShared (CE.SharedJsThunk Name.platform "leaf") $
+    state
+      { _revExtDecls =
+          closures ++ (_revExtDecls state)
+      }
 
 
 {-
