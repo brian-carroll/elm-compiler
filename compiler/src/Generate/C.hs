@@ -787,10 +787,14 @@ generateRuntimeInit global@(Opt.Global home' name') expr state =
     initPtrName =
       CN.globalInitPtr home' name'
 
+    -- any choice of type will give some C warnings but Closure gives the fewest!
+    mostCommonGlobalType =
+      C.TypeDef CN.Closure
+
     declarePtr :: C.ExternalDeclaration
     declarePtr =
       C.DeclExt $ C.Decl
-        [C.TypeSpec $ C.TypeDef CN.ElmValue]
+        [C.TypeSpec mostCommonGlobalType]
         (Just $ C.Declr (Just initPtrName) [C.PtrDeclr []])
         Nothing
 

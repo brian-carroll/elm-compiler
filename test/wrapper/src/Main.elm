@@ -1,10 +1,10 @@
 module Main exposing (main)
 
+import Browser
 import Html exposing (Html, br, button, div, h1, text)
 import Html.Events exposing (onClick)
 import Process
 import Task
-import WasmWrapper
 
 
 type alias Model =
@@ -77,7 +77,7 @@ subscriptions _ =
 
 main : Program () Model Msg
 main =
-    WasmWrapper.element
+    Browser.element
         { init = init
         , view = view
         , update = update
