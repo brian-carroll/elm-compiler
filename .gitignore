@@ -3,5 +3,13 @@ dist
 cabal-dev
 .cabal-sandbox/
 cabal.sandbox.config
+.stack-work/
+/reactor/*.c
+/reactor/*.js
+/reactor/*.html
+/test/
+*.c
 .DS_Store
 *~
+.clang-format
+.vscode
