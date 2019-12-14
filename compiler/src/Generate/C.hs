@@ -769,17 +769,18 @@ addDef global@(Opt.Global home' name') expr state =
       addShared (CE.SharedAccessor name) $
         defineAlias (CN.accessor name) state
 
-    Opt.List _        -> generateRuntimeInit global expr state
-    Opt.Call _ _      -> generateRuntimeInit global expr state
-    Opt.If _ _        -> generateRuntimeInit global expr state
-    Opt.Let _ _       -> generateRuntimeInit global expr state
-    Opt.Destruct _ _  -> generateRuntimeInit global expr state
-    Opt.Case _ _ _ _  -> generateRuntimeInit global expr state
-    Opt.Access _ _    -> generateRuntimeInit global expr state
-    Opt.Record _      -> generateRuntimeInit global expr state
-    Opt.Update _ _    -> generateRuntimeInit global expr state
-    Opt.Tuple _ _ _   -> generateRuntimeInit global expr state
-    Opt.Shader _ _ _  -> generateRuntimeInit global expr state
+    Opt.List _        -> generateRuntimeInit CN.Cons global expr state
+    Opt.Call _ _      -> generateRuntimeInit CN.ElmValue global expr state
+    Opt.If _ _        -> generateRuntimeInit CN.ElmValue global expr state
+    Opt.Let _ _       -> generateRuntimeInit CN.ElmValue global expr state
+    Opt.Destruct _ _  -> generateRuntimeInit CN.ElmValue global expr state
+    Opt.Case _ _ _ _  -> generateRuntimeInit CN.ElmValue global expr state
+    Opt.Access _ _    -> generateRuntimeInit CN.ElmValue global expr state
+    Opt.Record _      -> generateRuntimeInit CN.Record global expr state
+    Opt.Update _ _    -> generateRuntimeInit CN.Record global expr state
+    Opt.Shader _ _ _  -> generateRuntimeInit CN.ElmValue global expr state
+    Opt.Tuple _ _ Nothing  -> generateRuntimeInit CN.Tuple2 global expr state
+    Opt.Tuple _ _ (Just _) -> generateRuntimeInit CN.Tuple3 global expr state
 
     Opt.VarGlobal (Opt.Global home name) ->
       defineAlias (CN.global home name) state
@@ -808,20 +809,16 @@ addDef global@(Opt.Global home' name') expr state =
     Opt.TailCall _ _ -> undefined
 
 
-generateRuntimeInit :: Opt.Global -> Opt.Expr -> State -> State
-generateRuntimeInit global@(Opt.Global home' name') expr state =
+generateRuntimeInit :: CN.KernelTypeDef -> Opt.Global -> Opt.Expr -> State -> State
+generateRuntimeInit structName global@(Opt.Global home' name') expr state =
   let
     initPtrName =
       CN.globalInitPtr home' name'
 
-    -- any choice of type will give some C warnings but Closure gives the fewest!
-    mostCommonGlobalType =
-      C.TypeDef CN.Closure
-
     declarePtr :: C.ExternalDeclaration
     declarePtr =
       C.DeclExt $ C.Decl
-        [C.TypeSpec mostCommonGlobalType]
+        [C.TypeSpec $ C.TypeDef structName]
         (Just $ C.Declr (Just initPtrName) [C.PtrDeclr []])
         Nothing
 
