@@ -241,6 +241,4 @@ Executable elm
         unordered-containers,
         utf8-string,
         vector,
-        zip-archive,
-        language-c,
-        pretty
+        zip-archive
