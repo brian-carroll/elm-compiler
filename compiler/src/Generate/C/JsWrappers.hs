@@ -154,9 +154,10 @@ function wrapWasmElmApp(wasmBuffer, wasmExports, generatedAppTypes, kernelFuncti
                 var jsCtor = appTypes.ctors[wasmCtor];
                 var custom = { $: jsCtor };
                 var fieldNames = 'abcdefghijklmnopqrstuvwxyz';
-                for (var i = index + 2; i < index + size; i++) {
+                var nFields = size - 2;
+                for (var i = 0; i < nFields; i++) {
                     var field = fieldNames[i];
-                    var childAddr = mem32[i];
+                    var childAddr = mem32[index + 2 + i];
                     custom[field] = readWasmValue(childAddr);
                 }
                 return custom;
