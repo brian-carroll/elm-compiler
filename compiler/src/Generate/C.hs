@@ -868,7 +868,7 @@ generateCtor (Opt.Global home name) arity state =
     ctorCustomCall :: C.Expression
     ctorCustomCall =
       C.Call
-        (C.Var $ CN.fromBuilder "NEW_CUSTOM")
+        (C.Var $ CN.fromBuilder "ctorCustom")
         [ C.Var $ CN.ctorId name
         , C.Const $ C.IntConst arity
         , C.Var $ CN.fromBuilder "args"
