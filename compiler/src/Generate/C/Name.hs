@@ -27,10 +27,11 @@ module Generate.C.Name
   , utilsInitGlobal
   , utilsAccessEval
   , utilsDestructIndex
-  , appFieldGroups
   , nullPtr
+  , appFieldGroups
   , wrapperRegisterFieldGroups
-  , wrapperRegisterMainRecord
+  , mains
+  , wrapperRegisterMains
   , KernelTypeDef(..)
   , HeaderFile(..)
   , args
@@ -240,14 +241,14 @@ utilsDestructIndex =
   kernelValue Name.utils (Name.fromChars "destruct_index")
 
 
-appFieldGroups :: Name
-appFieldGroups =
-  Name "app_field_groups"
-
-
 nullPtr :: Name
 nullPtr =
   Name "NULL"
+
+
+appFieldGroups :: Name
+appFieldGroups =
+  Name "app_field_groups"
 
 
 wrapperRegisterFieldGroups :: Name
@@ -255,9 +256,14 @@ wrapperRegisterFieldGroups =
   Name "Wrapper_registerFieldGroups"
 
 
-wrapperRegisterMainRecord :: Name
-wrapperRegisterMainRecord =
-  Name "Wrapper_registerMainRecord"
+mains :: Name
+mains =
+  Name "mains"
+
+
+wrapperRegisterMains :: Name
+wrapperRegisterMains =
+  Name "Wrapper_registerMains"
 
 
 args :: Name

@@ -182,7 +182,7 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
     state = Map.foldrWithKey (addMain graph) emptyState mains
     appTypes = extractAppEnums state
-    cBuilder = buildC state
+    cBuilder = buildC mains state
     jsBuilder = buildJs appTypes (_jsState state) mains
   in
     (cBuilder, jsBuilder)
@@ -214,8 +214,8 @@ extractAppEnumsHelp def appEnums =
       appEnums
 
 
-buildC :: State -> B.Builder
-buildC state =
+buildC :: Mains -> State -> B.Builder
+buildC mains state =
   let
     ctorNames = map CN.ctorId $ Set.toList $ _ctors state
   in
@@ -223,8 +223,9 @@ buildC state =
   prependExtDecls (generateEnum ctorNames) $
   prependSharedDefs (_sharedDefs state) $
   prependExtDecls (_revExtDecls state) $
-  prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt] $
-  ""
+  prependExtDecls [generateMainsArray mains, C.BlankLineExt] $
+  prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt]
+    ""
 
 
 prependExtDecls :: [C.ExternalDeclaration] -> B.Builder -> B.Builder
@@ -526,6 +527,9 @@ generateCMain revInitGlobals =
     registerFieldGroups =
       C.BlockStmt $ C.Expr $ Just $
       C.Call (C.Var CN.wrapperRegisterFieldGroups) [C.Var CN.appFieldGroups]
+    registerMains =
+      C.BlockStmt $ C.Expr $ Just $
+      C.Call (C.Var CN.wrapperRegisterMains) [C.Var CN.mains]
     returnSuccess =
       C.BlockStmt $ C.Return $ Just $ C.Const (C.IntConst 0)
     body =
@@ -534,6 +538,7 @@ generateCMain revInitGlobals =
       ] ++
       fwdInitCalls ++
       [ registerFieldGroups
+      , registerMains
       , returnSuccess
       ]
   in
@@ -541,6 +546,28 @@ generateCMain revInitGlobals =
     [C.TypeSpec C.Int]
     (C.Declr (Just $ CN.fromBuilder "EMSCRIPTEN_KEEPALIVE main") [C.FunDeclr []]) $
     (List.reverse body)
+
+
+generateMainsArray :: Mains -> C.ExternalDeclaration
+generateMainsArray mains =
+  let
+    initList =
+      Map.foldrWithKey
+        generateMainsArrayHelp
+        [([], C.InitExpr $ C.Var CN.nullPtr)]
+        mains
+  in
+  C.DeclExt $ C.Decl
+    [C.TypeSpec C.Void]
+    (Just $ C.Declr (Just CN.mains)
+      [C.PtrDeclr [], C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
+    (Just $ C.InitExpr $ C.CompoundLit initList)
+
+
+generateMainsArrayHelp :: ModuleName.Canonical -> Opt.Main -> C.InitializerList -> C.InitializerList
+generateMainsArrayHelp moduleName _ arrayElements =
+  ([], (C.InitExpr $ C.addrOf $ CN.globalInitPtr moduleName "main"))
+  : arrayElements
 
 
 generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
