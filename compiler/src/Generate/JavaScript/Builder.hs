@@ -59,6 +59,7 @@ data Expr
   | Assign LValue Expr
   | Call Expr [Expr]
   | Function (Maybe Name) [Name] [Stmt]
+  | CommentedExpr Builder Expr
 
 
 data LValue
@@ -87,6 +88,7 @@ data Stmt
   | Var Name Expr
   | Vars [(Name, Expr)]
   | FunctionStmt Name [Name] [Stmt]
+  | CommentStmt Builder
 
 
 data Case
@@ -190,6 +192,9 @@ fromStmtBlock level stmts =
 fromStmt :: Level -> Stmt -> Builder
 fromStmt level@(Level indent nextLevel) statement =
   case statement of
+    CommentStmt comment ->
+      indent <> "// " <> comment <> "\n"
+
     Block stmts ->
       fromStmtBlock level stmts
 
@@ -335,6 +340,13 @@ parensFor grouping builder =
 fromExpr :: Level -> Grouping -> Expr -> (Lines, Builder)
 fromExpr level@(Level indent nextLevel@(Level deeperIndent _)) grouping expression =
   case expression of
+    CommentedExpr comment expr ->
+      let
+        (lines, exprBuilder) = fromExpr level grouping expr
+      in
+      (,) lines $
+        "/* " <> comment <> " */" <> exprBuilder
+
     String string ->
       ( One, "'" <> string <> "'" )
 

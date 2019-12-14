@@ -7,7 +7,7 @@ cabal.sandbox.config
 /reactor/*.c
 /reactor/*.js
 /reactor/*.html
-/test/
+/test/**/*.js
 *.c
 .DS_Store
 *~

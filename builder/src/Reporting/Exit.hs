@@ -1593,6 +1593,7 @@ data Make
   | MakeMultipleFilesIntoHtml
   | MakeNoMain
   | MakeNonMainFilesIntoJavaScript ModuleName.Raw [ModuleName.Raw]
+  | MakeNonMainFilesIntoC ModuleName.Raw [ModuleName.Raw]
   | MakeCannotBuild BuildProblem
   | MakeBadGenerate Generate
 
@@ -1742,6 +1743,10 @@ makeToReport make =
                 "Or use https://package.elm-lang.org/packages/elm/core/latest/Platform#worker to\
                 \ make a `main` with no user interface."
             ]
+    
+    MakeNonMainFilesIntoC m ms ->
+      -- for now, just re-use the JS one. It's actually accurate but maybe could be better.
+      makeToReport (MakeNonMainFilesIntoJavaScript m ms)
 
     MakeCannotBuild buildProblem ->
       toBuildProblemReport buildProblem

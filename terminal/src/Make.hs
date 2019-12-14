@@ -49,6 +49,7 @@ data Flags =
 data Output
   = JS FilePath
   | Html FilePath
+  | C FilePath FilePath
   | DevNull
 
 
@@ -77,7 +78,7 @@ runHelp :: FilePath -> [FilePath] -> Reporting.Style -> Flags -> IO (Either Exit
 runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
   BW.withScope $ \scope ->
   Stuff.withRootLock root $ Task.run $
-  do  desiredMode <- getMode debug optimize
+  do  jsMode <- getMode debug optimize
       details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
       case paths of
         [] ->
@@ -93,11 +94,11 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
                       return ()
 
                     [name] ->
-                      do  builder <- toBuilder root details desiredMode artifacts
+                      do  builder <- toJsBuilder root details jsMode artifacts
                           generate style "index.html" (Html.sandwich name builder) (NE.List name [])
 
                     name:names ->
-                      do  builder <- toBuilder root details desiredMode artifacts
+                      do  builder <- toJsBuilder root details jsMode artifacts
                           generate style "elm.js" builder (NE.List name names)
 
                 Just DevNull ->
@@ -106,17 +107,27 @@ runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
                 Just (JS target) ->
                   case getNoMains artifacts of
                     [] ->
-                      do  builder <- toBuilder root details desiredMode artifacts
+                      do  builder <- toJsBuilder root details jsMode artifacts
                           generate style target builder (Build.getRootNames artifacts)
 
                     name:names ->
                       Task.throw (Exit.MakeNonMainFilesIntoJavaScript name names)
 
+                Just (C cTarget jsTarget) ->
+                  case getNoMains artifacts of
+                    [] ->
+                      do  (cBuilder, jsBuilder) <- Task.mapError Exit.MakeBadGenerate $
+                                      Generate.c root details artifacts
+                          generate style cTarget cBuilder (Build.getRootNames artifacts)
+                          generate style jsTarget jsBuilder (Build.getRootNames artifacts)
+
+                    name:names ->
+                      Task.throw (Exit.MakeNonMainFilesIntoC name names)
+      
                 Just (Html target) ->
                   do  name <- hasOneMain artifacts
-                      builder <- toBuilder root details desiredMode artifacts
+                      builder <- toJsBuilder root details jsMode artifacts
                       generate style target (Html.sandwich name builder) (NE.List name [])
-
 
 
 -- GET INFORMATION
@@ -129,7 +140,7 @@ getStyle report =
     Just Json -> return Reporting.json
 
 
-getMode :: Bool -> Bool -> Task DesiredMode
+getMode :: Bool -> Bool -> Task JsMode
 getMode debug optimize =
   case (debug, optimize) of
     (True , True ) -> Task.throw Exit.MakeCannotOptimizeAndDebug
@@ -252,13 +263,13 @@ generate style target builder names =
 -- TO BUILDER
 
 
-data DesiredMode = Debug | Dev | Prod
+data JsMode = Debug | Dev | Prod
 
 
-toBuilder :: FilePath -> Details.Details -> DesiredMode -> Build.Artifacts -> Task B.Builder
-toBuilder root details desiredMode artifacts =
+toJsBuilder :: FilePath -> Details.Details -> JsMode -> Build.Artifacts -> Task B.Builder
+toJsBuilder root details jsMode artifacts =
   Task.mapError Exit.MakeBadGenerate $
-    case desiredMode of
+    case jsMode of
       Debug -> Generate.debug root details artifacts
       Dev   -> Generate.dev   root details artifacts
       Prod  -> Generate.prod  root details artifacts
@@ -295,6 +306,7 @@ parseOutput name
   | isDevNull name      = Just DevNull
   | hasExt ".html" name = Just (Html name)
   | hasExt ".js"   name = Just (JS name)
+  | hasExt ".c"    name = Just (C name (FP.replaceExtension name ".js"))
   | otherwise           = Nothing
 
 

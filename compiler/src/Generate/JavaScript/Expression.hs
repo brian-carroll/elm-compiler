@@ -41,6 +41,37 @@ import qualified Reporting.Annotation as A
 
 -- EXPRESSIONS
 
+-- exprComment :: Opt.Expr -> B.Builder
+exprComment expr =
+  case expr of
+    Opt.Bool _ -> "Bool"
+    Opt.Chr _ -> "Chr"
+    Opt.Str _ -> "Str"
+    Opt.Int _ -> "Int"
+    Opt.Float _ -> "Float"
+    Opt.VarLocal _ -> "VarLocal"
+    Opt.VarGlobal _ -> "VarGlobal"
+    Opt.VarEnum _ _ -> "VarEnum"
+    Opt.VarBox _ -> "VarBox"
+    Opt.VarCycle _ _ -> "VarCycle"
+    Opt.VarDebug _ _ _ _ -> "VarDebug"
+    Opt.VarKernel _ _ -> "VarKernel"
+    Opt.List _ -> "List"
+    Opt.Function _ _ -> "Function"
+    Opt.Call _ _ -> "Call"
+    Opt.TailCall _ _ -> "TailCall"
+    Opt.If _ _ -> "If"
+    Opt.Let _ _ -> "Let"
+    Opt.Destruct _ _ -> "Destruct"
+    Opt.Case _ _ _ _ -> "Case"
+    Opt.Accessor _ -> "Accessor"
+    Opt.Access _ _ -> "Access"
+    Opt.Update _ _ -> "Update"
+    Opt.Record _ -> "Record"
+    Opt.Unit -> "Unit"
+    Opt.Tuple _ _ _ -> "Tuple"
+    Opt.Shader _ _ _ -> "Shader"
+
 
 generateJsExpr :: Mode.Mode -> Opt.Expr -> JS.Expr
 generateJsExpr mode expression =
@@ -48,7 +79,19 @@ generateJsExpr mode expression =
 
 
 generate :: Mode.Mode -> Opt.Expr -> Code
-generate mode expression =
+generate mode elmExpr =
+  let
+    commentText = exprComment elmExpr
+  in
+  case generateUncommented mode elmExpr of
+    JsExpr jsExpr ->
+      JsExpr $ JS.CommentedExpr commentText jsExpr
+    JsBlock jsStmts ->
+      JsBlock $ (JS.CommentStmt commentText) : jsStmts
+
+
+generateUncommented :: Mode.Mode -> Opt.Expr -> Code
+generateUncommented mode expression =
   case expression of
     Opt.Bool bool ->
       JsExpr $ JS.Bool bool

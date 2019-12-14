@@ -3,6 +3,11 @@ module Generate.JavaScript
   ( generate
   , generateForRepl
   , generateForReplEndpoint
+  , State
+  , emptyState
+  , stateToBuilder
+  , addGlobal
+  , toMainExports
   )
   where
 
@@ -174,6 +179,23 @@ prependBuilders revBuilders monolith =
 -- ADD DEPENDENCIES
 
 
+wrapInComments :: B.Builder -> JS.Stmt -> JS.Stmt
+wrapInComments text stmt =
+  JS.Block
+    [ JS.CommentStmt text
+    , stmt
+    , JS.CommentStmt ("end " <> text)
+    ]
+
+
+prefixComment :: B.Builder -> JS.Stmt -> JS.Stmt
+prefixComment text stmt =
+  JS.Block
+    [ JS.CommentStmt text
+    , stmt
+    ]
+
+
 addGlobal :: Mode.Mode -> Graph -> State -> Opt.Global -> State
 addGlobal mode graph state@(State revKernels builders seen) global =
   if Set.member global seen then
@@ -191,55 +213,107 @@ addGlobalHelp mode graph global state =
   in
   case graph ! global of
     Opt.Define expr deps ->
+      let
+        depsBuilder =
+          mconcat $ List.intersperse ", " $
+          map
+            (\(Opt.Global home name) ->
+                JsName.toBuilder $ JsName.fromGlobal home name)
+            (Set.toList deps)
+      in
       addStmt (addDeps deps state) (
+        prefixComment ("Define, deps=" <> depsBuilder) $
         var global (Expr.generate mode expr)
       )
 
     Opt.DefineTailFunc argNames body deps ->
       addStmt (addDeps deps state) (
         let (Opt.Global _ name) = global in
+        prefixComment "DefineTailFunc" $
         var global (Expr.generateTailDef mode name argNames body)
       )
 
     Opt.Ctor index arity ->
       addStmt state (
+        prefixComment "Ctor" $
         var global (Expr.generateCtor mode global index arity)
       )
 
-    Opt.Link linkedGlobal ->
-      addGlobal mode graph state linkedGlobal
+    Opt.Link (Opt.Global moduleName name) ->
+      addGlobal mode graph
+        (addStmt state $ JS.CommentStmt
+          ("Link " <> JsName.toBuilder (JsName.fromGlobal moduleName name)))
+        (Opt.Global moduleName name)
 
     Opt.Cycle names values functions deps ->
       addStmt (addDeps deps state) (
-        generateCycle mode global names values functions
+        wrapInComments
+          (mconcat ("Cycle " : (List.intersperse ", " $ map Name.toBuilder names)))
+          (generateCycle mode global names values functions)
       )
 
     Opt.Manager effectsType ->
-      generateManager mode graph global effectsType state
+      let
+        (Opt.Global home name) =
+          global
+        globalNameBuilder =
+          (JsName.toBuilder $ JsName.fromGlobal home name)
+        stateCommentBefore =
+          addStmt state $ JS.CommentStmt $ "Manager " <> globalNameBuilder
+        stateWithManager =
+          generateManager mode graph global effectsType stateCommentBefore
+      in
+        addStmt
+          stateWithManager
+          (JS.CommentStmt $ "End Manager " <> globalNameBuilder)
 
     Opt.Kernel chunks deps ->
       if isDebugger global && not (Mode.isDebug mode) then
         state
       else
-        addKernel (addDeps deps state) (generateKernel mode chunks)
+        let
+          (Opt.Global home name) = global
+
+          depsBuilder =
+            mconcat $ List.intersperse ", " $
+            map
+              (\(Opt.Global home name) ->
+                  JsName.toBuilder $ JsName.fromGlobal home name)
+              (Set.toList deps)
+  
+          comment beginOrEnd =
+            "\n// " <> beginOrEnd <> " Kernel "
+            <> (JsName.toBuilder $ JsName.fromGlobal home name)
+            <> " deps: " <> depsBuilder
+            <> "\n"
+        in
+          addKernel (addDeps deps state) (
+            comment "Begin" <>
+            generateKernel mode chunks <>
+            comment "End"
+          )
 
     Opt.Enum index ->
       addStmt state (
+        prefixComment "Enum" $
         generateEnum mode global index
       )
 
     Opt.Box ->
       addStmt (addGlobal mode graph state identity) (
+        prefixComment "Box" $
         generateBox mode global
       )
 
     Opt.PortIncoming decoder deps ->
       addStmt (addDeps deps state) (
+        wrapInComments "PortIncoming" $
         generatePort mode global "incomingPort" decoder
       )
 
     Opt.PortOutgoing encoder deps ->
       addStmt (addDeps deps state) (
+        wrapInComments "PortOutgoing" $
         generatePort mode global "outgoingPort" encoder
       )
 
