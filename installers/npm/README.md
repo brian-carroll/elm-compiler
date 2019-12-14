@@ -1,38 +1,45 @@
-npm install elm [![Travis build Status](https://travis-ci.org/elm-lang/elm-platform.svg?branch=master)](http://travis-ci.org/elm-lang/elm-platform) [![AppVeyor build status](https://ci.appveyor.com/api/projects/status/6mcub79i04ianpm9/branch/master?svg=true)](https://ci.appveyor.com/project/rtfeldman/elm-platform/branch/master)
-===============
+# Elm Installer
 
-Install the [Elm Platform](https://github.com/elm-lang/elm-platform) via [`npm`](https://www.npmjs.com).
+[Elm](https://elm-lang.org) is a functional programming language that compiles to JavaScript.
 
-## Installing
+Head over to [The Official Guide](https://guide.elm-lang.org/) to start learning Elm!
 
-Run this to get the binaries:
+
+<br/>
+
+## What is this package for?
+
+**Normal installs** ❌
+
+Use the instructions [here](https://guide.elm-lang.org/install/elm.html) instead.
+
+**Multiple versions** ✅
+
+People using Elm at work may use different versions of Elm in different projects. They can run `npm install elm@latest-0.19.1` in each project and use the binary at `./node_modules/.bin/elm` for compilation.
+
+**Continuous integration** ⚠️
+
+This works, but there are usually faster and more reliable options:
+
+1. You can download `elm` directly from GitHub with [this script](https://github.com/elm/compiler/blob/master/installers/linux/README.md). This is all the `npm` installer does, but with extra HTTP requests to `npmjs.com` servers, making it slower and adding more failure points.
+2. Many continuous integration have ways to cache files ([example](https://docs.travis-ci.com/user/caching/)) to make builds faster and more reliable.
+
+That said, it will definitely work to use the `npm` installer on CI if you prefer that option.
+
+
+<br/>
+
+## Install Locally
+
+The following command should download the latest Elm 0.19.1 binary:
 
 ```
-$ npm install -g elm
+npm install elm@latest-0.19.1
 ```
 
-## Installing behind a proxy server
+You should be able to run `./node_modules/bin/elm --version` within your project and see `0.19.1`. Now you can compile with `./node_modules/bin/elm make src/Main.elm` and not disrupt other packages.
 
-If you are behind a proxy server, set the environment variable "HTTPS_PROXY".
+Use `npm install elm@latest-0.19.0` or `npm install elm@latest-0.18.0` for earlier versions.
 
-```
-$ export HTTPS_PROXY=$YourProxyServer$
-$ npm install -g elm
-```
+**Note:** The `latest-X.Y.Z` convention is used in case we need to publish patches for the `npm` installer within a given Elm release. For example, say `npm` decides that some transitive dependency is not secure. Nothing is changing about Elm or the binaries, but we need to publish a new `npm` installer that fixes this issue.
 
-Or on Windows:
-
-```
-$ set HTTPS_PROXY=$YourProxyServer$
-$ npm install -g elm
-```
-
-## Troubleshooting
-
-1. [Troubleshooting npm](https://github.com/npm/npm/wiki/Troubleshooting)
-2. On Debian/Ubuntu systems, you may have to install the nodejs-legacy package: `apt-get install nodejs-legacy`.
-3. If the installer says that it cannot find any usable binaries for your operating system and architecture, check the [Build from Source](https://github.com/elm-lang/elm-platform/blob/master/README.md#build-from-source) documentation.
-
-## Getting Started
-
-Once everything has installed successfully, head over to the [Get Started](http://elm-lang.org/Get-Started.elm) page!

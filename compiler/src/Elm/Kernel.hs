@@ -15,7 +15,7 @@ import qualified Data.ByteString.Internal as B
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Name as Name
-import Data.Word (Word8, Word16)
+import Data.Word (Word8)
 import Foreign.Ptr (Ptr, plusPtr, minusPtr)
 import Foreign.ForeignPtr (ForeignPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
@@ -128,7 +128,7 @@ parseChunks vtable enums fields =
       cerr row col toError
 
 
-chompChunks :: VarTable -> Enums -> Fields -> ForeignPtr Word8 -> Ptr Word8 -> Ptr Word8 -> Word16 -> Word16 -> Ptr Word8 -> [Chunk] -> (# [Chunk], Ptr Word8, Word16, Word16 #)
+chompChunks :: VarTable -> Enums -> Fields -> ForeignPtr Word8 -> Ptr Word8 -> Ptr Word8 -> Row -> Col -> Ptr Word8 -> [Chunk] -> (# [Chunk], Ptr Word8, Row, Col #)
 chompChunks vs es fs src pos end row col lastPos revChunks =
   if pos >= end then
     let !js = toByteString src lastPos end in
@@ -168,7 +168,7 @@ toByteString src pos end =
 
 
 -- relies on external checks in chompChunks
-chompTag :: VarTable -> Enums -> Fields -> ForeignPtr Word8 -> Ptr Word8 -> Ptr Word8 -> Word16 -> Word16 -> [Chunk] -> (# [Chunk], Ptr Word8, Word16, Word16 #)
+chompTag :: VarTable -> Enums -> Fields -> ForeignPtr Word8 -> Ptr Word8 -> Ptr Word8 -> Row -> Col -> [Chunk] -> (# [Chunk], Ptr Word8, Row, Col #)
 chompTag vs es fs src pos end row col revChunks =
   let
     (# newPos, newCol #) = Var.chompInnerChars pos end col
@@ -319,19 +319,19 @@ toNames exposing =
       map toName exposedList
 
 
-toName :: A.Located Src.Exposed -> Name.Name
-toName (A.At _ exposed) =
+toName :: Src.Exposed -> Name.Name
+toName exposed =
   case exposed of
-    Src.Lower name ->
+    Src.Lower (A.At _ name) ->
       name
 
-    Src.Upper name Src.Private ->
+    Src.Upper (A.At _ name) Src.Private ->
       name
 
-    Src.Upper _ Src.Public ->
+    Src.Upper _ (Src.Public _) ->
       error "cannot have Maybe(..) syntax in kernel code header"
 
-    Src.Operator _ ->
+    Src.Operator _ _ ->
       error "cannot use binops in kernel code"
 
 

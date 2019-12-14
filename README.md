@@ -1,14 +1,19 @@
-# The Elm Compiler
+# Elm
 
-Learn about the Elm programming language at [elm-lang.org](http://elm-lang.org/).
+A delightful language for reliable webapps.
 
+Check out the [Home Page](http://elm-lang.org/), [Try Online](http://elm-lang.org/try), or [The Official Guide](http://guide.elm-lang.org/)
+
+
+<br>
 
 ## Install
 
-Follow [these instructions][installer]!
+✨ [Install](https://guide.elm-lang.org/install/elm.html) ✨
 
- [installer]: https://guide.elm-lang.org/install.html
+For multiple versions, previous versions, and uninstallation, see the instructions [here](https://github.com/elm/compiler/blob/master/installers/README.md).
 
+<br>
 
 ## Help
 

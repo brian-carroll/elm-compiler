@@ -159,9 +159,9 @@ compile path =
         Just root ->
           BW.withScope $ \scope -> Stuff.withRootLock root $ Task.run $
             do  details <- Task.eio Exit.ReactorBadDetails $ Details.load Reporting.silent scope root
-                artifacts <- Task.eio Exit.ReactorBadBuild $ Build.fromMains Reporting.silent root details (NE.List path [])
+                artifacts <- Task.eio Exit.ReactorBadBuild $ Build.fromPaths Reporting.silent root details (NE.List path [])
                 javascript <- Task.mapError Exit.ReactorBadGenerate $ Generate.dev root details artifacts
-                let (NE.List name _) = Build.getMainNames artifacts
+                let (NE.List name _) = Build.getRootNames artifacts
                 return $ Html.sandwich name javascript
 
 
@@ -218,6 +218,7 @@ mimeTypeDict =
     , ".m3u"     ==> "audio/x-mpegurl"
     , ".mov"     ==> "video/quicktime"
     , ".mp3"     ==> "audio/mpeg"
+    , ".mp4"     ==> "video/mp4"
     , ".mpeg"    ==> "video/mpeg"
     , ".mpg"     ==> "video/mpeg"
     , ".ogg"     ==> "application/ogg"
@@ -241,6 +242,8 @@ mimeTypeDict =
     , ".txt"     ==> "text/plain"
     , ".wav"     ==> "audio/x-wav"
     , ".wax"     ==> "audio/x-ms-wax"
+    , ".webm"    ==> "video/webm"
+    , ".webp"    ==> "image/webp"
     , ".wma"     ==> "audio/x-ms-wma"
     , ".wmv"     ==> "video/x-ms-wmv"
     , ".woff"    ==> "font/woff"

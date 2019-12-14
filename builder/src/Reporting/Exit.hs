@@ -8,7 +8,6 @@ module Reporting.Exit
   , Publish(..), publishToReport
   , Install(..), installToReport
   , Reactor(..), reactorToReport
-  , Worker(..), workerToReport
   , newPackageOverview
   --
   , Solver(..)
@@ -31,9 +30,6 @@ module Reporting.Exit
 
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as B
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.UTF8 as BS_UTF8
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -178,7 +174,7 @@ diffToReport diff =
         \ with packages. That way there are previously published versions of the API to\
         \ diff against!"
         [ D.reflow $ "If you are just curious to see a diff, try running this command:"
-        , D.indent 4 $ D.dullyellow $ "elm diff elm/http 1.0.0 2.0.0"
+        , D.indent 4 $ D.dullyellow $ "elm diff elm/json 1.0.0 1.1.2"
         ]
 
     DiffNoExposed ->
@@ -951,7 +947,8 @@ toSolverReport problem =
 
 data Outline
   = OutlineHasBadStructure (Decode.Error OutlineProblem)
-  | OutlineHasBadSrcDirs FilePath [FilePath]
+  | OutlineHasMissingSrcDirs FilePath [FilePath]
+  | OutlineHasDuplicateSrcDirs FilePath FilePath FilePath
   | OutlineNoPkgCore
   | OutlineNoAppCore
   | OutlineNoAppJson
@@ -977,12 +974,12 @@ toOutlineReport problem =
       Json.toReport "elm.json" (Json.FailureToReport toOutlineProblemReport) decodeError $
         Json.ExplicitReason "I ran into a problem with your elm.json file."
 
-    OutlineHasBadSrcDirs dir dirs ->
+    OutlineHasMissingSrcDirs dir dirs ->
       case dirs of
         [] ->
           Help.report "MISSING SOURCE DIRECTORY" (Just "elm.json")
             "I need a valid elm.json file, but the \"source-directories\" field lists the following directory:"
-            [ D.indent 4 $ D.dullyellow $ D.fromChars dir
+            [ D.indent 4 $ D.red $ D.fromChars dir
             , D.reflow $
                 "I cannot find it though. Is it missing? Is there a typo?"
             ]
@@ -990,10 +987,32 @@ toOutlineReport problem =
         _:_ ->
           Help.report "MISSING SOURCE DIRECTORIES" (Just "elm.json")
             "I need a valid elm.json file, but the \"source-directories\" field lists the following directories:"
-            [ D.indent 4 $ D.dullyellow $ D.fromChars dir
+            [ D.indent 4 $ D.vcat $
+                map (D.red . D.fromChars) (dir:dirs)
             , D.reflow $
                 "I cannot find them though. Are they missing? Are there typos?"
             ]
+
+    OutlineHasDuplicateSrcDirs canonicalDir dir1 dir2 ->
+      if dir1 == dir2 then
+        Help.report "REDUNDANT SOURCE DIRECTORIES" (Just "elm.json")
+          "I need a valid elm.json file, but the \"source-directories\" field lists the same directory twice:"
+          [ D.indent 4 $ D.vcat $
+              map (D.red . D.fromChars) [dir1,dir2]
+          , D.reflow $
+              "Remove one of the entries!"
+          ]
+      else
+        Help.report "REDUNDANT SOURCE DIRECTORIES" (Just "elm.json")
+          "I need a valid elm.json file, but the \"source-directories\" field has some redundant directories:"
+          [ D.indent 4 $ D.vcat $
+              map (D.red . D.fromChars) [dir1,dir2]
+          , D.reflow $
+              "These are two different ways of refering to the same directory:"
+          , D.indent 4 $ D.dullyellow $ D.fromChars canonicalDir
+          , D.reflow $
+              "Remove one of the redundant entries from your \"source-directories\" field."
+          ]
 
     OutlineNoPkgCore ->
       Help.report "MISSING DEPENDENCY" (Just "elm.json")
@@ -1156,10 +1175,16 @@ toOutlineProblemReport path source _ region problem =
       toSnippet "HEADER TOO LONG" Nothing
         ( D.reflow $
             "I got stuck while reading your elm.json file. This section header is too long:"
-        , D.fillSep
-            ["I","need","it","to","be"
-            ,D.green "under",D.green "20",D.green "characters"
-            ,"so","it","renders","nicely","on","the","package","website!"
+        , D.stack
+            [ D.fillSep
+                ["I","need","it","to","be"
+                ,D.green "under",D.green "20",D.green "bytes"
+                ,"so","it","renders","nicely","on","the","package","website!"
+                ]
+            , D.toSimpleNote
+                "I count the length in bytes, so using non-ASCII characters costs extra.\
+                \ Please report your case at https://github.com/elm/compiler/issues if this seems\
+                \ overly restrictive for your needs."
             ]
         )
 
@@ -1204,10 +1229,16 @@ toOutlineProblemReport path source _ region problem =
       toSnippet "SUMMARY TOO LONG" Nothing
         ( D.reflow $
             "I got stuck while reading your elm.json file. Your \"summary\" is too long:"
-        , D.fillSep
-            ["I","need","it","to","be"
-            ,D.green "under",D.green "80",D.green "characters"
-            ,"so","it","renders","nicely","on","the","package","website!"
+        , D.stack
+            [ D.fillSep
+                ["I","need","it","to","be"
+                ,D.green "under",D.green "80",D.green "bytes"
+                ,"so","it","renders","nicely","on","the","package","website!"
+                ]
+            , D.toSimpleNote
+                "I count the length in bytes, so using non-ASCII characters costs extra.\
+                \ Please report your case at https://github.com/elm/compiler/issues if this seems\
+                \ overly restrictive for your needs."
             ]
         )
 
@@ -1251,8 +1282,7 @@ toDetailsReport details =
         "The dependencies in your elm.json are not compatible."
         [ D.fillSep
             ["Did","you","change","them","by","hand?","Try","to","change","it","back!"
-            ,"It","is","much","more","reliable","to","add","dependencies","with",D.green "elm install"
-            ,"or","the","dependency","management","tool","in",D.green "elm reactor" <> "."
+            ,"It","is","much","more","reliable","to","add","dependencies","with",D.green "elm install" <> "."
             ]
         , D.reflow $
             "Please ask for help on the community forums if you try those paths and are still\
@@ -1269,8 +1299,7 @@ toDetailsReport details =
             \ get access to the registry!"
         , D.toFancyNote
             ["If","you","changed","your","dependencies","by","hand,","try","to","change","them","back!"
-            ,"It","is","much","more","reliable","to","add","dependencies","with",D.green "elm install"
-            ,"or","the","dependency","management","tool","in",D.green "elm reactor" <> "."
+            ,"It","is","much","more","reliable","to","add","dependencies","with",D.green "elm install" <> "."
             ]
         ]
 
@@ -1306,8 +1335,7 @@ toDetailsReport details =
         \ party tool) leaving them in an invalid state."
         [ D.fillSep
             ["Try","to","change","them","back","to","what","they","were","before!"
-            ,"It","is","much","more","reliable","to","add","dependencies","with",D.green "elm install"
-            ,"or","the","dependency","management","tool","in",D.green "elm reactor" <> "."
+            ,"It","is","much","more","reliable","to","add","dependencies","with",D.green "elm install" <> "."
             ]
         , D.reflow $
             "Please ask for help on the community forums if you try those paths and are still\
@@ -1727,7 +1755,7 @@ makeToReport make =
 
 
 data BuildProblem
-  = BuildBadModules Error.Module [Error.Module]
+  = BuildBadModules FilePath Error.Module [Error.Module]
   | BuildProjectProblem BuildProjectProblem
 
 
@@ -1736,8 +1764,8 @@ data BuildProjectProblem
   | BP_WithBadExtension FilePath
   | BP_WithAmbiguousSrcDir FilePath FilePath FilePath
   | BP_MainPathDuplicate FilePath FilePath
-  | BP_MainNameDuplicate ModuleName.Raw FilePath FilePath
-  | BP_MainNameInvalid FilePath FilePath [String]
+  | BP_RootNameDuplicate ModuleName.Raw FilePath FilePath
+  | BP_RootNameInvalid FilePath FilePath [String]
   | BP_CannotLoadDependencies
   | BP_Cycle ModuleName.Raw [ModuleName.Raw]
   | BP_MissingExposed (NE.List (ModuleName.Raw, Import.Problem))
@@ -1746,8 +1774,8 @@ data BuildProjectProblem
 toBuildProblemReport :: BuildProblem -> Help.Report
 toBuildProblemReport problem =
   case problem of
-    BuildBadModules e es ->
-      Help.compilerReport e es
+    BuildBadModules root e es ->
+      Help.compilerReport root e es
 
     BuildProjectProblem projectProblem ->
       toProjectProblemReport projectProblem
@@ -1804,7 +1832,7 @@ toProjectProblemReport projectProblem =
               \ unstuck!"
         ]
 
-    BP_MainNameDuplicate name outsidePath otherPath ->
+    BP_RootNameDuplicate name outsidePath otherPath ->
       Help.report "MODULE NAME CLASH" Nothing
         "These two files are causing a module name clash:"
         [ D.indent 4 $ D.red $ D.vcat $ map D.fromChars [ outsidePath, otherPath ]
@@ -1815,7 +1843,7 @@ toProjectProblemReport projectProblem =
             "Try changing to a different module name in one of them!"
         ]
 
-    BP_MainNameInvalid givenPath srcDir _ ->
+    BP_RootNameInvalid givenPath srcDir _ ->
       Help.report "UNEXPECTED FILE NAME" Nothing
         "I am having trouble with this file name:"
         [ D.indent 4 $ D.red $ D.fromChars givenPath
@@ -1939,7 +1967,7 @@ toGenerateReport problem =
             "The issue is that --optimize strips out info needed by `Debug` functions.\
             \ Here are two examples:"
         , D.indent 4 $ D.reflow $
-            "(1) It shortens record field names. This makes the generated JavaScript is\
+            "(1) It shortens record field names. This makes the generated JavaScript\
             \ smaller, but `Debug.toString` cannot know the real field names anymore."
         , D.indent 4 $ D.reflow $
             "(2) Values like `type Height = Height Float` are unboxed. This reduces\
@@ -2008,7 +2036,7 @@ reactorToReport problem =
 data Repl
   = ReplBadDetails Details
   | ReplBadInput BS.ByteString Error.Error
-  | ReplBadLocalDeps Error.Module [Error.Module]
+  | ReplBadLocalDeps FilePath Error.Module [Error.Module]
   | ReplProjectProblem BuildProjectProblem
   | ReplBadGenerate Generate
   | ReplBadCache
@@ -2022,10 +2050,10 @@ replToReport problem =
       toDetailsReport details
 
     ReplBadInput source err ->
-      Help.compilerReport (Error.Module N.replModule "REPL" File.zeroTime source err) []
+      Help.compilerReport "/" (Error.Module N.replModule "REPL" File.zeroTime source err) []
 
-    ReplBadLocalDeps e es ->
-      Help.compilerReport e es
+    ReplBadLocalDeps root e es ->
+      Help.compilerReport root e es
 
     ReplProjectProblem projectProblem ->
       toProjectProblemReport projectProblem
@@ -2038,39 +2066,3 @@ replToReport problem =
 
     ReplBlocked ->
       corruptCacheReport
-
-
-
--- WORKER
-
-
-data Worker
-  = WorkerInputError Error.Module
-  | WorkerNoMain
-
-
-workerToReport :: Worker -> Help.Report
-workerToReport problem =
-  case problem of
-    WorkerInputError err ->
-      Help.compilerReport err []
-
-    WorkerNoMain ->
-      Help.report "NO MAIN" Nothing
-        (
-          "Without a `main` value, I do not know what to show on screen!"
-        )
-        [ D.reflow $
-            "Adding a `main` value can be as brief as:"
-        , D.vcat
-            [ D.fillSep [D.cyan "import","Html"]
-            , ""
-            , D.fillSep [D.green "main","="]
-            , D.indent 2 $ D.fillSep [D.cyan "Html" <> ".text",D.dullyellow "\"Hello!\""]
-            ]
-        , D.reflow $
-            "Try adding something like that!"
-        , D.toSimpleNote $
-            "I recommend looking through https://guide.elm-lang.org for more advice on\
-            \ how to fill in `main` values."
-        ]

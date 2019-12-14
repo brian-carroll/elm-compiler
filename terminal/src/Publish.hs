@@ -173,7 +173,7 @@ verifyBuild :: FilePath -> Task.Task Exit.Publish Docs.Documentation
 verifyBuild root =
   reportBuildCheck $ BW.withScope $ \scope ->
     Task.run $
-    do  details@(Details.Details _ outline _ _ _) <-
+    do  details@(Details.Details _ outline _ _ _ _) <-
           Task.eio Exit.PublishBadDetails $
             Details.load Reporting.silent scope root
 
@@ -309,7 +309,7 @@ withPrepublishDir root callback =
 verifyZipBuild :: FilePath -> IO (Either Exit.Publish ())
 verifyZipBuild root =
   BW.withScope $ \scope -> Task.run $
-  do  details@(Details.Details _ outline _ _ _) <-
+  do  details@(Details.Details _ outline _ _ _ _) <-
         Task.eio Exit.PublishZipBadDetails $
           Details.load Reporting.silent scope root
 
@@ -380,11 +380,6 @@ verifyBump (Env _ cache manager _ _) pkg vsn newDocs knownVersions@(Registry.Kno
 
 register :: Http.Manager -> Pkg.Name -> V.Version -> Docs.Documentation -> String -> Http.Sha -> Task.Task Exit.Publish ()
 register manager pkg vsn docs commitHash sha =
-  if True then
-    Task.io $ putStrLn $
-      "Publishing is disabled in the 0.19.1-alpha-2 release.\n\
-      \Publish with 0.19.0 for now.\n"
-  else
   let
     url =
       Website.route "/register"
