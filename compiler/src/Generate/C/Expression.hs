@@ -128,7 +128,6 @@ addLocal name =
     state { _localScope = Set.insert name (_localScope state) })
 
 
--- TODO: add tmp var to scope
 nextTmpVarIndex :: State ExprState Int
 nextTmpVarIndex =
   do
@@ -136,6 +135,31 @@ nextTmpVarIndex =
     let index = _tmpVarIndex state
     put $ state { _tmpVarIndex = index + 1 }
     return index
+
+
+getTmpVarName :: State ExprState CN.Name
+getTmpVarName =
+  do
+    index <- nextTmpVarIndex
+    return $ CN.tmp index
+
+
+startNewBlock :: State ExprState [C.CompoundBlockItem]
+startNewBlock =
+  do
+    state <- get
+    let oldBlockItems = _revBlockItems state
+    put $ state { _revBlockItems = [] }
+    return oldBlockItems
+
+
+resumeBlock :: [C.CompoundBlockItem] -> State ExprState [C.CompoundBlockItem]
+resumeBlock resumeBlockItems =
+  do
+    state <- get
+    put $ state { _revBlockItems = resumeBlockItems }
+    let exitingBlockItems = _revBlockItems state
+    return exitingBlockItems
 
 
 generate :: Opt.Expr -> State ExprState C.Expression
@@ -375,24 +399,40 @@ generateTuple a b maybeC =
 
 
 generateIf :: [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> State ExprState C.Expression
-generateIf branches final =
-  foldr generateIfBranch (generate final) branches
-
-
-generateIfBranch :: (Opt.Expr, Opt.Expr)
-  -> State ExprState C.Expression
-  -> State ExprState C.Expression
-generateIfBranch (condElm, thenElm) elseState =
-  -- TODO:
-  -- This hoists any statements in branches up to the top
-  -- which means they are eagerly evaluated even if the branch is not chosen
-  -- This is a performance issue (but not a logical bug)
+generateIf branches finalElm =
   do
+    tmpName <- getTmpVarName
+    finalStmt <- generateIfBlock tmpName finalElm
+    ifStmt <- foldr (generateIfBranch tmpName) (return finalStmt) branches
+    addBlockItem $ C.BlockDecl $ C.Decl
+      [C.TypeSpec C.Void]
+      (Just $ C.Declr (Just tmpName) [C.PtrDeclr []])
+      Nothing
+    addBlockItem $ C.BlockStmt ifStmt
+    return $ C.Var tmpName
+
+
+generateIfBranch :: CN.Name -> (Opt.Expr, Opt.Expr)
+  -> State ExprState C.Statement
+  -> State ExprState C.Statement
+generateIfBranch tmpName (condElm, thenElm) state =
+  do
+    elseStmt <- state
     condExpr <- generate condElm
-    thenExpr <- generate thenElm
-    elseExpr <- elseState
     let condTest = C.Binary C.EqOp condExpr (C.Unary C.AddrOp $ C.Var CN.true)
-    return $ C.Cond condTest thenExpr elseExpr
+    thenStmt <- generateIfBlock tmpName thenElm
+    return $ C.If condTest thenStmt (Just elseStmt)
+
+
+generateIfBlock :: CN.Name -> Opt.Expr -> State ExprState C.Statement
+generateIfBlock tmpName expr =
+  do
+    outerBlock <- startNewBlock
+    cExpr <- generate expr
+    block <- resumeBlock outerBlock
+    return $ C.Compound $
+      (C.BlockStmt $ C.Expr $ Just $ C.Assign C.AssignOp (C.Var tmpName) cExpr)
+      : block
 
 
 generateDestruct :: N.Name -> Opt.Path -> State ExprState ()

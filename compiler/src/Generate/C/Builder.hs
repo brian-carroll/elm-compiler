@@ -47,7 +47,7 @@ fromExpr expression =
       joinMap ", " fromExpr exprList
 
     Assign op lval rval ->
-      "/* Assign */"
+      (fromExpr lval) <> " = " <> (fromExpr rval)
 
     Cond condition expr1 expr0 ->
       (fromExpr condition)

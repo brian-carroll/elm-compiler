@@ -5,6 +5,7 @@ module Generate.C.Name
   , fromBuilder
   , toBuilder
   , local
+  , tmp
   , global
   , globalInitFn
   , globalInitPtr
@@ -71,6 +72,11 @@ local :: Name.Name -> Name
 local name =
   Name $ "x_" <> Name.toBuilder name
 
+
+tmp :: Int -> Name
+tmp index =
+  Name $ "tmp" <> B.intDec index
+  
 
 global :: ModuleName.Canonical -> Name.Name -> Name
 global home name =
