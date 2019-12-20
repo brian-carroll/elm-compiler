@@ -47,8 +47,22 @@ fromExpr expression =
       joinMap ", " fromExpr exprList
 
     Assign op lval rval ->
-      (fromExpr lval) <> " = " <> (fromExpr rval)
-
+      (fromExpr lval) <> opBuilder <> (fromExpr rval)
+      where
+        opBuilder =
+          case op of
+            AssignOp -> " = "
+            MulAssOp -> " *= "
+            DivAssOp -> " /= "
+            RmdAssOp -> " %= "
+            AddAssOp -> " += "
+            SubAssOp -> " -= "
+            ShlAssOp -> " <<= "
+            ShrAssOp -> " >>= "
+            AndAssOp -> " &= "
+            XorAssOp -> " ^= "
+            OrAssOp -> " |= "
+      
     Cond condition expr1 expr0 ->
       (fromExpr condition)
       <> " ? " <> (fromExpr expr1)
