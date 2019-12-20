@@ -611,7 +611,7 @@ addGlobalHelp graph global state =
     addDeps deps someState =
       Set.foldl' (addGlobal graph) someState deps -- (traceDeps deps)
     node =
-      traceGlobalNode global $
+      -- traceGlobalNode global $
       graph ! global
   in
   case node of
@@ -620,6 +620,7 @@ addGlobalHelp graph global state =
       addDeps deps state
 
     Opt.DefineTailFunc argNames body deps ->
+      addExtDecl (C.CommentExt $ nodeName node) $
       addDeps deps state
 
     Opt.Ctor _ arity ->
@@ -629,6 +630,7 @@ addGlobalHelp graph global state =
       addGlobal graph state linkedGlobal
 
     Opt.Cycle names values functions deps ->
+      addExtDecl (C.CommentExt $ nodeName node) $
       addDeps deps state
 
     Opt.Manager effectsType ->
@@ -653,9 +655,11 @@ addGlobalHelp graph global state =
       generateCtor global 1 state
 
     Opt.PortIncoming decoder deps ->
+      addExtDecl (C.CommentExt $ nodeName node) $
       addDeps deps state
 
     Opt.PortOutgoing encoder deps ->
+      addExtDecl (C.CommentExt $ nodeName node) $
       addDeps deps state
 
 

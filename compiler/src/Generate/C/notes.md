@@ -2,8 +2,13 @@
 
 - generated app is working!
 - build system is really awkward
-- Expression AST near complete
-- zero-param Custom constructors are wrong (functions)
+- Expressions to do
+  - [ ] Case
+- Nodes to do
+  - [ ] Cycle
+  - [ ] PortIncoming
+  - [ ] PortOutgoing
+  - [ ] DefineTailFunc (not used in SPA example)
 
 # STATUS 10 Dec 2019
 
