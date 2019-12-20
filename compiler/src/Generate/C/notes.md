@@ -9,6 +9,7 @@
   - [ ] PortIncoming
   - [ ] PortOutgoing
   - [ ] DefineTailFunc (not used in SPA example)
+  - lambda arg names can be `$`!
 
 # STATUS 10 Dec 2019
 

@@ -655,11 +655,11 @@ addGlobalHelp graph global state =
       generateCtor global 1 state
 
     Opt.PortIncoming decoder deps ->
-      addExtDecl (C.CommentExt $ nodeName node) $
+      generatePort True global decoder $
       addDeps deps state
 
     Opt.PortOutgoing encoder deps ->
-      addExtDecl (C.CommentExt $ nodeName node) $
+      generatePort False global encoder $
       addDeps deps state
 
 
@@ -682,6 +682,30 @@ addShared :: CE.SharedDef -> State -> State
 addShared sharedDef state =
   state { _sharedDefs =
     Set.insert sharedDef (_sharedDefs state) }
+
+{-
+                PORT
+-}
+
+generatePort :: Bool -> Opt.Global -> Opt.Expr -> State -> State
+generatePort isIncoming global@(Opt.Global home name) expr state =
+  let
+    kernelFuncName =
+      if isIncoming then
+        "incomingPort"
+      else
+        "outgoingPort"
+
+    (Utf8.Utf8 portNameBytes) = name
+    portNameString = Opt.Str (Utf8.Utf8 portNameBytes)
+
+    call =
+      Opt.Call
+        (Opt.VarKernel Name.platform kernelFuncName)
+        [portNameString, expr]
+  in
+  generateRuntimeInit CN.Closure global call state
+
 
 
 {-
