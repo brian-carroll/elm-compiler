@@ -204,9 +204,19 @@ data ExternalDeclaration
 
 
 -- HELPER FUNCTIONS
-  
-arrayLiteral :: [Expression] -> Expression
-arrayLiteral elements =
+
+arrayLiteral :: TypeSpecifier -> [Expression] -> Expression
+arrayLiteral elemType elements =
+  Parens $
+  Cast
+    (Decl [TypeSpec elemType]
+      (Just $ Declr Nothing [ArrDeclr [] NoArrSize]) Nothing)
+    (CompoundLit $
+      map (\elem -> ([], InitExpr elem)) elements)
+
+
+pointerArray :: [Expression] -> Expression
+pointerArray elements =
   Parens $
   Cast
     (Decl [TypeSpec Void]

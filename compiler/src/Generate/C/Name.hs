@@ -27,6 +27,7 @@ module Generate.C.Name
   , false
   , utilsInitGlobal
   , utilsAccessEval
+  , utilsUpdate
   , utilsDestructIndex
   , nullPtr
   , appFieldGroups
@@ -237,6 +238,11 @@ utilsAccessEval =
   kernelValue Name.utils (Name.fromChars "access_eval")
 
 
+utilsUpdate :: Name
+utilsUpdate =
+  kernelValue Name.utils (Name.fromChars "update")
+
+
 utilsListFromArray :: Name
 utilsListFromArray =
   kernelValue Name.list (Name.fromChars "fromArray")
@@ -299,6 +305,7 @@ data KernelTypeDef
   | FieldGroup
   | Closure
   | I32
+  | U32
   | F64
 
 

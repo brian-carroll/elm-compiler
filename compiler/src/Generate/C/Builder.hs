@@ -327,6 +327,7 @@ fromTypeSpecifier typeSpec =
         FieldGroup -> "FieldGroup"
         Closure -> "Closure"
         I32 -> "i32"
+        U32 -> "u32"
         F64 -> "f64"
 
 

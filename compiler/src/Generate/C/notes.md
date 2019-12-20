@@ -1,3 +1,10 @@
+# STATUS 20 Dec 2019
+
+- generated app is working!
+- build system is really awkward
+- Expression AST near complete
+- zero-param Custom constructors are wrong (functions)
+
 # STATUS 10 Dec 2019
 
 - C generation
@@ -49,7 +56,7 @@
       - oh yeah, need to rename that too, on the Haskell side?
     - TS just gives you main
 
-* [ ] `generateIf`: blockItems in `else` branches hoisted to the top. Perf issue.
+* [x] `generateIf`: blockItems in `else` branches hoisted to the top. Perf issue.
 
 ---
 
@@ -86,7 +93,7 @@
 
 # TODO 1 Dec 2019
 
-- [ ] `generateIf`: blockItems in `else` branches will get hoisted to the top, getting eagerly evaluated when they shouldn't be. Need to detect blockItems and create a new block for them.
+- [x] `generateIf`: blockItems in `else` branches will get hoisted to the top, getting eagerly evaluated when they shouldn't be. Need to detect blockItems and create a new block for them.
   - might be a new concept here of resetting the block state or something
 - maybe investigate State monad for expression stuff
 - generate functions in local scope

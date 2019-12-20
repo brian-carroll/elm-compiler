@@ -238,13 +238,33 @@ generate expr =
       todo "Case"
 
     Opt.Accessor field ->
-      todo "Accessor"
+      addSharedExpr
+        (SharedAccessor field)
+        (CN.accessor field)
 
     Opt.Access record field ->
-      todo "Access"
+      do
+        recordExpr <- generate record
+        return $ C.Call
+          (C.Var CN.utilsAccessEval)
+          [C.pointerArray
+            [ C.castAsPtrTo C.Void $ C.Var $ CN.fieldId field
+            , recordExpr
+            ]]
 
-    Opt.Update record fields ->
-      todo "Update"
+    Opt.Update record fieldValueMap ->
+      do
+        cRecord <- generate record
+        (cValues, nUpdates) <- generateChildren (Map.elems fieldValueMap)
+        let fieldNames = Map.keys fieldValueMap
+        let cFields = map (C.Var . CN.fieldId) fieldNames
+        return $ C.Call
+          (C.Var CN.utilsUpdate)
+          [ cRecord
+          , C.Const $ C.IntConst nUpdates
+          , C.arrayLiteral (C.TypeDef CN.U32) cFields
+          , C.pointerArray cValues
+          ]
 
     Opt.Record fields ->
       generateRecord fields
@@ -289,7 +309,7 @@ generateLocalFn params body =
         [ C.Const $ C.IntConst $ length freeVars
         , C.Const $ C.IntConst $ length freeVars + length params
         , C.Unary C.AddrOp $ C.Var fname
-        , C.arrayLiteral (map (C.Var . CN.local) freeVars)
+        , C.pointerArray (map (C.Var . CN.local) freeVars)
         ]
 
 
@@ -381,7 +401,7 @@ generateRecord fields =
       C.Call (C.Var $ CN.fromBuilder "NEW_RECORD")
         [ C.Unary C.AddrOp $ C.Var fieldGroupName
         , C.Const $ C.IntConst nChildren
-        , C.arrayLiteral childExprs
+        , C.pointerArray childExprs
         ]
 
 
@@ -460,7 +480,7 @@ generatePath path =
 
     Opt.Field field subPath ->
       C.Call (C.Var CN.utilsAccessEval)
-        [ C.arrayLiteral
+        [ C.pointerArray
           [ C.nameAsVoidPtr $ CN.fieldId field
           , generatePath subPath
           ]
@@ -485,7 +505,7 @@ generateList entries =
       return $
         C.Call (C.Var CN.utilsListFromArray)
           [ C.Const $ C.IntConst nEntries
-          , C.arrayLiteral cEntries
+          , C.pointerArray cEntries
           ]
 
 
