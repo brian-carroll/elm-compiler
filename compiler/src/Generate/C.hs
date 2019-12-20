@@ -476,9 +476,6 @@ generateClosure name evalFnPtr maxValues values =
     (if nValues > 0 then Just ("values", values) else Nothing)
 
 
-
-
-
 generateStructDef :: CN.KernelTypeDef
   -> CN.Name 
   -> [(B.Builder, C.Expression)]
@@ -860,7 +857,28 @@ generateInitFn global@(Opt.Global home name) body state =
 
 
 generateCtor :: Opt.Global -> Int -> State -> State
-generateCtor (Opt.Global home name) arity state =
+generateCtor global@(Opt.Global home name) arity state =
+  if arity /= 0 then
+    generateCtorFn global arity state
+  else
+    let
+      extDecl =
+        generateStructDef
+          CN.Custom
+          (CN.global home name)
+          [ ("header", CE.generateHeader $ CE.HEADER_CUSTOM 0)
+          , ("ctor", C.Var $ CN.ctorId name)
+          ]
+          Nothing
+    in
+    state
+      { _revExtDecls = extDecl : (_revExtDecls state)
+      , _ctors = Set.insert name (_ctors state)
+      }  
+
+
+generateCtorFn :: Opt.Global -> Int -> State -> State
+generateCtorFn (Opt.Global home name) arity state =
   let
     fname =
       CN.globalEvaluator home name
