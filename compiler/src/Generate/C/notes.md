@@ -6,8 +6,8 @@
   - [ ] Case
 - Nodes to do
   - [ ] Cycle
-  - [ ] PortIncoming
-  - [ ] PortOutgoing
+  - [x] PortIncoming
+  - [x] PortOutgoing
   - [ ] DefineTailFunc (not used in SPA example)
   - lambda arg names can be `$`!
 

@@ -880,6 +880,7 @@ goto mode label (index, branch) stmts =
         (JsName.makeLabel label index)
         (JS.While (JS.Bool True) (JS.Block stmts))
   in
+  (JS.CommentStmt ("label:" <> Name.toBuilder label)) :
   labeledDeciderStmt : codeToStmtList (generate mode branch)
 
 
@@ -887,12 +888,15 @@ generateDecider :: Mode.Mode -> Name.Name -> Name.Name -> Opt.Decider Opt.Choice
 generateDecider mode label root decisionTree =
   case decisionTree of
     Opt.Leaf (Opt.Inline branch) ->
+      (JS.CommentStmt "Decider Leaf Inline") :
       codeToStmtList (generate mode branch)
 
     Opt.Leaf (Opt.Jump index) ->
+      (JS.CommentStmt "Decider Leaf Jump") :
       [ JS.Break (Just (JsName.makeLabel label index)) ]
 
     Opt.Chain testChain success failure ->
+      (JS.CommentStmt "Decider Chain") :
       [ JS.IfStmt
           (List.foldl1' (JS.Infix JS.OpAnd) (map (generateIfTest mode root) testChain))
           (JS.Block $ generateDecider mode label root success)
@@ -900,6 +904,7 @@ generateDecider mode label root decisionTree =
       ]
 
     Opt.FanOut path edges fallback ->
+      (JS.CommentStmt "Decider Fanout") :
       [ JS.Switch
           (generateCaseTest mode root path (fst (head edges)))
           ( foldr

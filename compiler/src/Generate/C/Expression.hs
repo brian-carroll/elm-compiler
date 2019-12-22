@@ -48,12 +48,7 @@ import qualified Data.Index as Index
 -- import qualified Reporting.Annotation as A
 
 
-data Code
-  = CExpr C.Expression
-  | CBlock [C.CompoundBlockItem]
-
-
--- Things that are globals in C but not in JS
+-- Globals in C but not in Elm AST or in JS
 data SharedDef
   = SharedInt Int
   | SharedFloat EF.Float
@@ -63,6 +58,9 @@ data SharedDef
   | SharedFieldGroup [N.Name]
   | SharedJsThunk N.Name N.Name
   deriving (Eq, Ord)
+
+
+-- STATE AND HELPERS
 
 
 data ExprState =
@@ -160,6 +158,10 @@ resumeBlock resumeBlockItems =
     put $ state { _revBlockItems = resumeBlockItems }
     let exitingBlockItems = _revBlockItems state
     return exitingBlockItems
+
+
+
+-- EXPRESSIONS
 
 
 generate :: Opt.Expr -> State ExprState C.Expression
@@ -405,6 +407,10 @@ generateRecord fields =
         ]
 
 
+
+-- TUPLE
+
+
 generateTuple :: Opt.Expr -> Opt.Expr -> Maybe Opt.Expr -> State ExprState C.Expression
 generateTuple a b maybeC =
   let
@@ -416,6 +422,10 @@ generateTuple a b maybeC =
   do
     (childExprs, nChildren) <- generateChildren children
     return $ C.Call (C.Var $ CN.fromBuilder ctorName) childExprs
+
+
+
+-- IF EXPRESSION
 
 
 generateIf :: [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> State ExprState C.Expression
@@ -453,6 +463,10 @@ generateIfBlock tmpName expr =
     return $ C.Compound $
       (C.BlockStmt $ C.Expr $ Just $ C.Assign C.AssignOp (C.Var tmpName) cExpr)
       : block
+
+
+
+-- DESTRUCTURING
 
 
 generateDestruct :: N.Name -> Opt.Path -> State ExprState ()
@@ -495,6 +509,10 @@ generatePath path =
         (C.Const $ C.IntConst 0)
 
 
+
+-- LIST
+
+
 generateList :: [Opt.Expr] -> State ExprState C.Expression
 generateList entries =
   if List.null entries then
@@ -509,6 +527,10 @@ generateList entries =
           ]
 
 
+
+-- CALL
+
+
 generateCall :: Opt.Expr -> [Opt.Expr] -> State ExprState C.Expression
 generateCall func args =
   do
@@ -516,6 +538,10 @@ generateCall func args =
     funcExpr <- generate func
     return $ C.Call (C.Var $ CN.applyMacro nArgs)
               (funcExpr : argExprs)
+
+
+
+-- LET DEFINITION
 
 
 generateDef :: Opt.Def -> State ExprState ()
@@ -537,6 +563,10 @@ generateDef def =
       undefined
 
 
+
+-- C VALUE HEADERS
+
+
 data HeaderMacro
   = HEADER_INT
   | HEADER_FLOAT
@@ -552,14 +582,22 @@ data HeaderMacro
 
 generateHeader :: HeaderMacro -> C.Expression
 generateHeader header =
+  let
+    fixedSize macro =
+      C.Var $ CN.fromBuilder macro
+    varSize macro kids =
+      C.Call
+        (C.Var $ CN.fromBuilder macro)
+        [C.Const $ C.IntConst kids]
+  in
   case header of
-    HEADER_INT -> C.Var $ CN.fromBuilder "HEADER_INT"
-    HEADER_FLOAT -> C.Var $ CN.fromBuilder "HEADER_FLOAT"
-    HEADER_CHAR -> C.Var $ CN.fromBuilder "HEADER_CHAR"
-    HEADER_STRING n -> C.Call (C.Var $ CN.fromBuilder "HEADER_STRING") [C.Const $ C.IntConst n]
-    HEADER_LIST -> C.Var $ CN.fromBuilder "HEADER_LIST"
-    HEADER_TUPLE2 -> C.Var $ CN.fromBuilder "HEADER_TUPLE2"
-    HEADER_TUPLE3 -> C.Var $ CN.fromBuilder "HEADER_TUPLE3"
-    HEADER_CUSTOM n -> C.Call (C.Var $ CN.fromBuilder "HEADER_CUSTOM") [C.Const $ C.IntConst n]
-    HEADER_RECORD n -> C.Call (C.Var $ CN.fromBuilder "HEADER_RECORD") [C.Const $ C.IntConst n]
-    HEADER_CLOSURE n -> C.Call (C.Var $ CN.fromBuilder "HEADER_CLOSURE") [C.Const $ C.IntConst n]
+    HEADER_INT -> fixedSize  "HEADER_INT"
+    HEADER_FLOAT -> fixedSize "HEADER_FLOAT"
+    HEADER_CHAR -> fixedSize "HEADER_CHAR"
+    HEADER_STRING n -> varSize "HEADER_STRING" n
+    HEADER_LIST -> fixedSize "HEADER_LIST"
+    HEADER_TUPLE2 -> fixedSize "HEADER_TUPLE2"
+    HEADER_TUPLE3 -> fixedSize "HEADER_TUPLE3"
+    HEADER_CUSTOM n -> varSize "HEADER_CUSTOM" n
+    HEADER_RECORD n -> varSize "HEADER_RECORD" n
+    HEADER_CLOSURE n -> varSize "HEADER_CLOSURE" n
