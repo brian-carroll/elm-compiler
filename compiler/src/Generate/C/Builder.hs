@@ -234,6 +234,9 @@ fromStatement indent statement =
     CommentStatement builder ->
       "// " <> builder
 
+    NullStatement ->
+      ""
+
 
 fromBlockItem :: B.Builder -> CompoundBlockItem -> B.Builder
 fromBlockItem indent item =

@@ -22,6 +22,7 @@ data Statement
   | Break
   | Return (Maybe Expression)
   | CommentStatement B.Builder
+  | NullStatement
 
 
 data ForInit

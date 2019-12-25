@@ -22,6 +22,7 @@ module Generate.C.Name
   , literalStr
   , literalChr
   , accessor
+  , nil
   , unit
   , true
   , false
@@ -29,6 +30,7 @@ module Generate.C.Name
   , utilsAccessEval
   , utilsUpdate
   , utilsDestructIndex
+  , utilsEqual
   , nullPtr
   , appFieldGroups
   , wrapperRegisterFieldGroups
@@ -77,7 +79,12 @@ local name =
 tmp :: Int -> Name
 tmp index =
   Name $ "tmp" <> B.intDec index
-  
+
+
+label :: Name.Name -> Int -> Name
+label prefix index =
+  Name $ (Name.toBuilder prefix) <> (B.intDec index)
+
 
 global :: ModuleName.Canonical -> Name.Name -> Name
 global home name =
@@ -218,6 +225,9 @@ dot = 0x2E
 
 -- C KERNEL VALUES
 
+nil :: Name
+nil = Name "Nil"
+
 unit :: Name
 unit = Name "Unit"
 
@@ -252,6 +262,11 @@ utilsDestructIndex :: Name
 utilsDestructIndex =
   kernelValue Name.utils (Name.fromChars "destruct_index")
 
+
+utilsEqual :: Name
+utilsEqual =
+  kernelValue Name.utils (Name.fromChars "equal")
+      
 
 nullPtr :: Name
 nullPtr =

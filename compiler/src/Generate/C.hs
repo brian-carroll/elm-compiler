@@ -829,9 +829,8 @@ addDef global@(Opt.Global home' name') expr state =
       else
         addShared (CE.SharedJsThunk home name) state
 
-    -- impossible in global scope
-    Opt.VarLocal _ -> undefined
-    Opt.TailCall _ _ -> undefined
+    Opt.VarLocal _ -> error "COMPILER BUG: Global variable cannot also be local"
+    Opt.TailCall _ _ -> error "COMPILER BUG: Tail recursive global should be in a DefineTailFunc node rather than a Define node"
 
 
 generateRuntimeInit :: CN.KernelTypeDef -> Opt.Global -> Opt.Expr -> State -> State

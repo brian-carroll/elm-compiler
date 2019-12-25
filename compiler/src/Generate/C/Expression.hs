@@ -44,7 +44,7 @@ import qualified Data.Index as Index
 -- import qualified Elm.Package as Pkg
 -- import qualified Json.Encode as Encode
 -- import Json.Encode ((==>))
--- import qualified Optimize.DecisionTree as DT
+import qualified Optimize.DecisionTree as DT
 -- import qualified Reporting.Annotation as A
 
 
@@ -296,6 +296,18 @@ generateChildrenHelp elmChildExpr acc =
     return (child : children, nChildren + 1)
 
 
+generateExprAsBlock :: CN.Name -> Opt.Expr -> State ExprState [C.CompoundBlockItem]
+generateExprAsBlock resultName expr =
+  do
+    outerBlock <- startNewBlock
+    cExpr <- generate expr
+    block <- resumeBlock outerBlock
+    return $
+      (C.BlockStmt $ C.Expr $ Just $ C.Assign C.AssignOp (C.Var resultName) cExpr)
+      : block
+
+
+
 -- LOCAL FUNCTION
 
 
@@ -431,38 +443,167 @@ generateTuple a b maybeC =
 generateIf :: [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> State ExprState C.Expression
 generateIf branches finalElm =
   do
-    tmpName <- getTmpVarName
-    finalStmt <- generateIfBlock tmpName finalElm
-    ifStmt <- foldr (generateIfBranch tmpName) (return finalStmt) branches
+    resultName <- getTmpVarName
+    finalBlock <- generateExprAsBlock resultName finalElm
+    ifStmt <- foldr
+                (generateIfBranch resultName)
+                (return $ C.Compound finalBlock)
+                branches
     addBlockItem $ C.BlockDecl $ C.Decl
       [C.TypeSpec C.Void]
-      (Just $ C.Declr (Just tmpName) [C.PtrDeclr []])
+      (Just $ C.Declr (Just resultName) [C.PtrDeclr []])
       Nothing
     addBlockItem $ C.BlockStmt ifStmt
-    return $ C.Var tmpName
+    return $ C.Var resultName
 
 
 generateIfBranch :: CN.Name -> (Opt.Expr, Opt.Expr)
   -> State ExprState C.Statement
   -> State ExprState C.Statement
-generateIfBranch tmpName (condElm, thenElm) state =
+generateIfBranch resultName (condElm, thenElm) state =
   do
     elseStmt <- state
     condExpr <- generate condElm
     let condTest = C.Binary C.EqOp condExpr (C.Unary C.AddrOp $ C.Var CN.true)
-    thenStmt <- generateIfBlock tmpName thenElm
-    return $ C.If condTest thenStmt (Just elseStmt)
+    thenBlock <- generateExprAsBlock resultName thenElm
+    return $ C.If condTest (C.Compound thenBlock) (Just elseStmt)
 
 
-generateIfBlock :: CN.Name -> Opt.Expr -> State ExprState C.Statement
-generateIfBlock tmpName expr =
-  do
-    outerBlock <- startNewBlock
-    cExpr <- generate expr
-    block <- resumeBlock outerBlock
-    return $ C.Compound $
-      (C.BlockStmt $ C.Expr $ Just $ C.Assign C.AssignOp (C.Var tmpName) cExpr)
-      : block
+
+-- CASE EXPRESSIONS
+
+
+-- generateCase :: Name.Name -> Name.Name -> Opt.Decider Opt.Choice -> [(Int, Opt.Expr)] -> State ExprState C.Expression
+-- generateCase label root decider jumps =
+--   do
+--     resultName <- getTmpVarName
+--     foldr
+--       (goto resultName label)
+--       (generateDecider resultName label root decider)
+--       jumps
+--     return $ C.Var resultName
+
+
+-- goto :: CN.Name -> Name.Name -> (Int, Opt.Expr) -> State ExprState () -> State ExprState ()
+-- goto resultName label (index, branch) state =
+--   do
+--     block <- generateExprAsBlock resultName branch
+--     (C.Label (CN.label label index) C.NullStatement) : block
+
+--   -- let
+--   --   labeledDeciderStmt =
+--   --     JS.Labelled
+--   --       (JsName.makeLabel label index)
+--   --       (JS.While (JS.Bool True) (JS.Block stmts))
+--   -- in
+--   -- labeledDeciderStmt : codeToStmtList (generate mode branch)
+
+
+-- generateDecider :: CN.Name -> Name.Name -> Name.Name -> Opt.Decider Opt.Choice -> State ExprState [C.CompoundBlockItem]
+-- generateDecider resultName label root decisionTree =
+--   case decisionTree of
+--     Opt.Leaf (Opt.Inline branch) ->
+--       codeToStmtList (generate mode branch)
+
+--     Opt.Leaf (Opt.Jump index) ->
+--       [ C.Goto $ CN.label label index ]
+
+--     Opt.Chain testChain success failure ->
+--       [ C.If
+--           (List.foldl1' (JS.Infix JS.OpAnd) (map (generateIfTest mode root) testChain))
+--           (JS.Block $ generateDecider resultName label root success)
+--           (JS.Block $ generateDecider resultName label root failure)
+--       ]
+
+--     Opt.FanOut path edges fallback ->
+--       [ C.Switch
+--           (generateCaseTest root path (fst (head edges)))
+--           ( foldr
+--               (\edge cases -> generateCaseBranch mode label root edge : cases)
+--               [ C.Default (generateDecider resultName label root fallback) ]
+--               edges
+--           )
+--       ]
+
+
+
+generateIfTest :: N.Name -> (DT.Path, DT.Test) -> State ExprState C.Expression
+generateIfTest root (path, test) =
+  let
+    value = pathToCExpr root path
+  in
+  case test of
+    DT.IsCtor home name _ _ opts ->
+      return $ C.Binary C.EqOp
+        (C.MemberArrow
+          (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) value)
+          (CN.fromBuilder "ctor"))
+        (C.Var $ CN.ctorId name)
+
+    DT.IsBool bool ->
+      return $ C.Binary C.EqOp value $ C.addrOf $
+        if bool then CN.true else CN.false
+
+    DT.IsInt int ->
+      return $ C.Binary C.EqOp
+        (C.MemberArrow
+          (C.Parens $ C.castAsPtrTo (C.TypeDef CN.ElmInt) value)
+          (CN.fromBuilder "value"))
+        (C.Const $ C.IntConst int)
+
+    DT.IsChr char ->
+      do
+        addShared (SharedChr char)
+        return $ C.Binary C.EqOp
+          (C.Call
+            (C.Var $ CN.applyMacro 2)
+            [ C.Var CN.utilsEqual
+            , value
+            , (C.addrOf $ CN.literalChr char)
+            ])
+          (C.addrOf CN.true)
+
+    DT.IsStr string ->
+      do
+        addShared (SharedStr string)
+        return $ C.Binary C.EqOp
+          (C.Call
+            (C.Var $ CN.applyMacro 2)
+            [ C.Var CN.utilsEqual
+            , value
+            , (C.addrOf $ CN.literalStr string)
+            ])
+          (C.addrOf CN.true)
+
+    DT.IsCons ->
+      return $ C.Binary C.NeqOp value (C.addrOf CN.nil)
+
+    DT.IsNil ->
+      return $ C.Binary C.EqOp value (C.addrOf CN.nil)
+
+    DT.IsTuple ->
+      error "COMPILER BUG - there should never be tests on a tuple"
+
+
+pathToCExpr :: N.Name -> DT.Path -> C.Expression
+pathToCExpr root path =
+  case path of
+    DT.Index index subPath ->
+      C.Call (C.Var CN.utilsDestructIndex)
+        [ pathToCExpr root subPath
+        , C.Const $ C.IntConst $ Index.toMachine index
+        ]
+
+    DT.Unbox subPath ->
+      -- ((Custom*)subPath)->values[0]
+      C.Index
+        (C.MemberArrow
+          (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) (pathToCExpr root subPath))
+          (CN.fromBuilder "values"))
+        (C.Const $ C.IntConst 0)
+
+    DT.Empty ->
+      C.Var $ CN.local root
 
 
 
