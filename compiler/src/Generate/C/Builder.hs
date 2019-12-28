@@ -153,11 +153,11 @@ fromBinop op lhs rhs =
     GeOp   -> bl <> " >= " <> br
     EqOp   -> bl <> " == " <> br
     NeqOp  -> bl <> " != " <> br
-    AndOp  -> bl <> " && " <> br
+    AndOp  -> bl <> " & " <> br
     XorOp  -> bl <> " ^ " <> br
-    OrOp   -> bl <> " || " <> br
-    LandOp -> bl <> " & " <> br
-    LorOp  -> bl <> " | " <> br
+    OrOp   -> bl <> " | " <> br
+    LandOp -> bl <> " && " <> br
+    LorOp  -> bl <> " || " <> br
 
 -- STATEMENT
 

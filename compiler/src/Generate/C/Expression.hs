@@ -237,7 +237,7 @@ generate expr =
         generate body
 
     Opt.Case label root decider jumps ->
-      todo "Case"
+      generateCase label root decider jumps
 
     Opt.Accessor field ->
       addSharedExpr
@@ -473,65 +473,83 @@ generateIfBranch resultName (condElm, thenElm) state =
 -- CASE EXPRESSIONS
 
 
--- generateCase :: Name.Name -> Name.Name -> Opt.Decider Opt.Choice -> [(Int, Opt.Expr)] -> State ExprState C.Expression
--- generateCase label root decider jumps =
---   do
---     resultName <- getTmpVarName
---     foldr
---       (goto resultName label)
---       (generateDecider resultName label root decider)
---       jumps
---     return $ C.Var resultName
+generateCase :: N.Name -> N.Name -> Opt.Decider Opt.Choice -> [(Int, Opt.Expr)] -> State ExprState C.Expression
+generateCase label root decider jumps =
+  do
+    resultName <- getTmpVarName
+    addBlockItem $ C.declare resultName Nothing
+    defaultStmt <- generateDecider resultName label root decider
+    stmts <- foldr
+              (goto resultName label)
+              (return [defaultStmt]) -- two block items, including decl for result
+              jumps
+    modify (\state ->
+      state { _revBlockItems = (map C.BlockStmt stmts) ++ (_revBlockItems state) })
+    return $ C.Var resultName
 
 
--- goto :: CN.Name -> Name.Name -> (Int, Opt.Expr) -> State ExprState () -> State ExprState ()
--- goto resultName label (index, branch) state =
---   do
---     block <- generateExprAsBlock resultName branch
---     (C.Label (CN.label label index) C.NullStatement) : block
-
---   -- let
---   --   labeledDeciderStmt =
---   --     JS.Labelled
---   --       (JsName.makeLabel label index)
---   --       (JS.While (JS.Bool True) (JS.Block stmts))
---   -- in
---   -- labeledDeciderStmt : codeToStmtList (generate mode branch)
+goto :: CN.Name -> N.Name -> (Int, Opt.Expr) -> State ExprState [C.Statement] -> State ExprState [C.Statement]
+goto resultName label (index, branch) stmtsState =
+  do
+    stmts <- stmtsState
+    branchExpr <- generate branch
+    let branchStmt = C.Expr $ Just $ C.Assign C.AssignOp (C.Var resultName) branchExpr
+    return $ (C.Label (CN.label label index) branchStmt) : stmts
 
 
--- generateDecider :: CN.Name -> Name.Name -> Name.Name -> Opt.Decider Opt.Choice -> State ExprState [C.CompoundBlockItem]
--- generateDecider resultName label root decisionTree =
---   case decisionTree of
---     Opt.Leaf (Opt.Inline branch) ->
---       codeToStmtList (generate mode branch)
+generateDecider :: CN.Name -> N.Name -> N.Name -> Opt.Decider Opt.Choice -> State ExprState C.Statement
+generateDecider resultName label root decisionTree =
+  case decisionTree of
+    Opt.Leaf (Opt.Inline branch) ->
+      do
+        block <- generateExprAsBlock resultName branch
+        return $ C.Compound block
 
---     Opt.Leaf (Opt.Jump index) ->
---       [ C.Goto $ CN.label label index ]
+    Opt.Leaf (Opt.Jump index) ->
+      return $ C.Compound [C.BlockStmt $ C.Goto $ CN.label label index]
 
---     Opt.Chain testChain success failure ->
---       [ C.If
---           (List.foldl1' (JS.Infix JS.OpAnd) (map (generateIfTest mode root) testChain))
---           (JS.Block $ generateDecider resultName label root success)
---           (JS.Block $ generateDecider resultName label root failure)
---       ]
+    Opt.Chain testChain success failure ->
+      do
+        testExprs <- foldr (generateTestChain root) (return []) testChain
+        let chainExpr = List.foldl1' (C.Binary C.LandOp) testExprs
+        successStmt <- generateDecider resultName label root success
+        failureStmt <- generateDecider resultName label root failure
+        return $ C.If chainExpr successStmt (Just failureStmt)
 
---     Opt.FanOut path edges fallback ->
---       [ C.Switch
---           (generateCaseTest root path (fst (head edges)))
---           ( foldr
---               (\edge cases -> generateCaseBranch mode label root edge : cases)
---               [ C.Default (generateDecider resultName label root fallback) ]
---               edges
---           )
---       ]
+    Opt.FanOut path edges fallback ->
+      let value = pathToCExpr root path
+      in
+      foldr
+        (generateCaseBranch resultName label root value)
+        (generateDecider resultName label root fallback)
+        edges
 
+
+generateTestChain :: N.Name -> (DT.Path, DT.Test) -> State ExprState [C.Expression] -> State ExprState [C.Expression]
+generateTestChain root pathAndTest acc =
+  do
+    accExpr <- acc
+    testExpr <- generateIfTest root pathAndTest
+    return $ testExpr : accExpr
+
+
+generateCaseBranch :: CN.Name -> N.Name -> N.Name -> C.Expression -> (DT.Test, Opt.Decider Opt.Choice) -> State ExprState C.Statement -> State ExprState C.Statement
+generateCaseBranch resultName label root value (test, subTree) nextBranchState =
+  do
+    nextBranchStmt <- nextBranchState
+    testExpr <- generateTest value test
+    subTreeStmt <- generateDecider resultName label root subTree
+    let subTreeBlock = C.Compound [C.BlockStmt subTreeStmt]
+    return $ C.If testExpr subTreeBlock (Just nextBranchStmt)
 
 
 generateIfTest :: N.Name -> (DT.Path, DT.Test) -> State ExprState C.Expression
 generateIfTest root (path, test) =
-  let
-    value = pathToCExpr root path
-  in
+  generateTest (pathToCExpr root path) test
+
+
+generateTest :: C.Expression -> DT.Test -> State ExprState C.Expression
+generateTest value test =
   case test of
     DT.IsCtor home name _ _ opts ->
       return $ C.Binary C.EqOp

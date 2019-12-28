@@ -252,4 +252,11 @@ argsArray =
       (Just CN.args)
       [PtrDeclr [], ArrDeclr [] NoArrSize])
     Nothing
-  
+
+
+declare :: Name -> Maybe Expression -> CompoundBlockItem
+declare name mExpr =
+  BlockDecl $ Decl
+    [TypeSpec Void]
+    (Just $ Declr (Just name) [PtrDeclr []])
+    (fmap InitExpr mExpr)

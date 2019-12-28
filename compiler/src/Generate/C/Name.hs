@@ -6,6 +6,7 @@ module Generate.C.Name
   , toBuilder
   , local
   , tmp
+  , label
   , global
   , globalInitFn
   , globalInitPtr
@@ -83,7 +84,7 @@ tmp index =
 
 label :: Name.Name -> Int -> Name
 label prefix index =
-  Name $ (Name.toBuilder prefix) <> (B.intDec index)
+  Name $ (Name.toBuilder prefix) <> "_" <> (B.intDec index)
 
 
 global :: ModuleName.Canonical -> Name.Name -> Name
