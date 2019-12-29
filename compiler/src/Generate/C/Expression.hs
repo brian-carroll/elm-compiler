@@ -301,10 +301,10 @@ generateExprAsBlock resultName expr =
   do
     outerBlock <- startNewBlock
     cExpr <- generate expr
-    block <- resumeBlock outerBlock
+    innerBlock <- resumeBlock outerBlock
     return $
       (C.BlockStmt $ C.Expr $ Just $ C.Assign C.AssignOp (C.Var resultName) cExpr)
-      : block
+      : innerBlock
 
 
 
@@ -517,35 +517,74 @@ generateDecider resultName label root decisionTree =
         return $ C.If chainExpr successStmt (Just failureStmt)
 
     Opt.FanOut path edges fallback ->
-      let value = pathToCExpr root path
-      in
-      foldr
-        (generateCaseBranch resultName label root value)
-        (generateDecider resultName label root fallback)
-        edges
+      do
+        let value = pathToCExpr root path
+        testVal <- generateTestValue value $ fst (head edges)
+        foldr
+          (generateFanoutBranch resultName label root testVal)
+          (generateDecider resultName label root fallback)
+          edges
 
 
-generateTestChain :: N.Name -> (DT.Path, DT.Test) -> State ExprState [C.Expression] -> State ExprState [C.Expression]
-generateTestChain root pathAndTest acc =
-  do
-    accExpr <- acc
-    testExpr <- generateIfTest root pathAndTest
-    return $ testExpr : accExpr
-
-
-generateCaseBranch :: CN.Name -> N.Name -> N.Name -> C.Expression -> (DT.Test, Opt.Decider Opt.Choice) -> State ExprState C.Statement -> State ExprState C.Statement
-generateCaseBranch resultName label root value (test, subTree) nextBranchState =
+generateFanoutBranch :: CN.Name -> N.Name -> N.Name -> C.Expression -> (DT.Test, Opt.Decider Opt.Choice) -> State ExprState C.Statement -> State ExprState C.Statement
+generateFanoutBranch resultName label root value (test, subTree) nextBranchState =
   do
     nextBranchStmt <- nextBranchState
     testExpr <- generateTest value test
+    outerBlock <- startNewBlock
     subTreeStmt <- generateDecider resultName label root subTree
-    let subTreeBlock = C.Compound [C.BlockStmt subTreeStmt]
+    innerBlock <- resumeBlock outerBlock
+    let subTreeBlock = C.Compound ((C.BlockStmt subTreeStmt) : innerBlock)
     return $ C.If testExpr subTreeBlock (Just nextBranchStmt)
 
 
-generateIfTest :: N.Name -> (DT.Path, DT.Test) -> State ExprState C.Expression
-generateIfTest root (path, test) =
-  generateTest (pathToCExpr root path) test
+generateTestChain :: N.Name -> (DT.Path, DT.Test) -> State ExprState [C.Expression] -> State ExprState [C.Expression]
+generateTestChain root (path, test) acc =
+  do
+    accExpr <- acc
+    testValue <- generateTestValue (pathToCExpr root path) test
+    testExpr <- generateTest testValue test
+    return $ testExpr : accExpr
+
+
+generateTestValue :: C.Expression -> DT.Test -> State ExprState C.Expression
+generateTestValue value test =
+  case test of
+    DT.IsCtor home name _ _ opts ->
+      do
+        testValName <- getTmpVarName
+        addBlockItem $ C.declare testValName $ Just $
+          C.MemberArrow
+            (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) value)
+            (CN.fromBuilder "ctor")
+        return $ C.Var testValName
+
+    DT.IsInt int ->
+      do
+        testValName <- getTmpVarName
+        addBlockItem $ C.declare testValName $ Just $
+          C.MemberArrow
+            (C.Parens $ C.castAsPtrTo (C.TypeDef CN.ElmInt) value)
+            (CN.fromBuilder "value")
+        return $ C.Var testValName
+    
+    DT.IsBool bool ->
+      return value
+
+    DT.IsChr char ->
+      return value
+
+    DT.IsStr string ->
+      return value
+
+    DT.IsCons ->
+      return value
+
+    DT.IsNil ->
+      return value
+
+    DT.IsTuple ->
+      error "COMPILER BUG - there should never be tests on a tuple"
 
 
 generateTest :: C.Expression -> DT.Test -> State ExprState C.Expression
@@ -553,9 +592,7 @@ generateTest value test =
   case test of
     DT.IsCtor home name _ _ opts ->
       return $ C.Binary C.EqOp
-        (C.MemberArrow
-          (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) value)
-          (CN.fromBuilder "ctor"))
+        value
         (C.Var $ CN.ctorId name)
 
     DT.IsBool bool ->
@@ -564,9 +601,7 @@ generateTest value test =
 
     DT.IsInt int ->
       return $ C.Binary C.EqOp
-        (C.MemberArrow
-          (C.Parens $ C.castAsPtrTo (C.TypeDef CN.ElmInt) value)
-          (CN.fromBuilder "value"))
+        value
         (C.Const $ C.IntConst int)
 
     DT.IsChr char ->
