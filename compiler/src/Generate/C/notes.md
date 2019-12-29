@@ -3,9 +3,10 @@
 - generated app is working!
 - build system is really awkward
 - Expressions to do
-  - [ ] Case
+  - [x] Case
 - Nodes to do
   - [ ] Cycle
+    - https://gist.github.com/evancz/07436448b7d6c947f21742dab46d1218
   - [x] PortIncoming
   - [x] PortOutgoing
   - [ ] DefineTailFunc (not used in SPA example)
