@@ -113,10 +113,7 @@ localEvaluator home name index =
 
 
 cycleVar :: ModuleName.Canonical -> Name.Name -> Name
-cycleVar home name =
-  Name $ mconcat $
-    (homeToBuilders home)
-    ++ ["cyclic", Name.toBuilder name]
+cycleVar = globalInitFn
 
 
 jsKernelEval :: Name.Name -> Name.Name -> Name

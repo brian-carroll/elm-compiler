@@ -254,9 +254,9 @@ argsArray =
     Nothing
 
 
-declare :: Name -> Maybe Expression -> CompoundBlockItem
+declare :: Name -> Maybe Expression -> Declaration
 declare name mExpr =
-  BlockDecl $ Decl
+  Decl
     [TypeSpec Void]
     (Just $ Declr (Just name) [PtrDeclr []])
     (fmap InitExpr mExpr)

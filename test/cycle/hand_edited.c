@@ -495,10 +495,9 @@ Closure elm_random_Random_int = {
     .evaluator = &eval_elm_random_Random_int,
 };
 
-// ---------------------------------------------------------------
-
-void* init_author_project_Main_rollAgain();
-void* init_author_project_Main_roll();
+//
+void* cycle_author_project_Main_rollAgain();
+void* cycle_author_project_Main_roll();
 
 void* eval_author_project_Main_rollIf(void* args[]) {
   void* x_b = args[0];
@@ -506,7 +505,7 @@ void* eval_author_project_Main_rollIf(void* args[]) {
   if (x_b == &True) {
     tmp0 = A2(&elm_random_Random_int, &literal_int_1, &literal_int_6);
   } else {
-    tmp0 = init_author_project_Main_rollAgain();
+    tmp0 = cycle_author_project_Main_rollAgain();
   };
   return tmp0;
 }
@@ -518,28 +517,33 @@ Closure author_project_Main_rollIf = {
 };
 
 #define author_project_Main_rollAgain (*ptr_author_project_Main_rollAgain)
-void* ptr_author_project_Main_rollAgain = NULL;
+void* ptr_author_project_Main_rollAgain;
 void* init_author_project_Main_rollAgain() {
-  if (ptr_author_project_Main_rollAgain == NULL) {
-    ptr_author_project_Main_rollAgain = init_author_project_Main_roll();
+  return cycle_author_project_Main_rollAgain();
+}
+void* cycle_author_project_Main_rollAgain() {
+  if (!ptr_author_project_Main_rollAgain) {
+    ptr_author_project_Main_rollAgain = cycle_author_project_Main_roll();
   }
   return ptr_author_project_Main_rollAgain;
 }
 
+#define author_project_Main_roll (*ptr_author_project_Main_roll)
+void* ptr_author_project_Main_roll;
+void* init_author_project_Main_roll() {
+  return cycle_author_project_Main_roll();
+}
 void* eval_author_project_Main_roll_lambda0(void* args[]) {
   void* x_n = args[0];
   return Utils_equal(x_n, &literal_int_1);
 }
-#define author_project_Main_roll (*ptr_author_project_Main_roll)
-void* ptr_author_project_Main_roll = NULL;
-void* init_author_project_Main_roll() {
-  if (ptr_author_project_Main_roll == NULL) {
-    ptr_author_project_Main_roll = A2(&elm_random_Random_andThen,
-        &author_project_Main_rollIf,
-        A2(&elm_random_Random_map,
-            NEW_CLOSURE(0, 1, &eval_author_project_Main_roll_lambda0, ((void* []){})),
-            A2(&elm_random_Random_int, &literal_int_0, &literal_int_1)));
-  }
+void* cycle_author_project_Main_roll() {
+  if (ptr_author_project_Main_roll) return ptr_author_project_Main_roll;
+  ptr_author_project_Main_roll = A2(&elm_random_Random_andThen,
+      &author_project_Main_rollIf,
+      A2(&elm_random_Random_map,
+          NEW_CLOSURE(0, 1, &eval_author_project_Main_roll_lambda0, ((void* []){})),
+          A2(&elm_random_Random_int, &literal_int_0, &literal_int_1)));
   return ptr_author_project_Main_roll;
 }
 

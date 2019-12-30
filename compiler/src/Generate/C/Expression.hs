@@ -7,6 +7,7 @@ module Generate.C.Expression
  , ExprState(..)
  , initState
  , generateEvalFn
+ , generateCycleFn
  , globalDefsFromExprState
 )
 where
@@ -40,7 +41,7 @@ import qualified Data.Index as Index
 -- import qualified Elm.Compiler.Type as Type
 -- import qualified Elm.Compiler.Type.Extract as Extract
 -- import qualified Elm.Version as V
--- import qualified Elm.ModuleName as ModuleName
+import qualified Elm.ModuleName as ModuleName
 -- import qualified Elm.Package as Pkg
 -- import qualified Json.Encode as Encode
 -- import Json.Encode ((==>))
@@ -201,7 +202,7 @@ generate expr =
       return $ C.addrOf $ CN.global home name
 
     Opt.VarCycle home name ->
-      return $ C.addrOf $ CN.cycleVar home name
+      return $ C.Call (C.Var $ CN.cycleVar home name) []
 
     Opt.VarDebug name home _ _ ->
       return $ C.addrOf $ CN.global home name
@@ -361,6 +362,22 @@ generateEvalFn fname params body =
     return freeVarList
 
 
+generateCycleFn :: CN.Name -> CN.Name -> Opt.Expr -> State ExprState ()
+generateCycleFn ptrName funcName elmExpr =
+  do
+    let ptr = C.Var ptrName
+    addBlockItem $ C.BlockStmt $ C.If ptr (C.Return $ Just ptr) Nothing
+    expr <- generate elmExpr
+    addBlockItem $ C.BlockStmt $ C.Expr $ Just $
+      C.Assign C.AssignOp ptr expr
+    modify (\state ->
+      state
+        { _revExtDecls =
+            (generateEvalFnDecl funcName ptr (_revBlockItems state) [])
+            : (_revExtDecls state)
+        })
+
+
 generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> [N.Name] -> C.ExternalDeclaration
 generateEvalFnDecl fname returnExpr blockItems params =
   let
@@ -380,22 +397,18 @@ generateEvalFnDecl fname returnExpr blockItems params =
 
 generateDestructParams :: [N.Name] -> [C.CompoundBlockItem]
 generateDestructParams params =
-  let
-    (_, revParamDecls) =
-      List.foldl'
-        (\(index, decls) param ->
-          ( index + 1
-          , (C.BlockDecl $ C.Decl
-              [C.TypeSpec C.Void]
-              (Just $ C.Declr (Just $ CN.local param) [C.PtrDeclr []])
-              (Just $ C.InitExpr $
-                C.Index (C.Var CN.args) (C.Const $ C.IntConst index))
-            ) : decls
-          ))
-        (0, [])
-        params
-  in
-  revParamDecls
+  snd $ List.foldl'
+    (\(index, decls) param ->
+      ( index + 1
+      , (C.BlockDecl $ C.Decl
+          [C.TypeSpec C.Void]
+          (Just $ C.Declr (Just $ CN.local param) [C.PtrDeclr []])
+          (Just $ C.InitExpr $
+            C.Index (C.Var CN.args) (C.Const $ C.IntConst index))
+        ) : decls
+      ))
+    (0, [])
+    params
 
 
 -- RECORD
@@ -477,7 +490,7 @@ generateCase :: N.Name -> N.Name -> Opt.Decider Opt.Choice -> [(Int, Opt.Expr)] 
 generateCase label root decider jumps =
   do
     resultName <- getTmpVarName
-    addBlockItem $ C.declare resultName Nothing
+    addBlockItem $ C.BlockDecl $ C.declare resultName Nothing
     defaultStmt <- generateDecider resultName label root decider
     stmts <- foldr
               (goto resultName label)
@@ -553,7 +566,7 @@ generateTestValue value test =
     DT.IsCtor home name _ _ opts ->
       do
         testValName <- getTmpVarName
-        addBlockItem $ C.declare testValName $ Just $
+        addBlockItem $ C.BlockDecl $ C.declare testValName $ Just $
           C.MemberArrow
             (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) value)
             (CN.fromBuilder "ctor")
@@ -562,7 +575,7 @@ generateTestValue value test =
     DT.IsInt int ->
       do
         testValName <- getTmpVarName
-        addBlockItem $ C.declare testValName $ Just $
+        addBlockItem $ C.BlockDecl $ C.declare testValName $ Just $
           C.MemberArrow
             (C.Parens $ C.castAsPtrTo (C.TypeDef CN.ElmInt) value)
             (CN.fromBuilder "value")

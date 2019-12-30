@@ -630,7 +630,7 @@ addGlobalHelp graph global state =
       addGlobal graph state linkedGlobal
 
     Opt.Cycle names values functions deps ->
-      addExtDecl (C.CommentExt $ nodeName node) $
+      generateCycle global names values functions $
       addDeps deps state
 
     Opt.Manager effectsType ->
@@ -683,6 +683,86 @@ addShared sharedDef state =
   state { _sharedDefs =
     Set.insert sharedDef (_sharedDefs state) }
 
+    
+{-
+                CYCLE
+-}
+
+generateCycle :: Opt.Global -> [Name.Name] -> [(Name.Name, Opt.Expr)] -> [Opt.Def] -> State -> State
+generateCycle (Opt.Global home _) names values functions prevState =
+  let
+    preDeclsState :: State
+    preDeclsState =
+      List.foldl'
+        (\state (name, _) ->
+          addExtDecl
+            (C.DeclExt $ C.Decl
+              [C.TypeSpec C.Void]
+              (Just $ C.Declr
+                (Just $ CN.cycleVar home name)
+                [C.PtrDeclr [], C.FunDeclr []])
+              Nothing
+            )
+            state
+        )
+        prevState
+        values
+
+    functionsState :: State
+    functionsState =
+      List.foldl'
+        (\state def ->
+          case def of
+            Opt.Def name body ->
+              addDef (Opt.Global home name) body state
+
+            Opt.TailDef name args expr ->
+              -- TODO
+              addExtDecl (C.CommentExt $ Name.toBuilder name) state
+        )
+        preDeclsState
+        functions
+  in
+  List.foldl' (generateCycleVal home) functionsState values
+
+
+generateCycleVal :: ModuleName.Canonical -> State -> (Name.Name, Opt.Expr) -> State
+generateCycleVal home state (name, expr) =
+  let
+    global = Opt.Global home name
+    globalName = CN.global home name
+    ptrName = CN.globalInitPtr home name
+    funcName = CN.cycleVar home name
+
+    declarePtr =
+      C.DeclExt $ C.Decl
+        [C.TypeSpec $ C.TypeDef CN.ElmValue]
+        (Just $ C.Declr (Just ptrName) [C.PtrDeclr []])
+        Nothing
+
+    defineAlias =
+      C.DefineExt globalName $ C.Parens $
+      C.Unary C.DerefOp $ C.Var ptrName
+
+    initExprState =
+      CE.initState
+        global
+        (declarePtr : defineAlias : _revExtDecls state)
+        (_sharedDefs state)
+
+    (revExtDecls, sharedDefs) =
+      CE.globalDefsFromExprState $
+      State.execState
+        (CE.generateCycleFn ptrName funcName expr)
+        initExprState
+  in
+  state
+    { _revExtDecls = revExtDecls
+    , _sharedDefs = sharedDefs
+    , _revInitGlobals = global : (_revInitGlobals state)
+    }
+
+    
 {-
                 PORT
 -}
@@ -766,7 +846,7 @@ addDef global@(Opt.Global home' name') expr state =
           []
       in
       addExtDecl closure $
-        generateGlobalFunc global fname args body state
+      generatExtFunc global fname args body state
 
     Opt.Int value ->
       addShared (CE.SharedInt value) $
@@ -857,8 +937,8 @@ generateRuntimeInit structName global@(Opt.Global home' name') expr state =
     state
 
 
-generateGlobalFunc :: Opt.Global -> CN.Name -> [Name.Name] -> Opt.Expr -> State -> State
-generateGlobalFunc global fname params body state =
+generatExtFunc :: Opt.Global -> CN.Name -> [Name.Name] -> Opt.Expr -> State -> State
+generatExtFunc global fname params body state =
   let
     initExprState =
       CE.initState global (_revExtDecls state) (_sharedDefs state)
@@ -877,9 +957,10 @@ generateGlobalFunc global fname params body state =
 
 generateInitFn :: Opt.Global -> Opt.Expr -> State -> State
 generateInitFn global@(Opt.Global home name) body state =
-  let fname = CN.globalInitFn home name
+  let
+    fname = CN.globalInitFn home name
   in
-  generateGlobalFunc global fname [] body $
+  generatExtFunc global fname [] body $
     state { _revInitGlobals = global : _revInitGlobals state }
 
 
