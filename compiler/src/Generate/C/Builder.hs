@@ -354,8 +354,7 @@ fromDerivedDeclr declrBuilder derivedDeclr =
       join " " $
         "*" : (map fromTypeQualifier typeQualifiers) ++ [declrBuilder]
 
-    ArrDeclr typeQualifiers arraySize ->
-      -- TODO: deal with typeQualifiers? Do I care?
+    ArrDeclr _ arraySize ->
       declrBuilder
         <> "["
         <> (case arraySize of
