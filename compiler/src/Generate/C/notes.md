@@ -6,11 +6,11 @@
   - [x] Case
   - [ ] Let Def TailDef
 - Nodes to do
-  - [ ] Cycle https://gist.github.com/evancz/07436448b7d6c947f21742dab46d1218
+  - [x] Cycle values https://gist.github.com/evancz/07436448b7d6c947f21742dab46d1218
   - [x] PortIncoming
   - [x] PortOutgoing
   - [ ] DefineTailFunc (not used in SPA example)
-  - lambda arg names can be `$`!
+  - [x] sanitise lambda arg names, can be `$`!
 
 # STATUS 10 Dec 2019
 

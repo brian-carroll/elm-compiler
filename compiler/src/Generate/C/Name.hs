@@ -74,7 +74,10 @@ fromBuilder = Name
 
 local :: Name.Name -> Name
 local name =
-  Name $ "x_" <> Name.toBuilder name
+  if name == Name.dollar then  -- JSON encoder for outgoing port
+    Name "x"
+  else
+    Name $ "x_" <> Name.toBuilder name
 
 
 tmp :: Int -> Name
