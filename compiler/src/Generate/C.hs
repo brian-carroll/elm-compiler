@@ -718,7 +718,8 @@ generateCycle (Opt.Global home _) names values functions prevState =
 
             Opt.TailDef name args expr ->
               -- TODO
-              addExtDecl (C.CommentExt $ Name.toBuilder name) state
+              -- 
+              addExtDecl (C.CommentExt ("Cycle TailDef " <> (Name.toBuilder name))) state
         )
         preDeclsState
         functions

@@ -767,8 +767,11 @@ generateDef def =
             (Just $ C.InitExpr bodyExpr)
 
     Opt.TailDef name argNames body ->
-      -- TODO
-      addBlockItem $ C.BlockStmt $ C.CommentStatement $ N.toBuilder name
+      do
+        addLocal name
+        -- TODO
+        addBlockItem $ C.BlockStmt $ C.CommentStatement $
+          "local TailDef " <> N.toBuilder name
 
 
 
