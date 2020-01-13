@@ -1,3 +1,29 @@
+# Tail Calls
+
+- TailCall expression
+  - `generateTailCallArg`
+    - generate arg expression
+    - create tmp
+    - declare tmp initialised to expression
+  - fold `generateTailCallArg` over args list
+  - insert a list of statements
+    - GC
+    - assign tmp vars to arg array members
+    - goto
+- Let TailDef expression
+  - v similar to `generateLocalFn`, re-use most of that
+  - create tce eval and main eval
+    - tce eval has extra arg
+    - insert label statement (maybe easiest with null statement)
+- global TailDef
+  - TCE eval
+  - main eval
+  - Closure
+- local TailDef
+  - TCE eval
+  - main eval
+- Note: It's impossible to have an anonymous function literal that is tail recursive. You need a function name to call in the tail! So it must always be in a let or at top level
+
 # STATUS 20 Dec 2019
 
 - generated app is working!

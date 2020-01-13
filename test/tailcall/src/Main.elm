@@ -30,6 +30,7 @@ view () =
         ]
 
 
+tailCallWrapperFunc : Int -> Int
 tailCallWrapperFunc x =
     let
         tailFunc xx =
@@ -41,6 +42,7 @@ tailCallWrapperFunc x =
         tailFunc x
 
 
+topLevelTailFunc : Int -> Int
 topLevelTailFunc xx =
     if xx > 10 then
         xx
