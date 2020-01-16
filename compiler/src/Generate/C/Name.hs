@@ -18,6 +18,8 @@ module Generate.C.Name
   , fieldGroup
   , globalEvaluator
   , localEvaluator
+  , globalTailEvaluator
+  , localTailEvaluator
   , literalInt
   , literalFloat
   , literalStr
@@ -37,6 +39,9 @@ module Generate.C.Name
   , wrapperRegisterFieldGroups
   , mains
   , wrapperRegisterMains
+  , gcTceData
+  , gcTceEval
+  , tceLabel
   , KernelTypeDef(..)
   , HeaderFile(..)
   , args
@@ -113,6 +118,16 @@ globalEvaluator home name =
 localEvaluator :: ModuleName.Canonical -> Name.Name -> Int -> Name
 localEvaluator home name index =
   Name ("eval_" <> globalBuilder home name <> "_lambda" <> B.intDec index)
+
+
+globalTailEvaluator :: ModuleName.Canonical -> Name.Name -> Name
+globalTailEvaluator home name =
+  Name ("tce_" <> globalBuilder home name)
+
+
+localTailEvaluator :: ModuleName.Canonical -> Name.Name -> Name.Name -> Name
+localTailEvaluator home gName name =
+  Name ("tce_" <> globalBuilder home gName <> "_" <> Name.toBuilder name)
 
 
 cycleVar :: ModuleName.Canonical -> Name.Name -> Name
@@ -297,6 +312,20 @@ wrapperRegisterMains =
 args :: Name
 args =
   Name "args"
+
+
+tceLabel :: Name
+tceLabel =
+  Name "tce_loop"
+
+gcTceData :: Name
+gcTceData =
+  Name "gc_tce_data"
+
+
+gcTceEval :: Name
+gcTceEval =
+  Name "GC_tce_eval"
 
 
 applyMacro :: Int -> Name

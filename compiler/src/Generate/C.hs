@@ -947,7 +947,7 @@ generatExtFunc global fname params body state =
     (revExtDecls, sharedDefs) =
       CE.globalDefsFromExprState $
       State.execState
-        (CE.generateEvalFn fname params body)
+        (CE.generateEvalFn fname params body False)
         initExprState
   in
   state

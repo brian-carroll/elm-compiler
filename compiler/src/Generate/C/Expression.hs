@@ -113,12 +113,18 @@ addSharedExpr shared name =
   do
     addShared shared
     return $ C.addrOf name
-    
+
 
 addBlockItem :: C.CompoundBlockItem -> State ExprState ()
 addBlockItem blockItem =
   modify (\state ->
     state { _revBlockItems = blockItem : (_revBlockItems state) })
+
+
+addExtDecl :: C.ExternalDeclaration -> State ExprState ()
+addExtDecl extDecl =
+  modify (\state ->
+    state { _revExtDecls = extDecl : (_revExtDecls state) })
 
 
 addLocal :: N.Name -> State ExprState ()
@@ -318,7 +324,7 @@ generateLocalFn params body =
     (Opt.Global gHome gName) <- gets _parentGlobal
     tmpVarIndex <- nextTmpVarIndex
     let fname = CN.localEvaluator gHome gName tmpVarIndex
-    freeVars <- generateEvalFn fname params body
+    freeVars <- generateEvalFn fname params body False
     return $
       C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
         [ C.Const $ C.IntConst $ length freeVars
@@ -328,8 +334,8 @@ generateLocalFn params body =
         ]
 
 
-generateEvalFn :: CN.Name -> [N.Name] -> Opt.Expr -> State ExprState [N.Name]
-generateEvalFn fname params body =
+generateEvalFn :: CN.Name -> [N.Name] -> Opt.Expr -> Bool -> State ExprState [N.Name]
+generateEvalFn fname params body isTailRec =
   do
     origState <- get
     put $ origState
@@ -342,7 +348,7 @@ generateEvalFn fname params body =
 
     let freeVarList = Set.toList (_freeVars bodyState)
     let extDecl = generateEvalFnDecl fname returnExpr
-            (_revBlockItems bodyState) (freeVarList ++ params)
+            (_revBlockItems bodyState) (freeVarList ++ params) isTailRec
 
     -- If my child function refers to my parent's scope, I pass it down as a free var.
     let updatedOrigFreeVars = List.foldl'
@@ -370,21 +376,35 @@ generateCycleFn ptrName funcName elmExpr =
     expr <- generate elmExpr
     addBlockItem $ C.BlockStmt $ C.Expr $ Just $
       C.Assign C.AssignOp ptr expr
-    modify (\state ->
-      state
-        { _revExtDecls =
-            (generateEvalFnDecl funcName ptr (_revBlockItems state) [])
-            : (_revExtDecls state)
-        })
+    blockItems <- gets _revBlockItems
+    addExtDecl $ generateEvalFnDecl funcName ptr blockItems [] False
 
 
-generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> [N.Name] -> C.ExternalDeclaration
-generateEvalFnDecl fname returnExpr blockItems params =
+generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> [N.Name] -> Bool -> C.ExternalDeclaration
+generateEvalFnDecl fname returnExpr blockItems params isTailRec =
   let
     paramDecls =
       case params of
         [] -> []
-        _ -> [C.argsArray]
+        _ -> C.argsArray : gcTceData
+
+    gcTceData =
+      if isTailRec then
+        [ C.Decl
+            [C.TypeSpec C.Void]
+            (Just $ C.Declr
+              (Just CN.gcTceData)
+              [C.PtrDeclr [], C.PtrDeclr []])
+            Nothing
+        ]
+      else
+        []
+
+    tceGoto =
+      if isTailRec then
+        [ C.BlockStmt $ C.Label CN.tceLabel $ C.NullStatement ]
+      else
+        []
   in
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.Void]
@@ -392,6 +412,7 @@ generateEvalFnDecl fname returnExpr blockItems params =
     ( (C.BlockStmt $ C.Return $ Just returnExpr)
       : blockItems
       ++ (generateDestructParams params)
+      ++ tceGoto
     )
 
 
@@ -768,10 +789,35 @@ generateDef def =
 
     Opt.TailDef name argNames body ->
       do
+        -- names
         addLocal name
-        -- TODO
-        addBlockItem $ C.BlockStmt $ C.CommentStatement $
-          "local TailDef " <> N.toBuilder name
+        tmpIndex <- nextTmpVarIndex
+        (Opt.Global gHome gName) <- gets _parentGlobal
+        let tailFnName = CN.localTailEvaluator gHome gName name
+        let wrapFnName = CN.localEvaluator gHome gName tmpIndex
+
+        freeVars <- generateEvalFn tailFnName argNames body True
+
+        let wrapperBody = C.Call (C.Var CN.gcTceEval)
+                            [ C.addrOf tailFnName
+                            , C.addrOf wrapFnName
+                            , C.Const $ C.IntConst $ length argNames
+                            , C.Var CN.args
+                            ]
+        addExtDecl $ generateEvalFnDecl wrapFnName wrapperBody [] [] False
+
+        addBlockItem $
+          C.BlockDecl $ C.Decl
+            [C.TypeSpec C.Void]
+            (Just $ C.Declr
+              (Just $ CN.local name)
+              [C.PtrDeclr []])
+            (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
+              [ C.Const $ C.IntConst $ length freeVars
+              , C.Const $ C.IntConst $ length freeVars + length argNames
+              , C.Unary C.AddrOp $ C.Var wrapFnName
+              , C.pointerArray (map (C.Var . CN.local) freeVars)
+              ])
 
 
 
