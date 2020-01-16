@@ -41,6 +41,8 @@ module Generate.C.Name
   , wrapperRegisterMains
   , gcTceData
   , gcTceEval
+  , gcTceIteration
+  , canThrowMacro
   , tceLabel
   , KernelTypeDef(..)
   , HeaderFile(..)
@@ -326,6 +328,16 @@ gcTceData =
 gcTceEval :: Name
 gcTceEval =
   Name "GC_tce_eval"
+
+
+gcTceIteration :: Name
+gcTceIteration =
+  Name "GC_tce_iteration"
+
+
+canThrowMacro :: Name
+canThrowMacro =
+  Name "CAN_THROW"
 
 
 applyMacro :: Int -> Name

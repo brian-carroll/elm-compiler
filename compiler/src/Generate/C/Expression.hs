@@ -15,7 +15,6 @@ where
 import Control.Monad.State (State, get, put, gets, modify)
 import qualified Control.Monad.State as State
 
-
 import qualified Data.ByteString.Builder as B
   -- import qualified Data.IntMap as IntMap
 import Data.Set (Set)
@@ -228,7 +227,7 @@ generate expr =
       generateCall func args
 
     Opt.TailCall name args ->
-      todo "TailCall"
+      generateTailCall name args
 
     Opt.If branches final ->
       generateIf branches final
@@ -767,6 +766,54 @@ generateCall func args =
     return $ C.Call (C.Var $ CN.applyMacro nArgs)
               (funcExpr : argExprs)
 
+
+
+-- TAILCALL
+
+
+generateTailCall :: N.Name -> [(N.Name, Opt.Expr)] -> State ExprState C.Expression
+generateTailCall name args =
+  do
+    let elmArgExprs = map snd args
+    (cArgExprs, nArgs) <- generateChildren elmArgExprs
+    tmpNames <- State.foldM generateTailCallArg [] cArgExprs
+
+    generateTailCallGcAlloc nArgs
+    State.foldM generateTailCallAssign (nArgs - 1) tmpNames
+    addBlockItem $ C.BlockStmt $ C.Goto CN.tceLabel
+
+    return $ C.Var CN.nullPtr
+
+
+generateTailCallArg :: [CN.Name] -> C.Expression -> State ExprState [CN.Name]
+generateTailCallArg tmpNames expr =
+  do
+    tmp <- getTmpVarName
+    addBlockItem $ C.BlockDecl $ C.declare tmp $ Just expr
+    return $ tmp : tmpNames
+
+
+generateTailCallGcAlloc :: Int -> State ExprState ()
+generateTailCallGcAlloc nArgs =
+  addBlockItem $ C.BlockStmt $ C.Expr $ Just $
+    C.Assign C.AssignOp
+      (C.Unary C.DerefOp $ C.Var CN.gcTceData)
+      (C.Call
+        (C.Var CN.canThrowMacro)
+        [C.Call
+          (C.Var CN.gcTceIteration)
+          [C.Const $ C.IntConst nArgs]
+        ])
+
+
+generateTailCallAssign :: Int -> CN.Name -> State ExprState Int
+generateTailCallAssign argIdx tmpName =
+  do
+    addBlockItem $ C.BlockStmt $ C.Expr $ Just $
+      C.Assign C.AssignOp
+        (C.Index (C.Var CN.args) (C.Const $ C.IntConst argIdx))
+        (C.Var tmpName)
+    return (argIdx - 1)
 
 
 -- LET DEFINITION
