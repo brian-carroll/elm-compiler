@@ -30,7 +30,7 @@
 - build system is really awkward
 - Expressions to do
   - [x] Case
-  - [ ] Let Def TailDef
+  - [x] Let Def TailDef
 - Nodes to do
   - [x] Cycle values https://gist.github.com/evancz/07436448b7d6c947f21742dab46d1218
   - [x] PortIncoming

@@ -716,15 +716,39 @@ generateCycle (Opt.Global home _) names values functions prevState =
             Opt.Def name body ->
               addDef (Opt.Global home name) body state
 
-            Opt.TailDef name args expr ->
-              -- TODO
-              -- 
-              addExtDecl (C.CommentExt ("Cycle TailDef " <> (Name.toBuilder name))) state
+            Opt.TailDef name args body ->
+              generateCycleTailDef home name args body state
         )
         preDeclsState
         functions
   in
   List.foldl' (generateCycleVal home) functionsState values
+
+
+generateCycleTailDef :: ModuleName.Canonical -> Name.Name -> [Name.Name] -> Opt.Expr -> State -> State
+generateCycleTailDef home name args body state =
+  let
+    global = Opt.Global home name
+    tailFnName = CN.globalTailEvaluator home name
+    wrapFnName = CN.globalEvaluator home name
+    closureName = CN.global home name
+
+    initExprState =
+      CE.initState global (_revExtDecls state) (_sharedDefs state)
+
+    (revExtDecls, sharedDefs) =
+      CE.globalDefsFromExprState $
+      State.execState
+        (CE.generateTailDefEval tailFnName wrapFnName args body)
+        initExprState
+
+    closure =
+      generateClosure closureName (C.addrOf wrapFnName) (length args) []
+  in
+  state
+    { _revExtDecls = closure : revExtDecls
+    , _sharedDefs = sharedDefs
+    }
 
 
 generateCycleVal :: ModuleName.Canonical -> State -> (Name.Name, Opt.Expr) -> State

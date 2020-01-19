@@ -7,6 +7,7 @@ module Generate.C.Expression
  , ExprState(..)
  , initState
  , generateEvalFn
+ , generateTailDefEval
  , generateCycleFn
  , globalDefsFromExprState
 )
@@ -843,15 +844,7 @@ generateDef def =
         let tailFnName = CN.localTailEvaluator gHome gName name
         let wrapFnName = CN.localEvaluator gHome gName tmpIndex
 
-        freeVars <- generateEvalFn tailFnName argNames body True
-
-        let wrapperBody = C.Call (C.Var CN.gcTceEval)
-                            [ C.addrOf tailFnName
-                            , C.addrOf wrapFnName
-                            , C.Const $ C.IntConst $ length argNames
-                            , C.Var CN.args
-                            ]
-        addExtDecl $ generateEvalFnDecl wrapFnName wrapperBody [] [] False
+        freeVars <- generateTailDefEval tailFnName wrapFnName argNames body
 
         addBlockItem $
           C.BlockDecl $ C.Decl
@@ -865,6 +858,20 @@ generateDef def =
               , C.Unary C.AddrOp $ C.Var wrapFnName
               , C.pointerArray (map (C.Var . CN.local) freeVars)
               ])
+
+
+generateTailDefEval :: CN.Name -> CN.Name -> [N.Name] -> Opt.Expr -> State ExprState [N.Name]
+generateTailDefEval tailFnName wrapFnName argNames body =
+  do
+    freeVars <- generateEvalFn tailFnName argNames body True
+    let wrapperBody = C.Call (C.Var CN.gcTceEval)
+                        [ C.addrOf tailFnName
+                        , C.addrOf wrapFnName
+                        , C.Const $ C.IntConst $ length argNames
+                        , C.Var CN.args
+                        ]
+    addExtDecl $ generateEvalFnDecl wrapFnName wrapperBody [] [] False
+    return freeVars
 
 
 
