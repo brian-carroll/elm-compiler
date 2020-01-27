@@ -10,6 +10,7 @@ module Generate.C.Expression
  , generateTailDefEval
  , generateCycleFn
  , globalDefsFromExprState
+ , cKernelModules
 )
 where
 
@@ -59,6 +60,26 @@ data SharedDef
   | SharedFieldGroup [N.Name]
   | SharedJsThunk N.Name N.Name
   deriving (Eq, Ord)
+
+
+cKernelModules :: Set.Set ModuleName.Canonical
+cKernelModules =
+  Set.fromList
+    [ ModuleName.basics
+    , ModuleName.list
+    , ModuleName.string
+    , ModuleName.char
+    ]
+
+
+cKernelNames :: Set.Set N.Name
+cKernelNames =
+  Set.fromList
+    [ N.basics
+    , N.list
+    , N.string
+    , N.char
+    ]
 
 
 -- STATE AND HELPERS
@@ -214,9 +235,12 @@ generate expr =
       return $ C.addrOf $ CN.global home name
 
     Opt.VarKernel home name ->
-      addSharedExpr
-        (SharedJsThunk home name)
-        (CN.kernelValue home name)
+      if Set.member home cKernelNames then
+        return $ C.addrOf $ CN.kernelValue home name
+      else
+        addSharedExpr
+          (SharedJsThunk home name)
+          (CN.kernelValue home name)
 
     Opt.List entries ->
       generateList entries

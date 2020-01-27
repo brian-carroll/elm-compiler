@@ -642,7 +642,7 @@ addGlobalHelp graph global state =
     Opt.Kernel chunks deps ->
       let (Opt.Global home _) = global
       in
-      if Set.member home cKernelModules then
+      if Set.member home CE.cKernelModules then
         state  -- do nothing! handled in C via #include
       else
         state { _jsState =
@@ -661,16 +661,6 @@ addGlobalHelp graph global state =
     Opt.PortOutgoing encoder deps ->
       generatePort False global encoder $
       addDeps deps state
-
-
-cKernelModules :: Set.Set ModuleName.Canonical
-cKernelModules =
-  Set.fromList
-    [ ModuleName.basics
-    , ModuleName.list
-    , ModuleName.string
-    , ModuleName.char
-    ]
 
 
 addExtDecl :: C.ExternalDeclaration -> State -> State
@@ -929,7 +919,7 @@ addDef global@(Opt.Global home' name') expr state =
 
     Opt.VarKernel home name ->
       defineAlias (CN.kernelValue home name) $
-      if Set.member home' cKernelModules then
+      if Set.member home' CE.cKernelModules then
         state
       else
         addShared (CE.SharedJsThunk home name) state
