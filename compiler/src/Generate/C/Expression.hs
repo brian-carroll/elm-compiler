@@ -773,7 +773,7 @@ generateList entries =
     do
       (cEntries, nEntries) <- generateChildren entries
       return $
-        C.Call (C.Var CN.utilsListFromArray)
+        C.Call (C.Var CN.listCreate)
           [ C.Const $ C.IntConst nEntries
           , C.pointerArray cEntries
           ]

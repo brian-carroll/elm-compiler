@@ -29,6 +29,7 @@ module Generate.C.Name
   , unit
   , true
   , false
+  , listCreate
   , utilsInitGlobal
   , utilsAccessEval
   , utilsUpdate
@@ -48,7 +49,6 @@ module Generate.C.Name
   , HeaderFile(..)
   , args
   , applyMacro
-  , utilsListFromArray
   )
   where
 
@@ -256,6 +256,11 @@ false :: Name
 false = Name "False"
 
 
+listCreate :: Name
+listCreate =
+  kernelValue Name.list (Name.fromChars "create")
+
+
 utilsInitGlobal :: Name
 utilsInitGlobal =
   kernelValue Name.utils (Name.fromChars "initGlobal")
@@ -269,11 +274,6 @@ utilsAccessEval =
 utilsUpdate :: Name
 utilsUpdate =
   kernelValue Name.utils (Name.fromChars "update")
-
-
-utilsListFromArray :: Name
-utilsListFromArray =
-  kernelValue Name.list (Name.fromChars "fromArray")
 
 
 utilsDestructIndex :: Name

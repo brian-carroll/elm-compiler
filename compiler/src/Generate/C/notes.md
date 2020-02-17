@@ -1,3 +1,18 @@
+## Issues for GitHub
+
+- Optimise saturated calls to some Basics/Utils functions as in JS
+
+  - `<|` and `|>`
+  - Basics math ops
+    `generateCoreCall`
+  - Entire math expressions (make them register only, eliminate heap access)
+
+- Get type type info to code gen
+  - Eliminate Int/Float ambiguity from JS kernel to Wasm app (this is actually a hard requirement for correctness. Elm Wasm is broken without it.)
+    - Special list of kernel fns that return Floats from the runtime to the app. Use this list in code gen.
+  - Type-specialised inlining of Int/Float operations
+  - Get rid of dynamic type detection in destructuring `Utils_destruct_index`
+
 # TODO: Code gen bug fixes
 
 - [ ] `elm_core_List_foldrHelper`, need to pre-declare the `Closure` in the case of non-tail self-recursion.
