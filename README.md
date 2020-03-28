@@ -1,20 +1,21 @@
 # Elm compiler with C code generation
 
-- This fork of the Elm compiler generates C code that can be further compiled to WebAssembly using Emscripten.
-- It also generates a JavaScript file to wrap the WebAssembly module and connect it to the Elm runtime.
-- The Elm runtime is implemented in JavaScript so that it can access browser APIs, which are not currently available in WebAssembly.
-- For more detail on this architecture, see the [JS wrapper docs](./wrapper.md)
+This fork of the Elm compiler generates C code that can be further compiled to WebAssembly using Emscripten.
+
+It also generates a JavaScript file to wrap the WebAssembly module and connect it to the Elm runtime. The Elm runtime is implemented in JavaScript so that it can access browser APIs, which are not currently available in WebAssembly.
+
+For more detail on this architecture, see the [JS wrapper docs](./wrapper.md)
 
 ## Changes to the CLI
 
-- [terminal/src/Make.hs](https://github.com/brian-carroll/elm-compiler/blob/master/terminal/src/Make.hs)
+[terminal/src/Make.hs](https://github.com/brian-carroll/elm-compiler/blob/master/terminal/src/Make.hs)
 - Create an output mode for C `--output foo.c`
   - The official compiler already detects `*.js` and `*.html` file extensions, so add `*.c` to that list.
 - When a C output is specified, write _two_ output files, `foo.c` and `foo.js`. The JS filename is inferred from the C filename.
 
 ## Changes to code generation
 
-- [builder/src/Generate/](https://github.com/brian-carroll/elm-compiler/tree/master/compiler/src/Generate)
+[builder/src/Generate/](https://github.com/brian-carroll/elm-compiler/tree/master/compiler/src/Generate)
 - Add an extra submodule `C.hs` to the Generate module, which returns a pair of strings to be written to the two output files.
 - Expose some functions from the JS code generator that we need to call from the C generator
 - Add comments to the JS code. This was helpful during development to analyse exactly how the AST maps to JS.
@@ -58,4 +59,4 @@ needToEvaluateBeforeAppInit = "Hello " ++ "world"
 - Emscripten calls the C `main` function after the WebAssembly module is loaded
 - Initialise GC
 - Call any initialisation functions for top level values, in dependency order. Allocate them on the heap and register them as GC roots.
-- Initialise the JS/Wasm wrapper. (In hindsight, this step could be eliminated.)
+- Initialise the JS/Wasm wrapper. (This step could be eliminated in a future refactor.)
