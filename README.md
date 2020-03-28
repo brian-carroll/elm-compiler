@@ -80,3 +80,10 @@ Here are a few points to note about the C code
 - Elm names are prefixed with `x_`, so that the Elm name `model` becomes the C name `x_model`. This is to help ensure that any compiler-generated names can't clash with user-defined names. The JS code generator achieves the same thing by prefixing compiler-generated names with an underscore, but that approach is more dangerous in C. There are a lot of hidden magic symbols that begin with underscores.
 - Macros like `A1`, `A2`, `A3` are used for function application, just like in the JavaScript code generator. These are C preprocessor macros defined in the [C implementation of the Elm core libraries](https://github.com/brian-carroll/elm_c_wasm/blob/fa096c3516fafdcc88c2047744dc686e05cd3cd2/src/kernel/utils.h)
 - Macros like `NEW_RECORD` and `NEW_CLOSURE` handle memory allocation. They also handle the case where the GC runs out of heap space. In that case all functions return early, just like an "exception". We then do a GC and try again. (See [GC docs](https://github.com/brian-carroll/elm_c_wasm/blob/fa096c3516fafdcc88c2047744dc686e05cd3cd2/docs/gc.md))
+
+## Build process
+
+- This project is very raw and unfinished at the moment. It's not even close to being useful for real apps. Compiling an Elm app to Wasm involves a lot of awkward manual steps. The process is not at all streamlined or production ready and the resulting Wasm app may contain bugs. A lot of the core library functions are not supported and there is no clear list of what is supported and what isn't! You have been warned!
+- For now, the `.c` file has to be converted to `.wasm` using [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) in a second compile step.
+- An `#include` directive in the C code needs to be manually edited to include the C version of the kernel code for the Elm `core` package.
+- Eventually there will need to be a more streamlined build process here
