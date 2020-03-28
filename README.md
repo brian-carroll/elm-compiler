@@ -65,14 +65,16 @@ needToEvaluateBeforeAppInit = "Hello " ++ "world"
 
 An example of generated C code can be found [here](https://github.com/brian-carroll/elm-compiler/blob/master/test/cycle/hand_edited.c). That example is very likely to get outdated, but might be interesting to browse through to get an initial feel for things.
 
-Here are a few points to note about it
+Here are a few points to note about the C code
 
+- It's intended to be fairly readable. (At least readable enough to debug the compiler.) Almost no effort is made to format the whitespace nicely, because I use a clang-format IDE plugin for that.
 - All Elm values are accessed via pointers.
 - All dynamic values are allocated on the heap. We don't use the stack very much.
   - Heap allocation is extremely cheap with the GC we're using. It's just a matter of incrementing a pointer. You may have been taught that allocation is far cheaper on the stack than the heap, but that advice tends to assume you're using `malloc` which we're not.
 - Constants are not allocated on the heap. They are stored as part of the program data.
-  - This includies language built-ins like `True`, `False`, `()` and `[]`, as well as program-specific constants like string and number literals from the Elm source.
+  - This includes language built-ins like `True`, `False`, `()` and `[]`, as well as program-specific constants like string and number literals from the Elm source.
   - Constants are accessed via pointers, the same as dynamically allocated values. They're just stored in a different address range.
   - In most cases it would be nice if `True` and `False` were just represented as integers `1` and `0` instead of pointers to constant structures. But that would make it more complicated to implement a `List Bool`, for example. It's simpler for now if everything is always a pointer.
 - Elm names are prefixed with `x_`, so that the Elm name `model` becomes the C name `x_model`. This is to help ensure that any compiler-generated names can't clash with user-defined names. The JS code generator achieves the same thing by prefixing compiler-generated names with an underscore, but that approach is more dangerous in C. There are a lot of hidden magic symbols that begin with underscores.
 - Macros like `A1`, `A2`, `A3` are used for function application, just like in the JavaScript code generator. These are C preprocessor macros defined in the [C implementation of the Elm core libraries](https://github.com/brian-carroll/elm_c_wasm/blob/fa096c3516fafdcc88c2047744dc686e05cd3cd2/src/kernel/utils.h)
+- Macros like `NEW_RECORD` and `NEW_CLOSURE` handle memory allocation. They also handle the case where the GC runs out of heap space. In that case all functions return early, just like an "exception". We then do a GC and try again. (See [GC docs](https://github.com/brian-carroll/elm_c_wasm/blob/fa096c3516fafdcc88c2047744dc686e05cd3cd2/docs/gc.md))
