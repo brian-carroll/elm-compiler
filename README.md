@@ -9,6 +9,7 @@ For more detail on this architecture, see the [JS wrapper docs](./wrapper.md)
 ## Changes to the CLI
 
 [terminal/src/Make.hs](https://github.com/brian-carroll/elm-compiler/blob/master/terminal/src/Make.hs)
+
 - Create an output mode for C `--output foo.c`
   - The official compiler already detects `*.js` and `*.html` file extensions, so add `*.c` to that list.
 - When a C output is specified, write _two_ output files, `foo.c` and `foo.js`. The JS filename is inferred from the C filename.
@@ -16,6 +17,7 @@ For more detail on this architecture, see the [JS wrapper docs](./wrapper.md)
 ## Changes to code generation
 
 [builder/src/Generate/](https://github.com/brian-carroll/elm-compiler/tree/master/compiler/src/Generate)
+
 - Add an extra submodule `C.hs` to the Generate module, which returns a pair of strings to be written to the two output files.
 - Expose some functions from the JS code generator that we need to call from the C generator
 - Add comments to the JS code. This was helpful during development to analyse exactly how the AST maps to JS.
@@ -23,7 +25,6 @@ For more detail on this architecture, see the [JS wrapper docs](./wrapper.md)
 ## C file structure
 
 ![Diagram of C file structure](./docs/images/c-file-structure.png)
-
 
 ### Constant declarations
 
@@ -67,8 +68,9 @@ An example of generated C code can be found [here](https://github.com/brian-carr
 
 Here are a few points to note about the C code
 
-- It's intended to be fairly readable. (At least readable enough to debug the compiler.) Almost no effort is made to format the whitespace nicely, because I use a clang-format IDE plugin for that.
-- All Elm values are accessed via pointers.
+- It's intended to be fairly readable. (At least readable enough to debug the compiler.) But almost no effort is made to format the whitespace nicely, because I use a clang-format IDE plugin for that.
+- All C variables referring to Elm values have pointer types, usually `void*`, which is a "pointer to anything".
+- Most of the code contains no information about Elm types, since it is dropped by the compiler before code gen. Most of the functions that actually care about the internals of data structures are in the [C kernel code](https://github.com/brian-carroll/elm_c_wasm/tree/56d504434aa5a43d0f052f37d4a2006b3efb1893).
 - All dynamic values are allocated on the heap. We don't use the stack very much.
   - Heap allocation is extremely cheap with the GC we're using. It's just a matter of incrementing a pointer. You may have been taught that allocation is far cheaper on the stack than the heap, but that advice tends to assume you're using `malloc` which we're not.
 - Constants are not allocated on the heap. They are stored as part of the program data.
