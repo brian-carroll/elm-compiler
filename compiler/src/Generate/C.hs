@@ -239,20 +239,17 @@ prependExtDecls revExtDecls monolith =
 
 buildJs :: AppEnums -> JS.State -> Mains -> B.Builder
 buildJs appEnums jsState mains =
-  let
-    emscriptenModule =
-      B.string8 JsWrappers.emscriptenModuleName
-  in
   "(function(scope){\n'use strict';"
-  <> JsWrappers.emscripten
-  <> (emscriptenModule <> ".postRun = function() {\n")
-  <> JsFunctions.functions
-  <> JS.stateToBuilder jsState
-  <> JsWrappers.wrapper
-  <> jsInitWrapper appEnums
-  <> jsAssignMains mains
-  <> JS.toMainExports jsMode mains
-  <> "}\n"
+  <> JsWrappers.defineOnReady
+  <> JsWrappers.emscriptenPostRun (
+      JsFunctions.functions
+      <> JS.stateToBuilder jsState
+      <> JsWrappers.wrapEmscriptenForElm
+      <> jsInitWrapper appEnums
+      <> jsAssignMains mains
+      <> JS.toMainExports jsMode mains
+      <> JsWrappers.executeOnReadyCallback
+    )
   <> "}(this));"
 
 
@@ -315,11 +312,11 @@ jsInitWrapper (AppEnums appFields appFieldGroups appCtors appKernelVals) =
         ]
 
     emscriptenModule =
-      JSB.Ref $ name JsWrappers.emscriptenModuleName
+      JSB.Ref $ name JsWrappers.emscriptenModuleRef
   in
   JSB.stmtToBuilder $
     JSB.Var wasmWrapperName $
-    JSB.Call (JSB.Ref $ name JsWrappers.wrapperFnName) 
+    JSB.Call (JSB.Ref $ name JsWrappers.wrapEmscriptenForElmFnName) 
       [ JSB.Access emscriptenModule (name "buffer")
       , JSB.Access emscriptenModule (name "asm")
       , appTypes
