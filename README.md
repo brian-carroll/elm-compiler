@@ -83,7 +83,7 @@ Here are a few points to note about the C code
 
 ## Build process
 
-- This project is very raw and unfinished at the moment. It's not even close to being useful for real apps. Compiling an Elm app to Wasm involves a lot of awkward manual steps. The process is not at all streamlined or production ready and the resulting Wasm app may contain bugs. A lot of the core library functions are not supported and there is no clear list of what is supported and what isn't! You have been warned!
+- This project is very raw and unfinished at the moment. It's not close to being ready for real apps.
+- There are several steps in the build process, currently coordinated using Makefiles. More details in the [core libraries repo](https://github.com/brian-carroll/elm_c_wasm)
 - For now, the `.c` file has to be converted to `.wasm` using [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) in a second compile step.
-- An `#include` directive in the C code needs to be manually edited to include the C version of the kernel code for the Elm `core` package.
 - Eventually there will need to be a more streamlined build process here
