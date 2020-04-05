@@ -6,13 +6,19 @@ It also generates a JavaScript file to wrap the WebAssembly module and connect i
 
 For more detail on this architecture, see the [JS wrapper docs](./wrapper.md)
 
-## Changes to the CLI
+## Changes to the Elm CLI
 
 [terminal/src/Make.hs](https://github.com/brian-carroll/elm-compiler/blob/master/terminal/src/Make.hs)
 
 - Create an output mode for C `--output foo.c`
   - The official compiler already detects `*.js` and `*.html` file extensions, so add `*.c` to that list.
 - When a C output is specified, write _two_ output files, `foo.c` and `foo.js`. The JS filename is inferred from the C filename.
+
+## Build process
+
+- There are several steps in the build process, currently coordinated using Makefiles. More details in the [core libraries repo](https://github.com/brian-carroll/elm_c_wasm)
+- For now, the `.c` file has to be converted to `.wasm` using [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) in a second compile step.
+- Eventually there will need to be a more streamlined build process here
 
 ## Changes to code generation
 
@@ -80,10 +86,3 @@ Here are a few points to note about the C code
 - Elm names are prefixed with `x_`, so that the Elm name `model` becomes the C name `x_model`. This is to help ensure that any compiler-generated names can't clash with user-defined names. The JS code generator achieves the same thing by prefixing compiler-generated names with an underscore, but that approach is more dangerous in C. There are a lot of hidden magic symbols that begin with underscores.
 - Macros like `A1`, `A2`, `A3` are used for function application, just like in the JavaScript code generator. These are C preprocessor macros defined in the [C implementation of the Elm core libraries](https://github.com/brian-carroll/elm_c_wasm/blob/fa096c3516fafdcc88c2047744dc686e05cd3cd2/src/kernel/utils.h)
 - Macros like `NEW_RECORD` and `NEW_CLOSURE` handle memory allocation. They also handle the case where the GC runs out of heap space. In that case all functions return early, just like an "exception". We then do a GC and try again. (See [GC docs](https://github.com/brian-carroll/elm_c_wasm/blob/fa096c3516fafdcc88c2047744dc686e05cd3cd2/docs/gc.md))
-
-## Build process
-
-- This project is very raw and unfinished at the moment. It's not close to being ready for real apps.
-- There are several steps in the build process, currently coordinated using Makefiles. More details in the [core libraries repo](https://github.com/brian-carroll/elm_c_wasm)
-- For now, the `.c` file has to be converted to `.wasm` using [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) in a second compile step.
-- Eventually there will need to be a more streamlined build process here
