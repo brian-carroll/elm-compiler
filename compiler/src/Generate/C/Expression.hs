@@ -613,10 +613,14 @@ generateTestValue value test =
     DT.IsCtor home name _ _ opts ->
       do
         testValName <- getTmpVarName
-        addBlockItem $ C.BlockDecl $ C.declare testValName $ Just $
-          C.MemberArrow
-            (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) value)
-            (CN.fromBuilder "ctor")
+        addBlockItem $ C.BlockDecl $
+          C.Decl
+            [C.TypeSpec $ C.TypeDef CN.U32]
+            (Just $ C.Declr (Just testValName) [])
+            (Just $ C.InitExpr $
+              C.MemberArrow
+                (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) value)
+                (CN.fromBuilder "ctor"))
         return $ C.Var testValName
 
     DT.IsInt int ->
