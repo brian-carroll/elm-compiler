@@ -22,6 +22,7 @@ import qualified Data.ByteString.Builder as B
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.List as List
+import Data.Maybe (fromMaybe)
 import Data.Map ((!), Map)
 import qualified Data.Map as Map
 import qualified Data.Name as N
@@ -348,7 +349,7 @@ generateLocalFn params body =
     (Opt.Global gHome gName) <- gets _parentGlobal
     tmpVarIndex <- nextTmpVarIndex
     let fname = CN.localEvaluator gHome gName tmpVarIndex
-    freeVars <- generateEvalFn fname params body False
+    freeVars <- generateEvalFn fname (Just params) body False
     return $
       C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
         [ C.Const $ C.IntConst $ length freeVars
@@ -358,21 +359,22 @@ generateLocalFn params body =
         ]
 
 
-generateEvalFn :: CN.Name -> [N.Name] -> Opt.Expr -> Bool -> State ExprState [N.Name]
-generateEvalFn fname params body isTailRec =
+generateEvalFn :: CN.Name -> Maybe [N.Name] -> Opt.Expr -> Bool -> State ExprState [N.Name]
+generateEvalFn fname maybeParams body isTailRec =
   do
     origState <- get
     put $ origState
       { _revBlockItems = []
-      , _localScope = Set.fromList params
+      , _localScope = Set.fromList $ fromMaybe [] maybeParams
       , _freeVars = Set.empty
       }
     returnExpr <- generate body
     bodyState <- get
 
     let freeVarList = Set.toList (_freeVars bodyState)
+    let closureParams = fmap (\ps -> freeVarList ++ ps) maybeParams
     let extDecl = generateEvalFnDecl fname returnExpr
-            (_revBlockItems bodyState) (freeVarList ++ params) isTailRec
+            (_revBlockItems bodyState) closureParams isTailRec
 
     -- If my child function refers to my parent's scope, I pass it down as a free var.
     let updatedOrigFreeVars = List.foldl'
@@ -401,16 +403,16 @@ generateCycleFn ptrName funcName elmExpr =
     addBlockItem $ C.BlockStmt $ C.Expr $ Just $
       C.Assign C.AssignOp ptr expr
     blockItems <- gets _revBlockItems
-    addExtDecl $ generateEvalFnDecl funcName ptr blockItems [] False
+    addExtDecl $ generateEvalFnDecl funcName ptr blockItems (Just []) False
 
 
-generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> [N.Name] -> Bool -> C.ExternalDeclaration
-generateEvalFnDecl fname returnExpr blockItems params isTailRec =
+generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> Maybe [N.Name] -> Bool -> C.ExternalDeclaration
+generateEvalFnDecl fname returnExpr blockItems maybeParams isTailRec =
   let
-    paramDecls =
-      case params of
-        [] -> []
-        _ -> C.argsArray : gcTceData
+    paramDecls = 
+      case maybeParams of
+        Nothing -> []
+        Just _ -> C.argsArray : gcTceData
 
     gcTceData =
       if isTailRec then
@@ -435,7 +437,7 @@ generateEvalFnDecl fname returnExpr blockItems params isTailRec =
     (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr paramDecls])
     ( (C.BlockStmt $ C.Return $ Just returnExpr)
       : blockItems
-      ++ (generateDestructParams params)
+      ++ (generateDestructParams $ fromMaybe [] maybeParams)
       ++ tceGoto
     )
 
@@ -887,14 +889,14 @@ generateDef def =
 generateTailDefEval :: CN.Name -> CN.Name -> [N.Name] -> Opt.Expr -> State ExprState [N.Name]
 generateTailDefEval tailFnName wrapFnName argNames body =
   do
-    freeVars <- generateEvalFn tailFnName argNames body True
+    freeVars <- generateEvalFn tailFnName (Just argNames) body True
     let wrapperBody = C.Call (C.Var CN.gcTceEval)
                         [ C.addrOf tailFnName
                         , C.addrOf wrapFnName
                         , C.Const $ C.IntConst $ length argNames
                         , C.Var CN.args
                         ]
-    addExtDecl $ generateEvalFnDecl wrapFnName wrapperBody [] [] False
+    addExtDecl $ generateEvalFnDecl wrapFnName wrapperBody [] (Just []) False
     return freeVars
 
 

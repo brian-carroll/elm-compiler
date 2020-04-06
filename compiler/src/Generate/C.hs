@@ -890,7 +890,7 @@ addDef global@(Opt.Global home' name') expr state =
           []
       in
       addExtDecl closure $
-      generatExtFunc global fname args body state
+      generatExtFunc global fname (Just args) body state
 
     Opt.Int value ->
       addShared (CE.SharedInt value) $
@@ -981,7 +981,7 @@ generateRuntimeInit structName global@(Opt.Global home' name') expr state =
     state
 
 
-generatExtFunc :: Opt.Global -> CN.Name -> [Name.Name] -> Opt.Expr -> State -> State
+generatExtFunc :: Opt.Global -> CN.Name -> Maybe [Name.Name] -> Opt.Expr -> State -> State
 generatExtFunc global fname params body state =
   let
     initExprState =
@@ -1004,7 +1004,7 @@ generateInitFn global@(Opt.Global home name) body state =
   let
     fname = CN.globalInitFn home name
   in
-  generatExtFunc global fname [] body $
+  generatExtFunc global fname Nothing body $
     state { _revInitGlobals = global : _revInitGlobals state }
 
 
