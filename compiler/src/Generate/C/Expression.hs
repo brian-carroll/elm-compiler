@@ -670,7 +670,7 @@ generateTest value test =
         return $ C.Binary C.EqOp
           (C.Call
             (C.Var $ CN.applyMacro 2)
-            [ C.Var CN.utilsEqual
+            [ C.addrOf CN.utilsEqual
             , value
             , (C.addrOf $ CN.literalChr char)
             ])
@@ -682,7 +682,7 @@ generateTest value test =
         return $ C.Binary C.EqOp
           (C.Call
             (C.Var $ CN.applyMacro 2)
-            [ C.Var CN.utilsEqual
+            [ C.addrOf CN.utilsEqual
             , value
             , (C.addrOf $ CN.literalStr string)
             ])
