@@ -677,39 +677,66 @@ addShared sharedDef state =
 
 generateCycle :: Opt.Global -> [Name.Name] -> [(Name.Name, Opt.Expr)] -> [Opt.Def] -> State -> State
 generateCycle (Opt.Global home _) names values functions prevState =
-  let
-    preDeclsState :: State
-    preDeclsState =
-      List.foldl'
-        (\state (name, _) ->
-          addExtDecl
-            (C.DeclExt $ C.Decl
-              [C.TypeSpec C.Void]
-              (Just $ C.Declr
-                (Just $ CN.cycleVar home name)
-                [C.PtrDeclr [], C.FunDeclr []])
-              Nothing
-            )
-            state
-        )
-        prevState
-        values
+  generateCycleValues home values $
+    generateCycleFunctions home functions $
+    generateCyclePreDeclClosures home functions $
+    generateCyclePreDeclValues home values $
+    prevState
 
-    functionsState :: State
-    functionsState =
-      List.foldl'
-        (\state def ->
+
+generateCyclePreDeclValues :: ModuleName.Canonical -> [(Name.Name, Opt.Expr)] -> State -> State
+generateCyclePreDeclValues home values prevState =
+  List.foldl'
+    (\state (name, _) ->
+      addExtDecl
+        (C.DeclExt $ C.Decl
+          [C.TypeSpec C.Void]
+          (Just $ C.Declr
+            (Just $ CN.cycleVar home name)
+            [C.PtrDeclr [], C.FunDeclr []])
+          Nothing
+        )
+        state
+    )
+    prevState
+    values
+
+
+generateCyclePreDeclClosures :: ModuleName.Canonical -> [Opt.Def] -> State -> State
+generateCyclePreDeclClosures home functions prevState =
+  List.foldl'
+    (\state def ->
+      let
+        closureName =
           case def of
-            Opt.Def name body ->
-              addDef (Opt.Global home name) body state
-
-            Opt.TailDef name args body ->
-              generateCycleTailDef home name args body state
+            Opt.Def name _ -> CN.global home name
+            Opt.TailDef name _ _ -> CN.global home name
+      in
+      addExtDecl
+        (C.DeclExt $ C.Decl
+          [C.TypeSpec $ C.TypeDef CN.Closure]
+          (Just $ C.Declr (Just closureName) [])
+          Nothing
         )
-        preDeclsState
-        functions
-  in
-  List.foldl' (generateCycleVal home) functionsState values
+        state
+    )
+    prevState
+    functions
+
+
+generateCycleFunctions :: ModuleName.Canonical -> [Opt.Def] -> State -> State
+generateCycleFunctions home functions prevState =
+  List.foldl'
+    (\state def ->
+      case def of
+        Opt.Def name body ->
+          addDef (Opt.Global home name) body state
+
+        Opt.TailDef name args body ->
+          generateCycleTailDef home name args body state
+    )
+    prevState
+    functions
 
 
 generateCycleTailDef :: ModuleName.Canonical -> Name.Name -> [Name.Name] -> Opt.Expr -> State -> State
@@ -736,6 +763,11 @@ generateCycleTailDef home name args body state =
     { _revExtDecls = closure : revExtDecls
     , _sharedDefs = sharedDefs
     }
+
+
+generateCycleValues :: ModuleName.Canonical -> [(Name.Name, Opt.Expr)] -> State -> State
+generateCycleValues home values prevState =
+  List.foldl' (generateCycleVal home) prevState values
 
 
 generateCycleVal :: ModuleName.Canonical -> State -> (Name.Name, Opt.Expr) -> State
