@@ -637,12 +637,14 @@ addGlobalHelp graph global state =
       }
 
     Opt.Kernel chunks deps ->
-      let (Opt.Global home _) = global
+      let
+        (Opt.Global home _) = global
+        depState = addDeps deps state
       in
       if Set.member home CE.cKernelModules then
-        state  -- do nothing! handled in C via #include
+        depState  -- do nothing! handled in C via #include
       else
-        state { _jsState =
+        depState { _jsState =
           JS.addGlobal jsMode graph (_jsState state) global }
 
     Opt.Enum _ ->
