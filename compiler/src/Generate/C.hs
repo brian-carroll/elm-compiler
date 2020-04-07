@@ -144,7 +144,6 @@ data State =
   State
     { _seenGlobals :: Set.Set Opt.Global
     , _sharedDefs :: Set.Set CE.SharedDef
-    , _ctors :: Set.Set Name.Name
     , _revInitGlobals :: [Opt.Global]
     , _revExtDecls :: [C.ExternalDeclaration]
     , _jsState :: JS.State
@@ -156,7 +155,6 @@ emptyState =
   State
     { _seenGlobals = Set.empty
     , _sharedDefs = Set.empty
-    , _ctors = Set.empty
     , _revInitGlobals = []
     , _revExtDecls = []
     , _jsState = JS.emptyState
@@ -192,7 +190,7 @@ extractAppEnums :: State -> AppEnums
 extractAppEnums state =
   foldr
     extractAppEnumsHelp
-    (AppEnums Set.empty [] (Set.toList $ _ctors state) [])
+    (AppEnums Set.empty [] [] [])
     (_sharedDefs state)
 
 
@@ -203,11 +201,21 @@ extractAppEnumsHelp def appEnums =
       appEnums
         { appKernelVals = (home, name) : (appKernelVals appEnums)
         }
-      
+
     CE.SharedFieldGroup fields ->
       appEnums
         { appFields = List.foldr Set.insert (appFields appEnums) fields
         , appFieldGroups = fields : (appFieldGroups appEnums)
+        }
+
+    CE.SharedField field ->
+      appEnums
+        { appFields = Set.insert field (appFields appEnums)
+        }
+
+    CE.SharedCtor name ->
+      appEnums
+        { appCtors = name : (appCtors appEnums)
         }
 
     _ ->
@@ -216,11 +224,7 @@ extractAppEnumsHelp def appEnums =
 
 buildC :: Mains -> State -> B.Builder
 buildC mains state =
-  let
-    ctorNames = map CN.ctorId $ Set.toList $ _ctors state
-  in
   prependExtDecls [C.IncludeExt CN.KernelH] $
-  prependExtDecls (generateEnum ctorNames) $
   prependSharedDefs (_sharedDefs state) $
   prependExtDecls (_revExtDecls state) $
   prependExtDecls [generateMainsArray mains, C.BlankLineExt] $
@@ -331,12 +335,13 @@ jsInitWrapper (AppEnums appFields appFieldGroups appCtors appKernelVals) =
 prependSharedDefs :: Set.Set CE.SharedDef -> B.Builder -> B.Builder
 prependSharedDefs defs builder =
   let
-    (jsKernelNames, elmFields, fieldGroups, decls) =
-      Set.foldr' iterateSharedDefs ([], Set.empty, [], []) defs
+    (jsKernelNames, cCtorNames, elmFields, fieldGroups, decls) =
+      Set.foldr' iterateSharedDefs ([], [], Set.empty, [], []) defs
     cFields =
       map CN.fieldId $ Set.toList elmFields
   in
   prependExtDecls (generateEnum jsKernelNames) $
+  prependExtDecls (generateEnum cCtorNames) $
   prependExtDecls (generateEnum cFields) $
   prependExtDecls decls $
   prependExtDecls [generateFieldGroupArray fieldGroups] $
@@ -344,26 +349,42 @@ prependSharedDefs defs builder =
 
 
 iterateSharedDefs :: CE.SharedDef
-  -> ([CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
-  -> ([CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
-iterateSharedDefs def acc@(jsKernelNames, fieldNames, fieldGroups, decls) =
-  let newDecls = (generateSharedDefItem def) : decls
+  -> ([CN.Name], [CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
+  -> ([CN.Name], [CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
+iterateSharedDefs def acc@(jsKernelNames, ctorNames, fieldNames, fieldGroups, decls) =
+  let newDecls = (generateSharedDefItem def) ++ decls
   in
   case def of
     CE.SharedJsThunk home name ->
       ( (CN.jsKernelEval home name) : jsKernelNames
+      , ctorNames
       , fieldNames
       , fieldGroups
       , newDecls
       )
     CE.SharedFieldGroup fields ->
       ( jsKernelNames
+      , ctorNames
       , List.foldr Set.insert fieldNames fields
       , fields : fieldGroups
       , newDecls
       )
+    CE.SharedField field ->
+      ( jsKernelNames
+      , ctorNames
+      , Set.insert field fieldNames
+      , fieldGroups
+      , newDecls
+      )
+    CE.SharedCtor name ->
+      ( jsKernelNames
+      , (CN.ctorId name) : ctorNames
+      , fieldNames
+      , fieldGroups
+      , newDecls
+      )
     _ ->
-      ( jsKernelNames, fieldNames, fieldGroups, newDecls )
+      ( jsKernelNames, ctorNames, fieldNames, fieldGroups, newDecls )
 
 
 generateEnum :: [CN.Name] -> [C.ExternalDeclaration]
@@ -390,50 +411,63 @@ generateFieldGroupArray fieldGroups =
   (Just $ C.InitExpr $ C.CompoundLit $ pointerArray)
     
 
-generateSharedDefItem :: CE.SharedDef -> C.ExternalDeclaration
+generateSharedDefItem :: CE.SharedDef -> [C.ExternalDeclaration]
 generateSharedDefItem def =
   case def of
     CE.SharedInt value ->
-      generateStructDef CN.ElmInt (CN.literalInt value)
+      [generateStructDef CN.ElmInt (CN.literalInt value)
         [ ("header", CE.generateHeader CE.HEADER_INT)
         , ("value", C.Const $ C.IntConst value)
         ]
         Nothing
+      ]
 
     CE.SharedFloat value ->
-      generateStructDef CN.ElmFloat (CN.literalFloat value)
+      [generateStructDef CN.ElmFloat (CN.literalFloat value)
         [ ("header", CE.generateHeader CE.HEADER_FLOAT)
         , ("value", C.Const $ C.FloatConst value)
         ]
         Nothing
+      ]
 
     CE.SharedChr value ->
-      generateStructDef CN.ElmChar (CN.literalChr value)
+      [generateStructDef CN.ElmChar (CN.literalChr value)
         [("header", CE.generateHeader CE.HEADER_CHAR)]
         (Just ("words16", generateUtf16 value))
+      ]
 
     CE.SharedStr value ->
       let words16 = generateUtf16 value
       in
-      generateStructDef CN.ElmString16 (CN.literalStr value)
+      [generateStructDef CN.ElmString16 (CN.literalStr value)
         [("header", CE.generateHeader $ CE.HEADER_STRING (length words16))]
         (Just ("words16", words16))
+      ]
   
     CE.SharedAccessor name ->
-      generateClosure (CN.accessor name)
+      [generateClosure (CN.accessor name)
         (C.Unary C.AddrOp $ C.Var CN.utilsAccessEval)
         2 [C.nameAsVoidPtr $ CN.fieldId name]
+      ]
 
     CE.SharedFieldGroup names ->
-      generateStructDef CN.FieldGroup (CN.fieldGroup names)
+      [generateStructDef CN.FieldGroup (CN.fieldGroup names)
         [("size", C.Const $ C.IntConst $ length names)]
         (Just ("fields", map (C.Var . CN.fieldId) names))
+      ]
+
+    CE.SharedField _ ->
+      []
+
+    CE.SharedCtor _ ->
+      []
 
     CE.SharedJsThunk home name ->
-      generateClosure (CN.kernelValue home name)
+      [generateClosure (CN.kernelValue home name)
         (C.nameAsVoidPtr $ CN.jsKernelEval home name)
         maxClosureArity
         []
+      ]
 
 
 generateUtf16 :: ES.String -> [C.Expression]
@@ -917,6 +951,7 @@ addDef global@(Opt.Global home' name') expr state =
       defineAlias CN.unit state
 
     Opt.Accessor name ->
+      addShared (CE.SharedField name) $
       addShared (CE.SharedAccessor name) $
         defineAlias (CN.accessor name) state
 
@@ -1027,7 +1062,7 @@ generateCtor global@(Opt.Global home name) arity state =
     in
     state
       { _revExtDecls = extDecl : (_revExtDecls state)
-      , _ctors = Set.insert name (_ctors state)
+      , _sharedDefs = Set.insert (CE.SharedCtor name) (_sharedDefs state)
       }  
 
 
@@ -1060,5 +1095,5 @@ generateCtorFn (Opt.Global home name) arity state =
   in
   state
     { _revExtDecls = closure : evalFn : (_revExtDecls state)
-    , _ctors = Set.insert name (_ctors state)
+    , _sharedDefs = Set.insert (CE.SharedCtor name) (_sharedDefs state)
     }

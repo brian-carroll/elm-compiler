@@ -59,6 +59,8 @@ data SharedDef
   | SharedStr ES.String
   | SharedAccessor N.Name
   | SharedFieldGroup [N.Name]
+  | SharedField N.Name
+  | SharedCtor N.Name
   | SharedJsThunk N.Name N.Name
   deriving (Eq, Ord)
 
@@ -272,12 +274,15 @@ generate expr =
       generateCase label root decider jumps
 
     Opt.Accessor field ->
-      addSharedExpr
-        (SharedAccessor field)
-        (CN.accessor field)
+      do
+        addShared (SharedField field)
+        addSharedExpr
+          (SharedAccessor field)
+          (CN.accessor field)
 
     Opt.Access record field ->
       do
+        addShared (SharedField field)
         recordExpr <- generate record
         return $ C.Call
           (C.Var CN.utilsAccessEval)
@@ -610,7 +615,7 @@ generateTestChain root (path, test) acc =
 generateTestValue :: C.Expression -> DT.Test -> State ExprState C.Expression
 generateTestValue value test =
   case test of
-    DT.IsCtor home name _ _ opts ->
+    DT.IsCtor _ _ _ _ _ ->
       do
         testValName <- getTmpVarName
         addBlockItem $ C.BlockDecl $
@@ -623,7 +628,7 @@ generateTestValue value test =
                 (CN.fromBuilder "ctor"))
         return $ C.Var testValName
 
-    DT.IsInt int ->
+    DT.IsInt _ ->
       do
         testValName <- getTmpVarName
         addBlockItem $ C.BlockDecl $ C.declare testValName $ Just $
@@ -632,13 +637,13 @@ generateTestValue value test =
             (CN.fromBuilder "value")
         return $ C.Var testValName
     
-    DT.IsBool bool ->
+    DT.IsBool _ ->
       return value
 
-    DT.IsChr char ->
+    DT.IsChr _ ->
       return value
 
-    DT.IsStr string ->
+    DT.IsStr _ ->
       return value
 
     DT.IsCons ->
@@ -654,10 +659,12 @@ generateTestValue value test =
 generateTest :: C.Expression -> DT.Test -> State ExprState C.Expression
 generateTest value test =
   case test of
-    DT.IsCtor home name _ _ opts ->
-      return $ C.Binary C.EqOp
-        value
-        (C.Var $ CN.ctorId name)
+    DT.IsCtor _ name _ _ _ ->
+      do
+        addShared (SharedCtor name)
+        return $ C.Binary C.EqOp
+          value
+          (C.Var $ CN.ctorId name)
 
     DT.IsBool bool ->
       return $ C.Binary C.EqOp value $ C.addrOf $
