@@ -99,17 +99,17 @@ label prefix index =
 
 global :: ModuleName.Canonical -> Name.Name -> Name
 global home name =
-  Name (globalBuilder home name)
+  Name ("g_" <> globalBuilder home name)
 
 
 globalInitFn :: ModuleName.Canonical -> Name.Name -> Name
 globalInitFn home name =
-  Name ("init_" <> globalBuilder home name)
+  Name ("ginit_" <> globalBuilder home name)
 
 
 globalInitPtr :: ModuleName.Canonical -> Name.Name -> Name
 globalInitPtr home name =
-  Name ("ptr_" <> globalBuilder home name)
+  Name ("gptr_" <> globalBuilder home name)
 
 
 globalEvaluator :: ModuleName.Canonical -> Name.Name -> Name
@@ -164,14 +164,14 @@ fieldGroup fields =
 literalInt :: Int -> Name
 literalInt x =
   if x >= 0 then
-    Name $ "literal_int_" <> B.intDec x
+    Name $ "int_" <> B.intDec x
   else
-    Name $ "literal_int__" <> B.intDec (-x)
+    Name $ "int__" <> B.intDec (-x)
 
 
 literalFloat :: EF.Float -> Name
 literalFloat x =
-  Name $ "literal_float_" <>
+  Name $ "float_" <>
     (join $ map Utf8.toBuilder $
       concatMap (Utf8.split hyphen) $
       Utf8.split dot x)
@@ -180,18 +180,18 @@ literalFloat x =
 literalStr :: ES.String -> Name
 literalStr s =
   Name $ mconcat $
-    "literal_string_" : (map escapeChar $ ES.toChars s)
+    "str_" : (map escapeChar $ ES.toChars s)
 
 
 literalChr :: ES.String -> Name
 literalChr s =
   Name $ mconcat $
-    "literal_char_" : (map escapeChar $ ES.toChars s)
+    "char_" : (map escapeChar $ ES.toChars s)
 
 
 accessor :: Name.Name -> Name
 accessor name =
-  Name $ "accessor_" <> Name.toBuilder name
+  Name $ "access_" <> Name.toBuilder name
 
 
 -- INTERNAL UTILS
