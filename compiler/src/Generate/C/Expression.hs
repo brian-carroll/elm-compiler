@@ -631,12 +631,16 @@ generateTestValue value test =
     DT.IsInt _ ->
       do
         testValName <- getTmpVarName
-        addBlockItem $ C.BlockDecl $ C.declare testValName $ Just $
-          C.MemberArrow
-            (C.Parens $ C.castAsPtrTo (C.TypeDef CN.ElmInt) value)
-            (CN.fromBuilder "value")
+        addBlockItem $ C.BlockDecl $
+          C.Decl
+            [C.TypeSpec $ C.TypeDef CN.I32]
+            (Just $ C.Declr (Just testValName) [])
+            (Just $ C.InitExpr $
+              C.MemberArrow
+                (C.Parens $ C.castAsPtrTo (C.TypeDef CN.ElmInt) value)
+                (CN.fromBuilder "value"))
         return $ C.Var testValName
-    
+
     DT.IsBool _ ->
       return value
 
