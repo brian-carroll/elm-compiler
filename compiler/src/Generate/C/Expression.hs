@@ -44,7 +44,7 @@ import qualified Data.Index as Index
 -- import qualified Elm.Compiler.Type.Extract as Extract
 -- import qualified Elm.Version as V
 import qualified Elm.ModuleName as ModuleName
--- import qualified Elm.Package as Pkg
+import qualified Elm.Package as Pkg
 -- import qualified Json.Encode as Encode
 -- import Json.Encode ((==>))
 import qualified Optimize.DecisionTree as DT
@@ -798,13 +798,78 @@ generateList entries =
 
 generateCall :: Opt.Expr -> [Opt.Expr] -> State ExprState C.Expression
 generateCall func args =
+  case func of
+    Opt.VarGlobal global@(Opt.Global (ModuleName.Canonical pkg _) _) | pkg == Pkg.core ->
+      generateCoreCall global args
+
+    _ ->
+      do
+        (cArgs, nArgs) <- generateChildren args
+        funcExpr <- generate func
+        return $ C.Call (C.Var $ CN.applyMacro nArgs)
+                  (funcExpr : cArgs)
+
+
+generateGlobalCall :: ModuleName.Canonical -> N.Name -> [Opt.Expr] -> State ExprState C.Expression
+generateGlobalCall home name args =
   do
-    (argExprs, nArgs) <- generateChildren args
-    funcExpr <- generate func
-    return $ C.Call (C.Var $ CN.applyMacro nArgs)
-              (funcExpr : argExprs)
+    (cArgs, nArgs) <- generateChildren args
+    return $ C.Call
+      (C.Var $ CN.applyMacro nArgs)
+      ((C.addrOf $ CN.global home name) : cArgs)
 
 
+generateKernelCall :: N.Name -> N.Name -> [Opt.Expr] -> State ExprState C.Expression
+generateKernelCall home name args =
+  do
+    (cArgs, nArgs) <- generateChildren args
+    return $ C.Call
+      (C.Var $ CN.applyMacro nArgs)
+      ((C.addrOf $ CN.kernelValue home name) : cArgs)
+
+
+generateCoreCall :: Opt.Global -> [Opt.Expr] -> State ExprState C.Expression
+generateCoreCall (Opt.Global home@(ModuleName.Canonical _ moduleName) name) args =
+  if moduleName == N.basics then
+    generateBasicsCall home name args
+
+  else
+    generateGlobalCall home name args
+
+
+generateBasicsCall :: ModuleName.Canonical -> N.Name -> [Opt.Expr] -> State ExprState C.Expression
+generateBasicsCall home name args =
+  case args of
+    [elmArg] ->
+      do
+        arg <- generate elmArg
+        case name of
+          "not"      -> return $ C.Cond (C.Binary C.EqOp arg (C.addrOf CN.false)) (C.addrOf CN.true) (C.addrOf CN.false)
+          "negate"   -> generateKernelCall N.basics "negate" args
+          _          -> generateGlobalCall home name args
+
+    [elmLeft, elmRight] ->
+      case name of
+        "apL"      -> generate $ apply elmLeft elmRight
+        "apR"      -> generate $ apply elmRight elmLeft
+        _ ->
+          generateGlobalCall home name args
+
+    _ ->
+      generateGlobalCall home name args
+
+
+apply :: Opt.Expr -> Opt.Expr -> Opt.Expr
+apply func value =
+  case func of
+    Opt.Accessor field ->
+      Opt.Access value field
+
+    Opt.Call f args ->
+      Opt.Call f (args ++ [value])
+
+    _ ->
+      Opt.Call func [value]
 
 -- TAILCALL
 
