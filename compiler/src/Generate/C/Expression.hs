@@ -845,7 +845,7 @@ generateBasicsCall home name args =
         arg <- generate elmArg
         case name of
           "not"      -> return $ C.Cond (C.Binary C.EqOp arg (C.addrOf CN.false)) (C.addrOf CN.true) (C.addrOf CN.false)
-          "negate"   -> generateKernelCall N.basics "negate" args
+          "negate"   -> generateNegate elmArg
           _          -> generateGlobalCall home name args
 
     [elmLeft, elmRight] ->
@@ -857,6 +857,13 @@ generateBasicsCall home name args =
 
     _ ->
       generateGlobalCall home name args
+
+
+generateNegate :: Opt.Expr -> State ExprState C.Expression
+generateNegate elmExpr =
+  case elmExpr of
+    Opt.Int x -> generate $ Opt.Int (-x)
+    _ -> generateKernelCall N.basics "negate" [elmExpr]
 
 
 apply :: Opt.Expr -> Opt.Expr -> Opt.Expr

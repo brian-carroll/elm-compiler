@@ -163,12 +163,18 @@ fieldGroup fields =
 
 literalInt :: Int -> Name
 literalInt x =
-  Name $ "literal_int_" <> B.intDec x
+  if x >= 0 then
+    Name $ "literal_int_" <> B.intDec x
+  else
+    Name $ "literal_int__" <> B.intDec (-x)
 
 
 literalFloat :: EF.Float -> Name
 literalFloat x =
-  Name $ "literal_float_" <> (join $ splitUtf8 dot x)
+  Name $ "literal_float_" <>
+    (join $ map Utf8.toBuilder $
+      concatMap (Utf8.split hyphen) $
+      Utf8.split dot x)
 
 
 literalStr :: ES.String -> Name
