@@ -63,8 +63,9 @@ traceDeps debugIndent node (Opt.Global home name) deps =
       <> (nodeName node)
       <> " "
       <> (JsName.toBuilder $ JsName.fromGlobal home name)
-      <> " deps: "
+      <> " ("
       <> (mconcat $ List.intersperse ", " depBuilders)
+      <> ")"
   in
   traceBuilder message deps
 
@@ -291,7 +292,7 @@ addGlobalHelp debugIndentHere mode graph global state =
       debugIndentHere <> "  "
     addDeps deps someState =
       Set.foldl' (addGlobal debugIndent mode graph) someState $
-        traceDeps debugIndentHere node global $
+        -- traceDeps debugIndentHere node global $
         deps
     node =
       graph ! global

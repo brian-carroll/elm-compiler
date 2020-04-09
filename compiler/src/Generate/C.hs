@@ -69,8 +69,9 @@ traceDeps debugIndent node (Opt.Global home name) deps =
       <> (nodeName node)
       <> " "
       <> (CN.toBuilder $ CN.global home name)
-      <> " deps: "
+      <> " ("
       <> (mconcat $ List.intersperse ", " depBuilders)
+      <> ")"
   in
   traceBuilder message deps
 
@@ -610,7 +611,29 @@ generateInitCall acc (Opt.Global home name) =
 
 addMain :: Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
 addMain graph home _ state =
-  addGlobal (Debug.trace "" "") graph state (Opt.Global home "main")
+  let
+    main = Opt.Global home "main"
+    stateWithJsFlags = addJsFlagsDecoder graph state main
+  in
+  addGlobal (Debug.trace "" "") graph stateWithJsFlags main 
+
+
+addJsFlagsDecoder :: Graph -> State -> Opt.Global -> State
+addJsFlagsDecoder graph state main =
+  let
+    decoderGlobals =
+      Set.filter (\(Opt.Global home _) -> home == ModuleName.jsonDecode) $
+      case (graph ! main) of
+        (Opt.Define _ deps) -> deps
+        _ -> Set.empty
+  in
+  state {
+    _jsState =
+      Set.foldl'
+        (JS.addGlobal "" jsMode graph)
+        (_jsState state)
+        decoderGlobals
+    }
 
 
 addGlobal :: B.Builder -> Graph -> State -> Opt.Global -> State
@@ -635,7 +658,7 @@ addGlobalHelp debugIndentHere graph global state =
       debugIndentHere <> "  "
     addDeps deps someState =
       Set.foldl' (addGlobal debugIndent graph) someState $
-        traceDeps debugIndentHere node global $
+        -- traceDeps debugIndentHere node global $
         deps
     node =
       graph ! global
