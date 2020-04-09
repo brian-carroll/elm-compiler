@@ -219,13 +219,9 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                     evaluator: mem32[index + 2],
                     argsIndex: index + 3
                 };
-                const isKernelThunk = metadata.max_values === NEVER_EVALUATE;
-                if (isKernelThunk) {
-                    return evalKernelThunk(metadata);
-                }
-                else {
-                    return createWasmCallback(metadata);
-                }
+                return metadata.max_values === NEVER_EVALUATE
+                    ? evalKernelThunk(metadata)
+                    : createWasmCallback(metadata);
             }
             default:
                 throw new Error('Tried to decode value with unsupported tag ' +
@@ -461,22 +457,28 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                 };
             }
             case Tag.Closure: {
-                // Closures that get written back include Wasm Msg constructor functions.
                 const fun = value.f || value;
-                const freeVars = fun.freeVars;
-                const max_values = fun.max_values;
-                const evaluator = fun.evaluator;
-                if (!evaluator) {
-                    console.error(value);
-                    throw new Error("Can't write a Closure without a reference to a Wasm evaluator function!" +
-                        ' Writing arbitrary JS functions is not supported');
+                if (fun.evaluator) {
+                    const { freeVars, max_values, evaluator } = fun;
+                    const n_values = freeVars.length;
+                    return {
+                        body: [(max_values << 16) | n_values, evaluator],
+                        jsChildren: freeVars,
+                        bodyWriter: null
+                    };
                 }
-                const n_values = freeVars.length;
-                return {
-                    body: [(max_values << 16) | n_values, evaluator],
-                    jsChildren: freeVars,
-                    bodyWriter: null
-                };
+                else {
+                    let evaluator = kernelFunctions.findIndex(f => f === value);
+                    if (evaluator === -1) {
+                        kernelFunctions.push(value);
+                        evaluator = kernelFunctions.length - 1;
+                    }
+                    return {
+                        body: [NEVER_EVALUATE << 16, evaluator],
+                        jsChildren: [],
+                        bodyWriter: null
+                    };
+                }
             }
         }
         console.error(value);
