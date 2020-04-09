@@ -37,6 +37,85 @@ import qualified Reporting.Render.Type as RT
 import qualified Reporting.Render.Type.Localizer as L
 
 
+import Debug.Trace as Debug
+
+
+traceBuilder :: B.Builder -> a -> a
+traceBuilder builder thing =
+  Debug.trace
+    (show $ B.toLazyByteString builder)
+    thing
+
+
+traceDeps :: B.Builder -> Opt.Node -> Opt.Global -> Set.Set Opt.Global -> Set.Set Opt.Global
+traceDeps debugIndent node (Opt.Global home name) deps =
+  let
+    depBuilders :: [B.Builder]
+    depBuilders =
+      map
+        (\(Opt.Global depHome depName) ->
+          JsName.toBuilder $ JsName.fromGlobal depHome depName)
+        (Set.toList deps)
+
+    message :: B.Builder
+    message =
+      debugIndent
+      <> (nodeName node)
+      <> " "
+      <> (JsName.toBuilder $ JsName.fromGlobal home name)
+      <> " deps: "
+      <> (mconcat $ List.intersperse ", " depBuilders)
+  in
+  traceBuilder message deps
+
+
+nodeName :: Opt.Node -> B.Builder
+nodeName node =
+  case node of
+    Opt.Define expr _ -> "Define " <> (exprName expr)
+    Opt.DefineTailFunc _ expr _ -> "DefineTailFunc " <> (exprName expr)
+    Opt.Ctor _ _ -> "Ctor"
+    Opt.Enum _ -> "Enum"
+    Opt.Box -> "Box"
+    Opt.Link _ -> "Link"
+    Opt.Cycle _ _ _ _ -> "Cycle"
+    Opt.Manager _ -> "Manager"
+    Opt.Kernel _ _ -> "Kernel"
+    Opt.PortIncoming _ _ -> "PortIncoming"
+    Opt.PortOutgoing _ _ -> "PortOutgoing"
+
+
+exprName :: Opt.Expr -> B.Builder
+exprName expr =
+  case expr of    
+    Opt.Bool _ -> "Bool"
+    Opt.Chr _ -> "Chr"
+    Opt.Str _ -> "Str"
+    Opt.Int _ -> "Int"
+    Opt.Float _ -> "Float"
+    Opt.VarLocal _ -> "VarLocal"
+    Opt.VarGlobal _ -> "VarGlobal"
+    Opt.VarEnum _ _ -> "VarEnum"
+    Opt.VarBox _ -> "VarBox"
+    Opt.VarCycle _ _ -> "VarCycle"
+    Opt.VarDebug _ _ _ _ -> "VarDebug"
+    Opt.VarKernel _ _ -> "VarKernel"
+    Opt.List _ -> "List"
+    Opt.Function _ _ -> "Function"
+    Opt.Call _ _ -> "Call"
+    Opt.TailCall _ _ -> "TailCall"
+    Opt.If _ _ -> "If"
+    Opt.Let _ _ -> "Let"
+    Opt.Destruct _ _ -> "Destruct"
+    Opt.Case _ _ _ _ -> "Case"
+    Opt.Accessor _ -> "Accessor"
+    Opt.Access _ _ -> "Access"
+    Opt.Update _ _ -> "Update"
+    Opt.Record _ -> "Record"
+    Opt.Unit -> "Unit"
+    Opt.Tuple _ _ _ -> "Tuple"
+    Opt.Shader _ _ _ -> "Shader"
+
 
 -- GENERATE
 
@@ -60,7 +139,7 @@ generate mode (Opt.GlobalGraph graph _) mains =
 
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
 addMain mode graph home _ state =
-  addGlobal mode graph state (Opt.Global home "main")
+  addGlobal (Debug.trace "" "") mode graph state (Opt.Global home "main")
 
 
 perfNote :: Mode.Mode -> B.Builder
@@ -88,8 +167,8 @@ generateForRepl :: Bool -> L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonica
 generateForRepl ansi localizer (Opt.GlobalGraph graph _) home name (Can.Forall _ tipe) =
   let
     mode = Mode.Dev Nothing
-    debugState = addGlobal mode graph emptyState (Opt.Global ModuleName.debug "toString")
-    evalState = addGlobal mode graph debugState (Opt.Global home name)
+    debugState = addGlobal "" mode graph emptyState (Opt.Global ModuleName.debug "toString")
+    evalState = addGlobal "" mode graph debugState (Opt.Global home name)
   in
   "process.on('uncaughtException', function(err) { process.stderr.write(err.toString() + '\\n'); process.exit(1); });"
   <> Functions.functions
@@ -124,8 +203,8 @@ generateForReplEndpoint localizer (Opt.GlobalGraph graph _) home maybeName (Can.
   let
     name = maybe Name.replValueToPrint id maybeName
     mode = Mode.Dev Nothing
-    debugState = addGlobal mode graph emptyState (Opt.Global ModuleName.debug "toString")
-    evalState = addGlobal mode graph debugState (Opt.Global home name)
+    debugState = addGlobal "" mode graph emptyState (Opt.Global ModuleName.debug "toString")
+    evalState = addGlobal "" mode graph debugState (Opt.Global home name)
   in
   Functions.functions
   <> stateToBuilder evalState
@@ -196,22 +275,28 @@ prefixComment text stmt =
     ]
 
 
-addGlobal :: Mode.Mode -> Graph -> State -> Opt.Global -> State
-addGlobal mode graph state@(State revKernels builders seen) global =
+addGlobal :: B.Builder -> Mode.Mode -> Graph -> State -> Opt.Global -> State
+addGlobal debugIndent mode graph state@(State revKernels builders seen) global =
   if Set.member global seen then
     state
   else
-    addGlobalHelp mode graph global $
+    addGlobalHelp debugIndent mode graph global $
       State revKernels builders (Set.insert global seen)
 
 
-addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
-addGlobalHelp mode graph global state =
+addGlobalHelp :: B.Builder -> Mode.Mode -> Graph -> Opt.Global -> State -> State
+addGlobalHelp debugIndentHere mode graph global state =
   let
+    debugIndent =
+      debugIndentHere <> "  "
     addDeps deps someState =
-      Set.foldl' (addGlobal mode graph) someState deps
+      Set.foldl' (addGlobal debugIndent mode graph) someState $
+        traceDeps debugIndentHere node global $
+        deps
+    node =
+      graph ! global
   in
-  case graph ! global of
+  case node of
     Opt.Define expr deps ->
       let
         depsBuilder =
@@ -240,7 +325,7 @@ addGlobalHelp mode graph global state =
       )
 
     Opt.Link (Opt.Global moduleName name) ->
-      addGlobal mode graph
+      addGlobal debugIndent mode graph
         (addStmt state $ JS.CommentStmt
           ("Link " <> JsName.toBuilder (JsName.fromGlobal moduleName name)))
         (Opt.Global moduleName name)
@@ -261,7 +346,7 @@ addGlobalHelp mode graph global state =
         stateCommentBefore =
           addStmt state $ JS.CommentStmt $ "Manager " <> globalNameBuilder
         stateWithManager =
-          generateManager mode graph global effectsType stateCommentBefore
+          generateManager debugIndent mode graph global effectsType stateCommentBefore
       in
         addStmt
           stateWithManager
@@ -300,7 +385,7 @@ addGlobalHelp mode graph global state =
       )
 
     Opt.Box ->
-      addStmt (addGlobal mode graph state identity) (
+      addStmt (addGlobal debugIndent mode graph state identity) (
         prefixComment "Box" $
         generateBox mode global
       )
@@ -511,8 +596,8 @@ generatePort mode (Opt.Global home name) makePort converter =
 -- GENERATE MANAGER
 
 
-generateManager :: Mode.Mode -> Graph -> Opt.Global -> Opt.EffectsType -> State -> State
-generateManager mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) _) effectsType state =
+generateManager :: B.Builder -> Mode.Mode -> Graph -> Opt.Global -> Opt.EffectsType -> State -> State
+generateManager debugIndent mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) _) effectsType state =
   let
     managerLVar =
       JS.LBracket
@@ -526,7 +611,7 @@ generateManager mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) 
       JS.ExprStmt $ JS.Assign managerLVar $
         JS.Call (JS.Ref (JsName.fromKernel Name.platform "createManager")) args
   in
-  addStmt (List.foldl' (addGlobal mode graph) state deps) $
+  addStmt (List.foldl' (addGlobal debugIndent mode graph) state deps) $
     JS.Block (createManager : stmts)
 
 

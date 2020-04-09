@@ -53,20 +53,8 @@ traceBuilder builder thing =
     thing
 
 
-traceGlobalNode :: Opt.Global -> Opt.Node -> Opt.Node
-traceGlobalNode (Opt.Global home name) node =
-  let
-    tab = "    "
-    msg =
-      (nodeName node)
-      <> tab
-      <> (CN.toBuilder $ CN.global home name)
-  in
-  traceBuilder msg node
-
-
-traceDeps :: Set.Set Opt.Global -> Set.Set Opt.Global
-traceDeps deps =
+traceDeps :: B.Builder -> Opt.Node -> Opt.Global -> Set.Set Opt.Global -> Set.Set Opt.Global
+traceDeps debugIndent node (Opt.Global home name) deps =
   let
     depBuilders :: [B.Builder]
     depBuilders =
@@ -77,8 +65,12 @@ traceDeps deps =
 
     message :: B.Builder
     message =
-      "deps: " <>
-      (mconcat $ List.intersperse "," depBuilders)
+      debugIndent
+      <> (nodeName node)
+      <> " "
+      <> (CN.toBuilder $ CN.global home name)
+      <> " deps: "
+      <> (mconcat $ List.intersperse ", " depBuilders)
   in
   traceBuilder message deps
 
@@ -618,31 +610,34 @@ generateInitCall acc (Opt.Global home name) =
 
 addMain :: Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
 addMain graph home _ state =
-  addGlobal graph state (Opt.Global home "main")
+  addGlobal (Debug.trace "" "") graph state (Opt.Global home "main")
 
 
-addGlobal :: Graph -> State -> Opt.Global -> State
-addGlobal graph state global =
+addGlobal :: B.Builder -> Graph -> State -> Opt.Global -> State
+addGlobal debugIndent graph state global =
   let
     seen = _seenGlobals state
   in
   if Set.member global seen then
     state
   else
-    addGlobalHelp graph global $
+    addGlobalHelp debugIndent graph global $
       state
         { _seenGlobals = Set.insert global seen
         , _revExtDecls = C.BlankLineExt : _revExtDecls state
         }
 
 
-addGlobalHelp :: Graph -> Opt.Global -> State -> State
-addGlobalHelp graph global state =
+addGlobalHelp :: B.Builder -> Graph -> Opt.Global -> State -> State
+addGlobalHelp debugIndentHere graph global state =
   let
+    debugIndent =
+      debugIndentHere <> "  "
     addDeps deps someState =
-      Set.foldl' (addGlobal graph) someState deps -- (traceDeps deps)
+      Set.foldl' (addGlobal debugIndent graph) someState $
+        traceDeps debugIndentHere node global $
+        deps
     node =
-      -- traceGlobalNode global $
       graph ! global
   in
   case node of
@@ -658,7 +653,7 @@ addGlobalHelp graph global state =
       generateCtor global arity state
 
     Opt.Link linkedGlobal ->
-      addGlobal graph state linkedGlobal
+      addGlobal debugIndent graph state linkedGlobal
 
     Opt.Cycle names values functions deps ->
       generateCycle global names values functions $
@@ -667,19 +662,21 @@ addGlobalHelp graph global state =
     Opt.Manager effectsType ->
       generateManager global effectsType $
       state { _jsState =
-        JS.addGlobal jsMode graph (_jsState state) global
+        JS.addGlobal debugIndent jsMode graph (_jsState state) global
       }
 
     Opt.Kernel chunks deps ->
       let
-        (Opt.Global home _) = global
+        (Opt.Global home@(ModuleName.Canonical _ moduleName) _) = global
         depState = addDeps deps state
       in
-      if Set.member home CE.cKernelModules then
-        depState  -- do nothing! handled in C via #include
+      if moduleName == Name.debugger then
+        state
+      else if Set.member home CE.cKernelModules then
+        depState
       else
         depState { _jsState =
-          JS.addGlobal jsMode graph (_jsState state) global }
+          JS.addGlobal debugIndent jsMode graph (_jsState state) global }
 
     Opt.Enum _ ->
       generateCtor global 0 state
