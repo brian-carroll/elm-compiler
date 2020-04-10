@@ -400,7 +400,7 @@ generateFieldGroupArray fieldGroups =
   in
   C.DeclExt $ C.Decl
   [C.TypeSpec $ C.TypeDef CN.FieldGroup]
-  (Just $ C.Declr (Just $ CN.appFieldGroups) [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
+  (Just $ C.Declr (Just $ CN.wrapperFieldGroups) [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
   (Just $ C.InitExpr $ C.CompoundLit $ pointerArray)
     
 
@@ -545,12 +545,10 @@ generateCMain revInitGlobals =
         (C.Return $ Just $ C.Var exitCode) Nothing
     fwdInitCalls =
       List.foldl' generateInitCall [] revInitGlobals
-    registerFieldGroups =
+    runGC =
       C.BlockStmt $ C.Expr $ Just $
-      C.Call (C.Var CN.wrapperRegisterFieldGroups) [C.Var CN.appFieldGroups]
-    registerMains =
-      C.BlockStmt $ C.Expr $ Just $
-      C.Call (C.Var CN.wrapperRegisterMains) [C.Var CN.mains]
+      C.Call (C.Var $ CN.fromBuilder "GC_collect_full")
+      []
     returnSuccess =
       C.BlockStmt $ C.Return $ Just $ C.Const (C.IntConst 0)
     body =
@@ -558,9 +556,8 @@ generateCMain revInitGlobals =
       , returnFail
       ] ++
       fwdInitCalls ++
-      [ registerFieldGroups
-      , registerMains
-      , returnSuccess
+      -- [ runGC ] ++
+      [ returnSuccess
       ]
   in
   C.FDefExt $ C.FunDef
@@ -580,7 +577,7 @@ generateMainsArray mains =
   in
   C.DeclExt $ C.Decl
     [C.TypeSpec C.Void]
-    (Just $ C.Declr (Just CN.mains)
+    (Just $ C.Declr (Just CN.wrapperMains)
       [C.PtrDeclr [], C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
     (Just $ C.InitExpr $ C.CompoundLit initList)
 

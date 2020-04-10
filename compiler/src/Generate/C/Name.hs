@@ -36,10 +36,8 @@ module Generate.C.Name
   , utilsDestructIndex
   , utilsEqual
   , nullPtr
-  , appFieldGroups
-  , wrapperRegisterFieldGroups
-  , mains
-  , wrapperRegisterMains
+  , wrapperFieldGroups
+  , wrapperMains
   , gcTceData
   , gcTceEval
   , gcTceIteration
@@ -297,24 +295,14 @@ nullPtr =
   Name "NULL"
 
 
-appFieldGroups :: Name
-appFieldGroups =
-  Name "app_field_groups"
+wrapperFieldGroups :: Name
+wrapperFieldGroups =
+  Name "Wrapper_appFieldGroups"
 
 
-wrapperRegisterFieldGroups :: Name
-wrapperRegisterFieldGroups =
-  Name "Wrapper_registerFieldGroups"
-
-
-mains :: Name
-mains =
-  Name "mains"
-
-
-wrapperRegisterMains :: Name
-wrapperRegisterMains =
-  Name "Wrapper_registerMains"
+wrapperMains :: Name
+wrapperMains =
+  Name "Wrapper_mainsArray"
 
 
 args :: Name
