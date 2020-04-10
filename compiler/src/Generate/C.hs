@@ -291,7 +291,7 @@ jsInitWrapper (AppEnums appFields appFieldGroups appCtors appKernelVals) =
     fgStrings = map
       (\fNames ->
         JSB.String $
-          mconcat $ List.intersperse "$" $
+          mconcat $ List.intersperse " " $
           map Name.toBuilder fNames)
       appFieldGroups
 

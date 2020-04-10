@@ -448,7 +448,7 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                 // Need to look it up in the appTypes.
                 const keys = Object.keys(value);
                 keys.sort();
-                const fgName = keys.join('$');
+                const fgName = keys.join(' ');
                 const fgAddr = appTypes.fieldGroups[fgName];
                 return {
                     body: [fgAddr],
