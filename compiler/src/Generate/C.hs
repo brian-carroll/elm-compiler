@@ -556,8 +556,8 @@ generateCMain revInitGlobals =
       , returnFail
       ] ++
       fwdInitCalls ++
-      -- [ runGC ] ++
-      [ returnSuccess
+      [ runGC
+      , returnSuccess
       ]
   in
   C.FDefExt $ C.FunDef
