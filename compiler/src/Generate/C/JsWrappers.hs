@@ -103,6 +103,8 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
             [False]: false
         };
     })();
+    const CTOR_KERNEL_ARRAY = 'CTOR_KERNEL_ARRAY';
+    generatedAppTypes.ctors.push(CTOR_KERNEL_ARRAY);
     const appTypes = {
         ctors: arrayToEnum(generatedAppTypes.ctors),
         fields: arrayToEnum(generatedAppTypes.fields),
@@ -185,17 +187,26 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                 const elmConst = wasmConstAddrs[addr]; // True/False/Unit
                 if (elmConst !== undefined)
                     return elmConst;
+                const nFields = size - 2;
                 const wasmCtor = mem32[index + 1];
                 const jsCtor = appTypes.ctors[wasmCtor];
-                const custom = { $: jsCtor };
-                const fieldNames = 'abcdefghijklmnopqrstuvwxyz';
-                const nFields = size - 2;
-                for (let i = 0; i < nFields; i++) {
-                    const field = fieldNames[i];
-                    const childAddr = mem32[index + 2 + i];
-                    custom[field] = readWasmValue(childAddr);
+                if (jsCtor === CTOR_KERNEL_ARRAY) {
+                    const kernelArray = [];
+                    mem32.slice(index + 2, index + nFields).forEach(childAddr => {
+                        kernelArray.push(readWasmValue(childAddr));
+                    });
+                    return kernelArray;
                 }
-                return custom;
+                else {
+                    const custom = { $: jsCtor };
+                    const fieldNames = 'abcdefghijklmnopqrstuvwxyz';
+                    for (let i = 0; i < nFields; i++) {
+                        const field = fieldNames[i];
+                        const childAddr = mem32[index + 2 + i];
+                        custom[field] = readWasmValue(childAddr);
+                    }
+                    return custom;
+                }
             }
             case Tag.Record: {
                 const record = {};
@@ -324,12 +335,21 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
      */
     function writeWasmValue(nextIndex, value) {
         const typeInfo = detectElmType(value);
-        if (typeInfo.kind === 'constAddr') {
-            return { addr: typeInfo.value, nextIndex };
+        switch (typeInfo.kind) {
+            case 'constAddr':
+                return { addr: typeInfo.value, nextIndex };
+            case 'tag': {
+                const tag = typeInfo.value;
+                const builder = wasmBuilder(tag, value);
+                return writeFromBuilder(nextIndex, builder, tag);
+            }
+            case 'kernelArray': {
+                const customObj = value.slice();
+                customObj.$ = CTOR_KERNEL_ARRAY;
+                const builder = wasmBuilder(Tag.Custom, customObj);
+                return writeFromBuilder(nextIndex, builder, Tag.Closure);
+            }
         }
-        const tag = typeInfo.value;
-        const builder = wasmBuilder(tag, value);
-        return writeFromBuilder(nextIndex, builder, tag);
     }
     function detectElmType(elmValue) {
         if (elmValue === null || elmValue === undefined) {
@@ -359,6 +379,9 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
             case 'object': {
                 if (elmValue instanceof String) {
                     return { kind: 'tag', value: Tag.Char };
+                }
+                if (Array.isArray(elmValue)) {
+                    return { kind: 'kernelArray' };
                 }
                 switch (elmValue.$) {
                     case undefined:
