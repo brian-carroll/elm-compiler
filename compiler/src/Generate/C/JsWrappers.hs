@@ -134,7 +134,7 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
     const KERNEL_CTOR_OFFSET = 1024 * 1000;
     const textDecoder = new TextDecoder('utf-16le');
     const identity = (f) => f;
-    const elmFunctionWrappers = [identity, identity, F2, F3, F4];
+    const elmFunctionWrappers = [identity, identity, F2, F3, F4, F5, F6, F7, F8, F9];
     let Tag;
     (function (Tag) {
         Tag[Tag["Int"] = 0] = "Int";
@@ -472,18 +472,16 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                 const jsCtor = value.$;
                 let body;
                 const jsChildren = [];
-                const keys = Object.keys(value);
+                const keys = Object.keys(value).filter(k => k !== '$');
                 if (typeof jsCtor === 'number') {
                     body = [KERNEL_CTOR_OFFSET + jsCtor];
-                    jsChildren.push(keys.join(' '));
+                    const keyString = keys.join(' ');
+                    jsChildren.push(keyString);
                 }
                 else {
                     body = [appTypes.ctors[jsCtor]];
                 }
-                keys.forEach(k => {
-                    if (k !== '$')
-                        jsChildren.push(value[k]);
-                });
+                keys.forEach(k => jsChildren.push(value[k]));
                 return {
                     body,
                     jsChildren,
