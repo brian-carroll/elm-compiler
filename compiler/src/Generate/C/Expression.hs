@@ -145,6 +145,14 @@ addBlockItem blockItem =
     state { _revBlockItems = blockItem : (_revBlockItems state) })
 
 
+addBlockItems :: [C.CompoundBlockItem] -> State ExprState ()
+addBlockItems blockItems =
+  modify (\state ->
+    state {
+      _revBlockItems = foldl (flip (:)) (_revBlockItems state) blockItems
+    })
+
+
 addExtDecl :: C.ExternalDeclaration -> State ExprState ()
 addExtDecl extDecl =
   modify (\state ->
@@ -350,18 +358,51 @@ generateExprAsBlock resultName expr =
 
 generateLocalFn :: [N.Name] -> Opt.Expr -> State ExprState C.Expression
 generateLocalFn params body =
+  do    
+    closureName <- getTmpVarName
+    generateNamedLocalFn closureName params body
+    return $ C.Var closureName
+
+
+generateNamedLocalFn :: CN.Name -> [N.Name] -> Opt.Expr -> State ExprState ()
+generateNamedLocalFn closureName params body =
   do
     (Opt.Global gHome gName) <- gets _parentGlobal
-    tmpVarIndex <- nextTmpVarIndex
-    let fname = CN.localEvaluator gHome gName tmpVarIndex
-    freeVars <- generateEvalFn fname (Just params) body False
-    return $
-      C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
-        [ C.Const $ C.IntConst $ length freeVars
-        , C.Const $ C.IntConst $ length freeVars + length params
-        , C.Unary C.AddrOp $ C.Var fname
-        , C.pointerArray (map (C.Var . CN.local) freeVars)
-        ]
+    evalIndex <- nextTmpVarIndex
+    let evalName = CN.localEvaluator gHome gName evalIndex
+
+    freeVars <- generateEvalFn evalName (Just params) body False
+    addBlockItem $
+      generateNewClosure closureName evalName (length params) (length freeVars)
+
+    addBlockItems $ map
+      (generateFreeVarAssignment (C.Var closureName))
+      (zip [0..] freeVars)
+
+
+generateNewClosure :: CN.Name -> CN.Name -> Int -> Int -> C.CompoundBlockItem
+generateNewClosure varName evalName nParams nFree =
+  C.BlockDecl $
+    C.Decl
+      [C.TypeSpec $ C.TypeDef CN.Closure]
+      (Just $ C.Declr (Just varName) [C.PtrDeclr []])
+      (Just $ C.InitExpr $
+        C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
+          [ C.Const $ C.IntConst nFree
+          , C.Const $ C.IntConst $ nFree + nParams
+          , C.Unary C.AddrOp $ C.Var evalName
+          , C.Var CN.nullPtr
+          ])
+
+
+generateFreeVarAssignment :: C.Expression -> (Int, N.Name) -> C.CompoundBlockItem
+generateFreeVarAssignment closureRef (index, freeVarName) =
+  C.BlockStmt $ C.Expr $ Just $
+    C.Assign C.AssignOp
+      (C.Index
+        (C.MemberArrow closureRef $ CN.fromBuilder "values")
+        (C.Const $ C.IntConst index))
+      (C.Var $ CN.local freeVarName)
 
 
 generateEvalFn :: CN.Name -> Maybe [N.Name] -> Opt.Expr -> Bool -> State ExprState [N.Name]
@@ -936,6 +977,11 @@ generateTailCallAssign argIdx tmpName =
 generateDef :: Opt.Def -> State ExprState ()
 generateDef def =
   case def of
+    Opt.Def name (Opt.Function args body) ->
+      do
+        addLocal name
+        generateNamedLocalFn (CN.local name) args body
+
     Opt.Def name body ->
       do
         addLocal name
