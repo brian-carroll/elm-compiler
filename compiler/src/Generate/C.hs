@@ -833,7 +833,7 @@ generateCycleVal home state (name, expr) =
 
     declarePtr =
       C.DeclExt $ C.Decl
-        [C.TypeSpec $ C.TypeDef CN.ElmValue]
+        [C.TypeSpec $ C.TypeDef CN.Closure]
         (Just $ C.Declr (Just ptrName) [C.PtrDeclr []])
         Nothing
 
@@ -973,15 +973,15 @@ addDef global@(Opt.Global home' name') expr state =
         defineAlias (CN.accessor name) state
 
     Opt.List _        -> generateRuntimeInit CN.Cons global expr state
-    Opt.Call _ _      -> generateRuntimeInit CN.ElmValue global expr state
-    Opt.If _ _        -> generateRuntimeInit CN.ElmValue global expr state
-    Opt.Let _ _       -> generateRuntimeInit CN.ElmValue global expr state
-    Opt.Destruct _ _  -> generateRuntimeInit CN.ElmValue global expr state
-    Opt.Case _ _ _ _  -> generateRuntimeInit CN.ElmValue global expr state
-    Opt.Access _ _    -> generateRuntimeInit CN.ElmValue global expr state
+    Opt.Call _ _      -> generateRuntimeInit CN.Closure global expr state
+    Opt.If _ _        -> generateRuntimeInit CN.Closure global expr state
+    Opt.Let _ _       -> generateRuntimeInit CN.Closure global expr state
+    Opt.Destruct _ _  -> generateRuntimeInit CN.Closure global expr state
+    Opt.Case _ _ _ _  -> generateRuntimeInit CN.Closure global expr state
+    Opt.Access _ _    -> generateRuntimeInit CN.Closure global expr state
     Opt.Record _      -> generateRuntimeInit CN.Record global expr state
     Opt.Update _ _    -> generateRuntimeInit CN.Record global expr state
-    Opt.Shader _ _ _  -> generateRuntimeInit CN.ElmValue global expr state
+    Opt.Shader _ _ _  -> generateRuntimeInit CN.Closure global expr state
     Opt.Tuple _ _ Nothing  -> generateRuntimeInit CN.Tuple2 global expr state
     Opt.Tuple _ _ (Just _) -> generateRuntimeInit CN.Tuple3 global expr state
 
