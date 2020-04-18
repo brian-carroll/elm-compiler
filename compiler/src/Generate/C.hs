@@ -159,12 +159,12 @@ jsMode =
   Mode.Dev Nothing
 
 
-data AppEnums =
-  AppEnums
+data JsWrapperConfig =
+  JsWrapperConfig
     { appFields :: Set.Set Name.Name
     , appFieldGroups :: [[Name.Name]]
     , appCtors :: [Name.Name]
-    , appKernelVals :: [(Name.Name, Name.Name)]
+    , appKernelVals :: [JSN.Name]
     }
     
 
@@ -172,27 +172,32 @@ generate :: Opt.GlobalGraph -> Mains -> (B.Builder, B.Builder)
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
     state = Map.foldrWithKey (addMain graph) emptyState mains
-    appTypes = extractAppEnums state
+    appTypes = extractJsWrapperConfig state
     cBuilder = buildC mains state
     jsBuilder = buildJs appTypes (_jsState state) mains
   in
     (cBuilder, jsBuilder)
 
 
-extractAppEnums :: State -> AppEnums
-extractAppEnums state =
+extractJsWrapperConfig :: State -> JsWrapperConfig
+extractJsWrapperConfig state =
   foldr
-    extractAppEnumsHelp
-    (AppEnums Set.empty [] [] [])
+    extractJsWrapperConfigHelp
+    (JsWrapperConfig Set.empty [] [] [])
     (_sharedDefs state)
 
 
-extractAppEnumsHelp :: CE.SharedDef -> AppEnums -> AppEnums
-extractAppEnumsHelp def appEnums =
+extractJsWrapperConfigHelp :: CE.SharedDef -> JsWrapperConfig -> JsWrapperConfig
+extractJsWrapperConfigHelp def appEnums =
   case def of
     CE.SharedJsKernel home name ->
       appEnums
-        { appKernelVals = (home, name) : (appKernelVals appEnums)
+        { appKernelVals = (JSN.fromKernel home name) : (appKernelVals appEnums)
+        }
+
+    CE.SharedJsGlobal (Opt.Global home name) ->
+      appEnums
+        { appKernelVals = (JSN.fromGlobal home name) : (appKernelVals appEnums)
         }
 
     CE.SharedFieldGroup fields ->
@@ -234,7 +239,7 @@ prependExtDecls revExtDecls monolith =
     JS top level
 -}
 
-buildJs :: AppEnums -> JS.State -> Mains -> B.Builder
+buildJs :: JsWrapperConfig -> JS.State -> Mains -> B.Builder
 buildJs appEnums jsState mains =
   "(function(scope){\n'use strict';"
   <> JsWrappers.defineOnReady
@@ -282,8 +287,8 @@ jsAssignMainsHelp moduleName _ (index, builder) =
   )
 
 
-jsInitWrapper :: AppEnums -> B.Builder
-jsInitWrapper (AppEnums appFields appFieldGroups appCtors appKernelVals) =
+jsInitWrapper :: JsWrapperConfig -> B.Builder
+jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) =
   let
     name =
       JSN.fromLocal . Name.fromChars
@@ -313,9 +318,7 @@ jsInitWrapper (AppEnums appFields appFieldGroups appCtors appKernelVals) =
     
     kernelRecord =
       JSB.Object $ map
-        (\(home, name) ->
-            let jsName = JSN.fromKernel home name in
-            (jsName, JSB.Ref jsName))
+        (\jsName -> (jsName, JSB.Ref jsName))
         appKernelVals
   in
   JSB.stmtToBuilder $
@@ -357,6 +360,13 @@ iterateSharedDefs def acc@(jsKernelNames, ctorNames, fieldNames, fieldGroups, de
   case def of
     CE.SharedJsKernel home name ->
       ( (CN.jsKernelEval home name) : jsKernelNames
+      , ctorNames
+      , fieldNames
+      , fieldGroups
+      , newDecls
+      )
+    CE.SharedJsGlobal (Opt.Global home name) ->
+      ( (CN.jsGlobalEval home name) : jsKernelNames
       , ctorNames
       , fieldNames
       , fieldGroups
@@ -465,6 +475,13 @@ generateSharedDefItem def =
     CE.SharedJsKernel home name ->
       [generateClosure (CN.kernelValue home name)
         (C.nameAsVoidPtr $ CN.jsKernelEval home name)
+        maxClosureArity
+        []
+      ]
+
+    CE.SharedJsGlobal (Opt.Global home name) ->
+      [generateClosure (CN.global home name)
+        (C.nameAsVoidPtr $ CN.jsGlobalEval home name)
         maxClosureArity
         []
       ]
@@ -712,14 +729,14 @@ addGlobalHelp debugIndentHere graph global state =
       generateCtor global 1 state
 
     Opt.PortIncoming decoder deps ->
-      generatePort global decoder $
+      addShared (CE.SharedJsGlobal global) $
       addDeps deps $
       state { _jsState =
         JS.addGlobal debugIndent jsMode graph (_jsState state) global
       }
 
     Opt.PortOutgoing encoder deps ->
-      generatePort global encoder $
+      addShared (CE.SharedJsGlobal global) $
       addDeps deps $
       state { _jsState =
         JS.addGlobal debugIndent jsMode graph (_jsState state) global
@@ -871,35 +888,6 @@ generateCycleVal home state (name, expr) =
     , _sharedDefs = sharedDefs
     , _revInitGlobals = global : (_revInitGlobals state)
     }
-
-    
-{-
-                PORT
--}
-
-generatePort :: Bool -> Opt.Global -> Opt.Expr -> State -> State
-generatePort isIncoming global@(Opt.Global home name) expr state =
-  let
-    kernelFuncName =
-      if isIncoming then
-        "incomingPort"
-      else
-        "outgoingPort"
-
-    JS.generatePort mode global kernelFuncName encoder
-  in
-  state { _jsState = (_jsState state)}
-
-  --   (Utf8.Utf8 portNameBytes) = name
-  --   portNameString = Opt.Str (Utf8.Utf8 portNameBytes)
-
-  --   call =
-  --     Opt.Call
-  --       (Opt.VarKernel Name.platform kernelFuncName)
-  --       [portNameString, expr]
-  -- in
-  -- generateRuntimeInit CN.Closure global call state
-
 
 
 {-

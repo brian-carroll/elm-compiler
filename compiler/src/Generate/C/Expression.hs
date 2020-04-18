@@ -62,6 +62,7 @@ data SharedDef
   | SharedField N.Name
   | SharedCtor N.Name
   | SharedJsKernel N.Name N.Name
+  | SharedJsGlobal Opt.Global
   deriving (Eq, Ord)
 
 

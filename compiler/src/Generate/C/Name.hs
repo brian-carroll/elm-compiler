@@ -11,6 +11,7 @@ module Generate.C.Name
   , globalInitFn
   , globalInitPtr
   , jsKernelEval
+  , jsGlobalEval
   , kernelValue
   , cycleVar
   , ctorId
@@ -132,6 +133,11 @@ localTailEvaluator home gName name =
 
 cycleVar :: ModuleName.Canonical -> Name.Name -> Name
 cycleVar = globalInitFn
+
+
+jsGlobalEval :: ModuleName.Canonical -> Name.Name -> Name
+jsGlobalEval home name =
+  Name ("JS_" <> globalBuilder home name)
 
 
 jsKernelEval :: Name.Name -> Name.Name -> Name
