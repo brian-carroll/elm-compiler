@@ -269,13 +269,28 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
         }
     }
     function evalKernelThunk(metadata) {
-        const { n_values, evaluator, argsIndex } = metadata;
-        let kernelValue = kernelFunctions[evaluator];
-        for (let i = argsIndex; i < argsIndex + n_values; i++) {
-            const arg = readWasmValue(mem32[i]);
-            kernelValue = kernelValue(arg);
+        let { n_values, evaluator, argsIndex } = metadata;
+        let kernelFn = kernelFunctions[evaluator];
+        while (n_values) {
+            let f;
+            let nArgs;
+            if (kernelFn.a && kernelFn.f && n_values >= kernelFn.a) {
+                f = kernelFn.f;
+                nArgs = kernelFn.a;
+            }
+            else {
+                f = kernelFn;
+                nArgs = kernelFn.length || 1;
+            }
+            const args = [];
+            mem32.slice(argsIndex, argsIndex + nArgs).forEach(argAddr => {
+                args.push(readWasmValue(argAddr));
+            });
+            n_values -= nArgs;
+            argsIndex += nArgs;
+            kernelFn = f(...args);
         }
-        return kernelValue;
+        return kernelFn;
     }
     function createWasmCallback(metadata) {
         const { n_values, max_values, evaluator, argsIndex } = metadata;
