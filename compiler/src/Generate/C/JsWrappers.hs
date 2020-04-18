@@ -77,7 +77,7 @@ wrapEmscriptenForElmFnName =
 
 wrapEmscriptenForElm :: B.Builder
 wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
-  <> [r|(wasmBuffer, wasmExports, generatedAppTypes, kernelFunctions) {
+  <> [r|(wasmBuffer, wasmExports, generatedAppTypes, kernelFuncRecord) {
     if (!(wasmBuffer instanceof ArrayBuffer))
         throw new Error('Expected wasmMemory to be an ArrayBuffer');
     /* --------------------------------------------------
@@ -125,6 +125,8 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
             return enumObj;
         }, {});
     }
+    const kernelFunctions = Object.values(kernelFuncRecord);
+    const kernelFunctionNames = Object.keys(kernelFuncRecord); // for debug
     const WORD = 4;
     const TAG_MASK = 0xf0000000;
     const TAG_SHIFT = 28;
@@ -134,7 +136,18 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
     const KERNEL_CTOR_OFFSET = 1024 * 1000;
     const textDecoder = new TextDecoder('utf-16le');
     const identity = (f) => f;
-    const elmFunctionWrappers = [identity, identity, F2, F3, F4, F5, F6, F7, F8, F9];
+    const elmFunctionWrappers = [
+        identity,
+        identity,
+        F2,
+        F3,
+        F4,
+        F5,
+        F6,
+        F7,
+        F8,
+        F9
+    ];
     let Tag;
     (function (Tag) {
         Tag[Tag["Int"] = 0] = "Int";

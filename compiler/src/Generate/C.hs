@@ -310,6 +310,13 @@ jsInitWrapper (AppEnums appFields appFieldGroups appCtors appKernelVals) =
 
     emscriptenModule =
       JSB.Ref $ name JsWrappers.emscriptenModuleRef
+    
+    kernelRecord =
+      JSB.Object $ map
+        (\(home, name) ->
+            let jsName = JSN.fromKernel home name in
+            (jsName, JSB.Ref jsName))
+        appKernelVals
   in
   JSB.stmtToBuilder $
     JSB.Var wasmWrapperName $
@@ -317,7 +324,7 @@ jsInitWrapper (AppEnums appFields appFieldGroups appCtors appKernelVals) =
       [ JSB.Access emscriptenModule (name "buffer")
       , JSB.Access emscriptenModule (name "asm")
       , appTypes
-      , JSB.Array $ map (JSB.Ref . (uncurry JSN.fromKernel)) appKernelVals  
+      , kernelRecord
       ] 
 
 
