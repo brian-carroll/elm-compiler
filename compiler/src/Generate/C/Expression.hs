@@ -1048,6 +1048,7 @@ data HeaderMacro
   | HEADER_TUPLE3
   | HEADER_CUSTOM Int
   | HEADER_RECORD Int
+  | HEADER_FIELDGROUP Int
   | HEADER_CLOSURE Int
 
 
@@ -1071,4 +1072,5 @@ generateHeader header =
     HEADER_TUPLE3 -> fixedSize "HEADER_TUPLE3"
     HEADER_CUSTOM n -> varSize "HEADER_CUSTOM" n
     HEADER_RECORD n -> varSize "HEADER_RECORD" n
+    HEADER_FIELDGROUP n -> varSize "HEADER_FIELDGROUP" n
     HEADER_CLOSURE n -> varSize "HEADER_CLOSURE" n

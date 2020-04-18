@@ -78,8 +78,6 @@ wrapEmscriptenForElmFnName =
 wrapEmscriptenForElm :: B.Builder
 wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
   <> [r|(wasmBuffer, wasmExports, generatedAppTypes, kernelFuncRecord) {
-    if (!(wasmBuffer instanceof ArrayBuffer))
-        throw new Error('Expected wasmMemory to be an ArrayBuffer');
     /* --------------------------------------------------
   
                  INITIALISATION & CONSTANTS
@@ -114,7 +112,7 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
         fieldGroups: generatedAppTypes.fieldGroups.reduce((enumObj, name) => {
             const addr = wasmExports._getNextFieldGroup();
             enumObj[name] = addr;
-            enumObj[addr] = name;
+            enumObj[addr] = name.split(' ');
             return enumObj;
         }, {})
     };
@@ -159,13 +157,13 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
         Tag[Tag["Tuple3"] = 6] = "Tuple3";
         Tag[Tag["Custom"] = 7] = "Custom";
         Tag[Tag["Record"] = 8] = "Record";
-        Tag[Tag["Closure"] = 9] = "Closure";
-        Tag[Tag["GcException"] = 10] = "GcException";
-        Tag[Tag["GcStackEmpty"] = 11] = "GcStackEmpty";
-        Tag[Tag["GcStackPush"] = 12] = "GcStackPush";
-        Tag[Tag["GcStackPop"] = 13] = "GcStackPop";
-        Tag[Tag["GcStackTailCall"] = 14] = "GcStackTailCall";
-        Tag[Tag["Unused"] = 15] = "Unused";
+        Tag[Tag["FieldGroup"] = 9] = "FieldGroup";
+        Tag[Tag["Closure"] = 10] = "Closure";
+        Tag[Tag["GcException"] = 11] = "GcException";
+        Tag[Tag["GcStackEmpty"] = 12] = "GcStackEmpty";
+        Tag[Tag["GcStackPush"] = 13] = "GcStackPush";
+        Tag[Tag["GcStackPop"] = 14] = "GcStackPop";
+        Tag[Tag["GcStackTailCall"] = 15] = "GcStackTailCall";
     })(Tag || (Tag = {}));
     function readWasmValue(addr) {
         if (!addr)
@@ -239,17 +237,20 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
             }
             case Tag.Record: {
                 const record = {};
-                const fgIndex = mem32[index + 1] >> 2;
-                const fgSize = mem32[fgIndex];
-                const fields = appTypes.fields;
-                for (let i = 1; i <= fgSize; i++) {
-                    const fieldId = mem32[fgIndex + i];
-                    const valAddr = mem32[index + 1 + i];
-                    const fieldName = fields[fieldId];
-                    const value = readWasmValue(valAddr);
-                    record[fieldName] = value;
-                }
+                const fgAddr = mem32[index + 1];
+                const fieldNames = appTypes.fieldGroups[fgAddr] || readWasmValue(fgAddr);
+                fieldNames.forEach((fieldName, i) => {
+                    const valAddr = mem32[index + 2 + i];
+                    record[fieldName] = readWasmValue(valAddr);
+                });
                 return record;
+            }
+            case Tag.FieldGroup: {
+                const fieldNames = [];
+                mem32.slice(index + 2, index + size).forEach(fieldId => {
+                    fieldNames.push(appTypes.fields[fieldId]);
+                });
+                return fieldNames;
             }
             case Tag.Closure: {
                 const idx16 = index << 1;
@@ -395,6 +396,11 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
             }
         }
     }
+    class FieldGroup {
+        constructor(fieldNames) {
+            this.fieldNames = fieldNames;
+        }
+    }
     function detectElmType(elmValue) {
         if (elmValue === null || elmValue === undefined) {
             return { kind: 'constAddr', value: wasmConstAddrs.JsNull };
@@ -423,6 +429,9 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
             case 'object': {
                 if (elmValue instanceof String) {
                     return { kind: 'tag', value: Tag.Char };
+                }
+                if (elmValue instanceof FieldGroup) {
+                    return { kind: 'tag', value: Tag.FieldGroup };
                 }
                 if (Array.isArray(elmValue)) {
                     return { kind: 'kernelArray' };
@@ -517,16 +526,31 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                 };
             }
             case Tag.Record: {
-                // JS doesn't have the concept of fieldgroups but Wasm does.
-                // It's a structure containing info about a specific Record type
-                // Need to look it up in the appTypes.
-                const keys = Object.keys(value);
-                keys.sort();
+                const body = [];
+                const jsChildren = [];
+                const keys = Object.keys(value).sort();
                 const fgName = keys.join(' ');
-                const fgAddr = appTypes.fieldGroups[fgName];
+                const fgAddrStatic = appTypes.fieldGroups[fgName];
+                if (fgAddrStatic) {
+                    body.push(fgAddrStatic);
+                }
+                else {
+                    jsChildren.push(new FieldGroup(keys));
+                }
+                keys.forEach(k => jsChildren.push(value[k]));
                 return {
-                    body: [fgAddr],
-                    jsChildren: keys.map(k => value[k]),
+                    body,
+                    jsChildren,
+                    bodyWriter: null
+                };
+            }
+            case Tag.FieldGroup: {
+                const fieldNames = value.fieldNames;
+                const body = [fieldNames.length];
+                fieldNames.forEach(name => body.push(appTypes.fields[name]));
+                return {
+                    body,
+                    jsChildren: [],
                     bodyWriter: null
                 };
             }

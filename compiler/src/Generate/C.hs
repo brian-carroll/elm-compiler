@@ -462,7 +462,9 @@ generateSharedDefItem def =
 
     CE.SharedFieldGroup names ->
       [generateStructDef CN.FieldGroup (CN.fieldGroup names)
-        [("size", C.Const $ C.IntConst $ length names)]
+        [ ("header", CE.generateHeader $ CE.HEADER_FIELDGROUP (length names))
+        , ("size", C.Const $ C.IntConst $ length names)
+        ]
         (Just ("fields", map (C.Var . CN.fieldId) names))
       ]
 
