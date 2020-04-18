@@ -61,7 +61,7 @@ data SharedDef
   | SharedFieldGroup [N.Name]
   | SharedField N.Name
   | SharedCtor N.Name
-  | SharedJsThunk N.Name N.Name
+  | SharedJsKernel N.Name N.Name
   deriving (Eq, Ord)
 
 
@@ -250,7 +250,7 @@ generate expr =
         return $ C.addrOf $ CN.kernelValue home name
       else
         addSharedExpr
-          (SharedJsThunk home name)
+          (SharedJsKernel home name)
           (CN.kernelValue home name)
 
     Opt.List entries ->

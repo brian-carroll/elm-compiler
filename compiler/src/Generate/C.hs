@@ -190,7 +190,7 @@ extractAppEnums state =
 extractAppEnumsHelp :: CE.SharedDef -> AppEnums -> AppEnums
 extractAppEnumsHelp def appEnums =
   case def of
-    CE.SharedJsThunk home name ->
+    CE.SharedJsKernel home name ->
       appEnums
         { appKernelVals = (home, name) : (appKernelVals appEnums)
         }
@@ -355,7 +355,7 @@ iterateSharedDefs def acc@(jsKernelNames, ctorNames, fieldNames, fieldGroups, de
   let newDecls = (generateSharedDefItem def) ++ decls
   in
   case def of
-    CE.SharedJsThunk home name ->
+    CE.SharedJsKernel home name ->
       ( (CN.jsKernelEval home name) : jsKernelNames
       , ctorNames
       , fieldNames
@@ -462,7 +462,7 @@ generateSharedDefItem def =
     CE.SharedCtor _ ->
       []
 
-    CE.SharedJsThunk home name ->
+    CE.SharedJsKernel home name ->
       [generateClosure (CN.kernelValue home name)
         (C.nameAsVoidPtr $ CN.jsKernelEval home name)
         maxClosureArity
@@ -712,12 +712,18 @@ addGlobalHelp debugIndentHere graph global state =
       generateCtor global 1 state
 
     Opt.PortIncoming decoder deps ->
-      generatePort True global decoder $
-      addDeps deps state
+      generatePort global decoder $
+      addDeps deps $
+      state { _jsState =
+        JS.addGlobal debugIndent jsMode graph (_jsState state) global
+      }
 
     Opt.PortOutgoing encoder deps ->
-      generatePort False global encoder $
-      addDeps deps state
+      generatePort global encoder $
+      addDeps deps $
+      state { _jsState =
+        JS.addGlobal debugIndent jsMode graph (_jsState state) global
+      }
 
 
 addExtDecl :: C.ExternalDeclaration -> State -> State
@@ -880,15 +886,19 @@ generatePort isIncoming global@(Opt.Global home name) expr state =
       else
         "outgoingPort"
 
-    (Utf8.Utf8 portNameBytes) = name
-    portNameString = Opt.Str (Utf8.Utf8 portNameBytes)
-
-    call =
-      Opt.Call
-        (Opt.VarKernel Name.platform kernelFuncName)
-        [portNameString, expr]
+    JS.generatePort mode global kernelFuncName encoder
   in
-  generateRuntimeInit CN.Closure global call state
+  state { _jsState = (_jsState state)}
+
+  --   (Utf8.Utf8 portNameBytes) = name
+  --   portNameString = Opt.Str (Utf8.Utf8 portNameBytes)
+
+  --   call =
+  --     Opt.Call
+  --       (Opt.VarKernel Name.platform kernelFuncName)
+  --       [portNameString, expr]
+  -- in
+  -- generateRuntimeInit CN.Closure global call state
 
 
 
@@ -918,7 +928,7 @@ generateManager global@(Opt.Global home _) effectsType state =
         Opt.Fx -> ["subscription", "command"]  
   in
   addShared (CE.SharedStr moduleNameStr) $
-  addShared (CE.SharedJsThunk Name.platform "leaf") $
+  addShared (CE.SharedJsKernel Name.platform "leaf") $
     state
       { _revExtDecls =
           closures ++ (_revExtDecls state)
@@ -1012,7 +1022,7 @@ addDef global@(Opt.Global home' name') expr state =
       if Set.member home' CE.cKernelModules then
         state
       else
-        addShared (CE.SharedJsThunk home name) state
+        addShared (CE.SharedJsKernel home name) state
 
     Opt.VarLocal _ -> error "COMPILER BUG: Global variable cannot also be local"
     Opt.TailCall _ _ -> error "COMPILER BUG: Tail recursive global should be in a DefineTailFunc node rather than a Define node"
