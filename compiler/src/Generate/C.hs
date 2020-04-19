@@ -30,98 +30,14 @@ import qualified Generate.JavaScript.Builder as JSB
 import qualified Generate.JavaScript.Name as JSN
 import qualified Generate.JavaScript.Functions as JsFunctions
 
--- import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
--- import qualified Data.Index as Index
--- import qualified Elm.Kernel as K
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
 import qualified Elm.String as ES
 
 import qualified Generate.Mode as Mode
--- import qualified Reporting.Doc as D
--- import qualified Reporting.Render.Type as RT
--- import qualified Reporting.Render.Type.Localizer as L
 
 import Debug.Trace as Debug
-
-
-traceBuilder :: B.Builder -> a -> a
-traceBuilder builder thing =
-  Debug.trace
-    (show $ B.toLazyByteString builder)
-    thing
-
-
-traceDeps :: B.Builder -> Opt.Node -> Opt.Global -> Set.Set Opt.Global -> Set.Set Opt.Global
-traceDeps debugIndent node (Opt.Global home name) deps =
-  let
-    depBuilders :: [B.Builder]
-    depBuilders =
-      map
-        (\(Opt.Global depHome depName) ->
-          CN.toBuilder $ CN.global depHome depName)
-        (Set.toList deps)
-
-    message :: B.Builder
-    message =
-      debugIndent
-      <> (nodeName node)
-      <> " "
-      <> (CN.toBuilder $ CN.global home name)
-      <> " ("
-      <> (mconcat $ List.intersperse ", " depBuilders)
-      <> ")"
-  in
-  traceBuilder message deps
-
-
-nodeName :: Opt.Node -> B.Builder
-nodeName node =
-  case node of
-    Opt.Define expr _ -> "Define " <> (exprName expr)
-    Opt.DefineTailFunc _ expr _ -> "DefineTailFunc " <> (exprName expr)
-    Opt.Ctor _ _ -> "Ctor"
-    Opt.Enum _ -> "Enum"
-    Opt.Box -> "Box"
-    Opt.Link _ -> "Link"
-    Opt.Cycle _ _ _ _ -> "Cycle"
-    Opt.Manager _ -> "Manager"
-    Opt.Kernel _ _ -> "Kernel"
-    Opt.PortIncoming _ _ -> "PortIncoming"
-    Opt.PortOutgoing _ _ -> "PortOutgoing"
-
-
-exprName :: Opt.Expr -> B.Builder
-exprName expr =
-  case expr of    
-    Opt.Bool _ -> "Bool"
-    Opt.Chr _ -> "Chr"
-    Opt.Str _ -> "Str"
-    Opt.Int _ -> "Int"
-    Opt.Float _ -> "Float"
-    Opt.VarLocal _ -> "VarLocal"
-    Opt.VarGlobal _ -> "VarGlobal"
-    Opt.VarEnum _ _ -> "VarEnum"
-    Opt.VarBox _ -> "VarBox"
-    Opt.VarCycle _ _ -> "VarCycle"
-    Opt.VarDebug _ _ _ _ -> "VarDebug"
-    Opt.VarKernel _ _ -> "VarKernel"
-    Opt.List _ -> "List"
-    Opt.Function _ _ -> "Function"
-    Opt.Call _ _ -> "Call"
-    Opt.TailCall _ _ -> "TailCall"
-    Opt.If _ _ -> "If"
-    Opt.Let _ _ -> "Let"
-    Opt.Destruct _ _ -> "Destruct"
-    Opt.Case _ _ _ _ -> "Case"
-    Opt.Accessor _ -> "Accessor"
-    Opt.Access _ _ -> "Access"
-    Opt.Update _ _ -> "Update"
-    Opt.Record _ -> "Record"
-    Opt.Unit -> "Unit"
-    Opt.Tuple _ _ _ -> "Tuple"
-    Opt.Shader _ _ _ -> "Shader"
 
 
 -- GENERATE
@@ -143,6 +59,17 @@ data State =
     }
 
 
+generate :: Opt.GlobalGraph -> Mains -> (B.Builder, B.Builder)
+generate (Opt.GlobalGraph graph fieldFreqMap) mains =
+  let
+    state = Map.foldrWithKey (addMain graph) emptyState mains
+    appTypes = extractJsWrapperConfig state
+    cBuilder = buildC mains state
+    jsBuilder = buildJs appTypes (_jsState state) mains
+  in
+    (cBuilder, jsBuilder)
+
+
 emptyState :: State
 emptyState =
   State
@@ -154,10 +81,11 @@ emptyState =
     }
 
 
-jsMode :: Mode.Mode
-jsMode =
-  Mode.Dev Nothing
+{-----------------------------------------------------------
 
+    JAVASCRIPT FILE
+
+-----------------------------------------------------------}
 
 data JsWrapperConfig =
   JsWrapperConfig
@@ -166,17 +94,59 @@ data JsWrapperConfig =
     , appCtors :: [Name.Name]
     , appKernelVals :: [JSN.Name]
     }
-    
 
-generate :: Opt.GlobalGraph -> Mains -> (B.Builder, B.Builder)
-generate (Opt.GlobalGraph graph fieldFreqMap) mains =
+
+buildJs :: JsWrapperConfig -> JS.State -> Mains -> B.Builder
+buildJs appEnums jsState mains =
+  "(function(scope){\n'use strict';"
+  <> JsWrappers.defineOnReady
+  <> JsWrappers.emscriptenPostRun (
+      JsFunctions.functions
+      <> JS.stateToBuilder jsState
+      <> JsWrappers.wrapEmscriptenForElm
+      <> jsInitWrapper appEnums
+      <> jsAssignMains mains
+      <> JS.toMainExports jsMode mains
+      <> JsWrappers.executeOnReadyCallback
+    )
+  <> "}(this));"
+
+
+jsMode :: Mode.Mode
+jsMode =
+  Mode.Dev Nothing
+
+
+wasmWrapperName :: JSN.Name
+wasmWrapperName =
+  JSN.fromLocal $ Name.fromChars "wasmWrapper"
+
+
+jsAssignMains :: Mains -> B.Builder
+jsAssignMains mains =
   let
-    state = Map.foldrWithKey (addMain graph) emptyState mains
-    appTypes = extractJsWrapperConfig state
-    cBuilder = buildC mains state
-    jsBuilder = buildJs appTypes (_jsState state) mains
+    (_, builder) =
+      Map.foldrWithKey jsAssignMainsHelp (0, "") mains
   in
-    (cBuilder, jsBuilder)
+  builder
+
+
+jsAssignMainsHelp :: ModuleName.Canonical -> Opt.Main -> (Int, B.Builder) -> (Int, B.Builder)
+jsAssignMainsHelp moduleName _ (index, builder) =
+  let
+    globalName =
+      JSN.fromGlobal moduleName (Name.fromChars "main")
+    stmt =
+      JSB.Var globalName $
+      JSB.Index
+        (JSB.Access
+          (JSB.Ref wasmWrapperName)
+          (JSN.fromLocal $ Name.fromChars "mains"))
+        (JSB.Int index)
+  in
+  ( index + 1
+  , (JSB.stmtToBuilder stmt) <> builder
+  )
 
 
 extractJsWrapperConfig :: State -> JsWrapperConfig
@@ -218,73 +188,6 @@ extractJsWrapperConfigHelp def appEnums =
 
     _ ->
       appEnums
-
-
-buildC :: Mains -> State -> B.Builder
-buildC mains state =
-  prependExtDecls [C.IncludeExt CN.KernelH] $
-  prependSharedDefs (_sharedDefs state) $
-  prependExtDecls (_revExtDecls state) $
-  prependExtDecls [generateMainsArray mains, C.BlankLineExt] $
-  prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt]
-    ""
-
-
-prependExtDecls :: [C.ExternalDeclaration] -> B.Builder -> B.Builder
-prependExtDecls revExtDecls monolith =
-  List.foldl' (\m ext -> (CB.fromExtDecl ext) <> m) monolith revExtDecls
-
-
-{-
-    JS top level
--}
-
-buildJs :: JsWrapperConfig -> JS.State -> Mains -> B.Builder
-buildJs appEnums jsState mains =
-  "(function(scope){\n'use strict';"
-  <> JsWrappers.defineOnReady
-  <> JsWrappers.emscriptenPostRun (
-      JsFunctions.functions
-      <> JS.stateToBuilder jsState
-      <> JsWrappers.wrapEmscriptenForElm
-      <> jsInitWrapper appEnums
-      <> jsAssignMains mains
-      <> JS.toMainExports jsMode mains
-      <> JsWrappers.executeOnReadyCallback
-    )
-  <> "}(this));"
-
-
-wasmWrapperName :: JSN.Name
-wasmWrapperName =
-  JSN.fromLocal $ Name.fromChars "wasmWrapper"
-
-
-jsAssignMains :: Mains -> B.Builder
-jsAssignMains mains =
-  let
-    (_, builder) =
-      Map.foldrWithKey jsAssignMainsHelp (0, "") mains
-  in
-  builder
-
-
-jsAssignMainsHelp :: ModuleName.Canonical -> Opt.Main -> (Int, B.Builder) -> (Int, B.Builder)
-jsAssignMainsHelp moduleName _ (index, builder) =
-  let
-    globalName =
-      JSN.fromGlobal moduleName (Name.fromChars "main")
-    stmt =
-      JSB.Var globalName $
-      JSB.Index
-        (JSB.Access
-          (JSB.Ref wasmWrapperName)
-          (JSN.fromLocal $ Name.fromChars "mains"))
-        (JSB.Int index)
-  in
-  ( index + 1
-  , (JSB.stmtToBuilder stmt) <> builder
-  )
 
 
 jsInitWrapper :: JsWrapperConfig -> B.Builder
@@ -331,9 +234,32 @@ jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) 
       ] 
 
 
-{-
-    Shared definitions at top of file
--}
+{-----------------------------------------------------------
+
+    C FILE
+
+-----------------------------------------------------------}
+
+buildC :: Mains -> State -> B.Builder
+buildC mains state =
+  prependExtDecls [C.IncludeExt CN.KernelH] $
+  prependSharedDefs (_sharedDefs state) $
+  prependExtDecls (_revExtDecls state) $
+  prependExtDecls [generateMainsArray mains, C.BlankLineExt] $
+  prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt]
+    ""
+
+
+prependExtDecls :: [C.ExternalDeclaration] -> B.Builder -> B.Builder
+prependExtDecls revExtDecls monolith =
+  List.foldl' (\m ext -> (CB.fromExtDecl ext) <> m) monolith revExtDecls
+
+
+{-----------------------------------------------------------
+
+    SHARED DEFINITIONS
+
+-----------------------------------------------------------}
 
 prependSharedDefs :: Set.Set CE.SharedDef -> B.Builder -> B.Builder
 prependSharedDefs defs builder =
@@ -553,9 +479,11 @@ generateStructDef structName varName fixedMembers flexibleMembers =
     (Just $ C.InitExpr $ C.CompoundLit $ (fixed ++ flexible))
 
 
-{-
-    C 'main' function (program initialisation)
--}
+{-----------------------------------------------------------
+
+    C PROGRAM INITIALISATION
+
+-----------------------------------------------------------}
 
 generateCMain :: [Opt.Global] -> C.ExternalDeclaration
 generateCMain revInitGlobals =
@@ -628,9 +556,11 @@ generateInitCall acc (Opt.Global home name) =
 
 
 
-{-
+{-----------------------------------------------------------
+
                 ELM 'MAIN' VALUES
--}
+
+-----------------------------------------------------------}
 
 addMain :: Graph -> ModuleName.Canonical -> Opt.Main -> State -> State
 addMain graph home _ state =
@@ -714,11 +644,15 @@ addGlobalHelp debugIndentHere graph global state =
     Opt.Kernel chunks deps ->
       let
         (Opt.Global home@(ModuleName.Canonical _ moduleName) _) = global
-        depState = addDeps deps state
+        depState =
+          if moduleName == Name.debugger then
+            -- Don't want debugger dependencies in C
+            -- Haven't written all the kernel code yet
+            state
+          else
+            addDeps deps state
       in
-      if moduleName == Name.debugger then
-        state
-      else if Set.member home CE.cKernelModules then
+      if Set.member home CE.cKernelModules then
         depState
       else
         depState { _jsState =
@@ -756,9 +690,11 @@ addShared sharedDef state =
     Set.insert sharedDef (_sharedDefs state) }
 
     
-{-
+{-----------------------------------------------------------
+
                 CYCLE
--}
+
+-----------------------------------------------------------}
 
 generateCycle :: Opt.Global -> [Name.Name] -> [(Name.Name, Opt.Expr)] -> [Opt.Def] -> State -> State
 generateCycle (Opt.Global home _) names values functions prevState =
@@ -892,9 +828,11 @@ generateCycleVal home state (name, expr) =
     }
 
 
-{-
+{-----------------------------------------------------------
+
                 EFFECT MANAGER
--}
+
+-----------------------------------------------------------}
 
 generateManager :: Opt.Global -> Opt.EffectsType -> State -> State
 generateManager global@(Opt.Global home _) effectsType state =
@@ -925,9 +863,11 @@ generateManager global@(Opt.Global home _) effectsType state =
       }
 
 
-{-
+{-----------------------------------------------------------
+
                 GLOBAL DEFINITION
--}
+
+-----------------------------------------------------------}
 
 
 addDef :: Opt.Global -> Opt.Expr -> State -> State
@@ -1121,3 +1061,87 @@ generateCtorFn (Opt.Global home name) arity state =
     { _revExtDecls = closure : evalFn : (_revExtDecls state)
     , _sharedDefs = Set.insert (CE.SharedCtor name) (_sharedDefs state)
     }
+
+
+{-----------------------------------------------------------
+
+      HASKELL DEBUG
+
+-----------------------------------------------------------}
+
+traceBuilder :: B.Builder -> a -> a
+traceBuilder builder thing =
+  Debug.trace
+    (show $ B.toLazyByteString builder)
+    thing
+
+
+traceDeps :: B.Builder -> Opt.Node -> Opt.Global -> Set.Set Opt.Global -> Set.Set Opt.Global
+traceDeps debugIndent node (Opt.Global home name) deps =
+  let
+    depBuilders :: [B.Builder]
+    depBuilders =
+      map
+        (\(Opt.Global depHome depName) ->
+          CN.toBuilder $ CN.global depHome depName)
+        (Set.toList deps)
+
+    message :: B.Builder
+    message =
+      debugIndent
+      <> (nodeName node)
+      <> " "
+      <> (CN.toBuilder $ CN.global home name)
+      <> " ("
+      <> (mconcat $ List.intersperse ", " depBuilders)
+      <> ")"
+  in
+  traceBuilder message deps
+
+
+nodeName :: Opt.Node -> B.Builder
+nodeName node =
+  case node of
+    Opt.Define expr _ -> "Define " <> (exprName expr)
+    Opt.DefineTailFunc _ expr _ -> "DefineTailFunc " <> (exprName expr)
+    Opt.Ctor _ _ -> "Ctor"
+    Opt.Enum _ -> "Enum"
+    Opt.Box -> "Box"
+    Opt.Link _ -> "Link"
+    Opt.Cycle _ _ _ _ -> "Cycle"
+    Opt.Manager _ -> "Manager"
+    Opt.Kernel _ _ -> "Kernel"
+    Opt.PortIncoming _ _ -> "PortIncoming"
+    Opt.PortOutgoing _ _ -> "PortOutgoing"
+
+
+exprName :: Opt.Expr -> B.Builder
+exprName expr =
+  case expr of    
+    Opt.Bool _ -> "Bool"
+    Opt.Chr _ -> "Chr"
+    Opt.Str _ -> "Str"
+    Opt.Int _ -> "Int"
+    Opt.Float _ -> "Float"
+    Opt.VarLocal _ -> "VarLocal"
+    Opt.VarGlobal _ -> "VarGlobal"
+    Opt.VarEnum _ _ -> "VarEnum"
+    Opt.VarBox _ -> "VarBox"
+    Opt.VarCycle _ _ -> "VarCycle"
+    Opt.VarDebug _ _ _ _ -> "VarDebug"
+    Opt.VarKernel _ _ -> "VarKernel"
+    Opt.List _ -> "List"
+    Opt.Function _ _ -> "Function"
+    Opt.Call _ _ -> "Call"
+    Opt.TailCall _ _ -> "TailCall"
+    Opt.If _ _ -> "If"
+    Opt.Let _ _ -> "Let"
+    Opt.Destruct _ _ -> "Destruct"
+    Opt.Case _ _ _ _ -> "Case"
+    Opt.Accessor _ -> "Accessor"
+    Opt.Access _ _ -> "Access"
+    Opt.Update _ _ -> "Update"
+    Opt.Record _ -> "Record"
+    Opt.Unit -> "Unit"
+    Opt.Tuple _ _ _ -> "Tuple"
+    Opt.Shader _ _ _ -> "Shader"
