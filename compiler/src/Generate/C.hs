@@ -245,6 +245,7 @@ buildC mains state =
   prependExtDecls [C.IncludeExt CN.KernelH] $
   prependSharedDefs (_sharedDefs state) $
   prependExtDecls (_revExtDecls state) $
+  prependExtDecls [generateFunctionDebugNames (_revExtDecls state)] $
   prependExtDecls [generateMainsArray mains, C.BlankLineExt] $
   prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt]
     ""
@@ -269,9 +270,9 @@ prependSharedDefs defs builder =
     cFields =
       map CN.fieldId $ Set.toList elmFields
   in
-  prependExtDecls (generateEnum jsKernelNames) $
-  prependExtDecls (generateEnum cCtorNames) $
-  prependExtDecls (generateEnum cFields) $
+  prependExtDecls (generateEnum jsKernelNames ++ generateEnumDebug "jsValues" jsKernelNames) $
+  prependExtDecls (generateEnum cCtorNames ++ generateEnumDebug "ctors" cCtorNames) $
+  prependExtDecls (generateEnum cFields ++ generateEnumDebug "fields" cFields) $
   prependExtDecls decls $
   prependExtDecls [generateFieldGroupArray fieldGroups] $
   builder
@@ -345,7 +346,7 @@ generateFieldGroupArray fieldGroups =
   [C.TypeSpec $ C.TypeDef CN.FieldGroup]
   (Just $ C.Declr (Just $ CN.wrapperFieldGroups) [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
   (Just $ C.InitExpr $ C.CompoundLit $ pointerArray)
-    
+
 
 generateSharedDefItem :: CE.SharedDef -> [C.ExternalDeclaration]
 generateSharedDefItem def =
@@ -1145,3 +1146,97 @@ exprName expr =
     Opt.Unit -> "Unit"
     Opt.Tuple _ _ _ -> "Tuple"
     Opt.Shader _ _ _ -> "Shader"
+
+
+{-----------------------------------------------------------
+
+      C DEBUG
+
+-----------------------------------------------------------}
+
+
+generateEnumDebug :: B.Builder -> [CN.Name] -> [C.ExternalDeclaration]
+generateEnumDebug arraySuffix names =
+  let
+    arrayName :: B.Builder
+    arrayName = "Debug_" <> arraySuffix
+
+    strings :: C.InitializerList
+    strings =
+      map
+        (\name ->
+          ([], C.InitExpr $ C.Const $ C.StrConst (CN.toBuilder name)))
+        names
+    
+    array :: C.ExternalDeclaration
+    array =
+      C.DeclExt $ C.Decl
+        [C.TypeSpec C.Char]
+        (Just $ C.Declr (Just $ CN.fromBuilder arrayName)
+          [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
+        (Just $ C.InitExpr $ C.CompoundLit strings)
+
+    size :: C.ExternalDeclaration
+    size =
+      C.DeclExt $ C.Decl
+        [C.TypeSpec C.Int]
+        (Just $ C.Declr (Just $ CN.fromBuilder (arrayName <> "_size")) [])
+        (Just $ C.InitExpr $ C.Const $ C.IntConst $ length names)
+  in
+  [ size
+  , array
+  ]
+
+
+generateFunctionDebugNames :: [C.ExternalDeclaration] -> C.ExternalDeclaration
+generateFunctionDebugNames allExtDecls =
+  let
+    evalNames :: [CN.Name]
+    evalNames =
+      foldr nextEvalFuncName [] allExtDecls
+
+    paramName :: CN.Name
+    paramName =
+      CN.fromBuilder "p"
+
+    paramDecl :: C.Declaration
+    paramDecl =
+      C.Decl
+        [C.TypeSpec C.Void]
+        (Just $ C.Declr (Just paramName) [C.PtrDeclr []])
+        Nothing
+
+    ifClause :: CN.Name -> C.Statement -> C.Statement
+    ifClause name elseStmt =
+      C.If
+        (C.Binary C.EqOp (C.Var paramName) (C.Unary C.AddrOp $ C.Var name))
+        (C.Compound [C.BlockStmt $
+          C.Return $ Just $ C.Const $ C.StrConst $ CN.toBuilder name])
+        (Just elseStmt)
+
+    bigIf :: C.Statement
+    bigIf =
+      foldr ifClause 
+        (C.Return $ Just $ C.Const $ C.StrConst "(?)")
+        evalNames
+  in
+  C.FDefExt
+    (C.FunDef
+      [C.TypeSpec C.Char]
+      (C.Declr
+        (Just $ CN.fromBuilder "Debug_evaluator_name")
+        [C.PtrDeclr [], C.FunDeclr [paramDecl]])
+      [C.BlockStmt bigIf])
+
+
+nextEvalFuncName :: C.ExternalDeclaration -> [CN.Name] -> [CN.Name]
+nextEvalFuncName extDecl evalNames =
+  case extDecl of
+    C.FDefExt
+      (C.FunDef
+        [C.TypeSpec C.Void]
+        (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr (_ : [])])
+        _ ) ->
+          fname : evalNames
+    _ ->
+      evalNames
