@@ -213,7 +213,7 @@ fromStatement indent statement =
 
     DoWhile guardExpr statement ->
       "do " <> fromStatement indent statement
-      <> "while (" <> (fromExpr guardExpr) <> ")"
+      <> " while (" <> (fromExpr guardExpr) <> ")"
 
     For init guardExpr iterExpr statement ->
       "/* For */"

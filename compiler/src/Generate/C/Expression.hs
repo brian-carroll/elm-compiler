@@ -147,10 +147,10 @@ addBlockItem blockItem =
 
 
 addBlockItems :: [C.CompoundBlockItem] -> State ExprState ()
-addBlockItems blockItems =
+addBlockItems revItems =
   modify (\state ->
     state {
-      _revBlockItems = foldl (flip (:)) (_revBlockItems state) blockItems
+      _revBlockItems = revItems ++ (_revBlockItems state)
     })
 
 
@@ -376,7 +376,7 @@ generateNamedLocalFn closureName params body =
     addBlockItem $
       generateNewClosure closureName evalName (length params) (length freeVars)
 
-    addBlockItems $ map
+    addBlockItems $ List.reverse $ map
       (generateFreeVarAssignment (C.Var closureName))
       (zip [0..] freeVars)
 
@@ -588,10 +588,10 @@ generateCase label root decider jumps =
     defaultStmt <- generateDecider resultName label root decider
     stmts <- foldr
               (goto resultName label)
-              (return [defaultStmt]) -- two block items, including decl for result
+              (return [defaultStmt])
               jumps
-    modify (\state ->
-      state { _revBlockItems = (map C.BlockStmt stmts) ++ (_revBlockItems state) })
+    addBlockItem $ C.BlockStmt $
+      C.DoWhile (C.Const $ C.IntConst 0) (C.Compound $ map C.BlockStmt stmts)
     return $ C.Var resultName
 
 
@@ -610,7 +610,7 @@ generateDecider resultName label root decisionTree =
     Opt.Leaf (Opt.Inline branch) ->
       do
         block <- generateExprAsBlock resultName branch
-        return $ C.Compound block
+        return $ C.Compound $ (C.BlockStmt C.Break) : block
 
     Opt.Leaf (Opt.Jump index) ->
       return $ C.Compound [C.BlockStmt $ C.Goto $ CN.label label index]
