@@ -18,7 +18,6 @@ import Control.Monad.State (State, get, put, gets, modify)
 import qualified Control.Monad.State as State
 
 import qualified Data.ByteString.Builder as B
-  -- import qualified Data.IntMap as IntMap
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.List as List
@@ -26,9 +25,7 @@ import Data.Maybe (fromMaybe)
 import Data.Map ((!), Map)
 import qualified Data.Map as Map
 import qualified Data.Name as N
--- import qualified Data.Utf8 as Utf8
 
--- import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
 import qualified Generate.C.AST as C
 
@@ -38,17 +35,10 @@ import qualified AST.Optimized as Opt
 import qualified Elm.Float as EF
 import qualified Elm.String as ES
 
--- import qualified AST.Utils.Shader as Shader
 import qualified Data.Index as Index
--- import qualified Elm.Compiler.Type as Type
--- import qualified Elm.Compiler.Type.Extract as Extract
--- import qualified Elm.Version as V
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
--- import qualified Json.Encode as Encode
--- import Json.Encode ((==>))
 import qualified Optimize.DecisionTree as DT
--- import qualified Reporting.Annotation as A
 
 
 -- Globals in C but not in Elm AST or in JS
