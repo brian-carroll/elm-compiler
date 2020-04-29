@@ -74,11 +74,29 @@ emptyState :: State
 emptyState =
   State
     { _seenGlobals = Set.empty
-    , _sharedDefs = Set.empty
+    , _sharedDefs = jsonDecodeRunners
     , _revInitGlobals = []
     , _revExtDecls = []
     , _jsState = JS.emptyState
     }
+
+
+{-
+  Json.Decode runners
+
+  These are unique because they run in JS immediately. They're not deferred thunks like Cmds.
+  They have to run in JS because things like HTML Events can't be serialised.
+  And they can't be deferred because app code must be able to pattern match on the return value.
+
+  We use a handwritten Closure, but we also want entries in the JS function array and enum.
+  And we want the enum entries even if they're not used! Can't have undefined values in C.
+-}
+jsonDecodeRunners :: Set.Set CE.SharedDef
+jsonDecodeRunners =
+  Set.fromList
+    [ CE.SharedJsKernel (Name.fromChars "Json") (Name.fromChars "run")
+    , CE.SharedJsKernel (Name.fromChars "Json") (Name.fromChars "runOnString")
+    ]
 
 
 {-----------------------------------------------------------
@@ -98,7 +116,8 @@ data JsWrapperConfig =
 
 buildJs :: JsWrapperConfig -> JS.State -> Mains -> B.Builder
 buildJs appEnums jsState mains =
-  "(function(scope){\n'use strict';"
+  "var " <> (JSN.toBuilder wasmWrapperName) <> ";\n"
+  <> "(function(scope){\n'use strict';"
   <> JsWrappers.defineOnReady
   <> JsWrappers.emscriptenPostRun (
       JsFunctions.functions
@@ -224,8 +243,8 @@ jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) 
         (\jsName -> (jsName, JSB.Ref jsName))
         appKernelVals
   in
-  JSB.stmtToBuilder $
-    JSB.Var wasmWrapperName $
+  JSB.stmtToBuilder $ JSB.ExprStmt $
+    JSB.Assign (JSB.LRef wasmWrapperName) $
     JSB.Call (JSB.Ref $ name JsWrappers.wrapEmscriptenForElmFnName) 
       [ JSB.Access emscriptenModule (name "buffer")
       , JSB.Access emscriptenModule (name "asm")
@@ -402,11 +421,14 @@ generateSharedDefItem def =
       []
 
     CE.SharedJsKernel home name ->
-      [generateClosure (CN.kernelValue home name)
-        (C.nameAsVoidPtr $ CN.jsKernelEval home name)
-        maxClosureArity
-        []
-      ]
+      if Set.member def jsonDecodeRunners then
+        [] -- don't clash with handwritten Closures
+      else
+        [generateClosure (CN.kernelValue home name)
+          (C.nameAsVoidPtr $ CN.jsKernelEval home name)
+          maxClosureArity
+          []
+        ]
 
     CE.SharedJsGlobal (Opt.Global home name) ->
       [generateClosure (CN.global home name)
