@@ -520,7 +520,9 @@ generateCMain revInitGlobals =
     returnFail =
       C.BlockStmt $ C.If (C.Var exitCode)
         (C.Return $ Just $ C.Var exitCode) Nothing
-    fwdInitCalls =
+    initKernelEvalIds =
+      map initKernelEvalId
+    initCalls =
       List.foldl' generateInitCall [] revInitGlobals
     runGC =
       C.BlockStmt $ C.Expr $ Just $
@@ -532,7 +534,8 @@ generateCMain revInitGlobals =
       [ initGC
       , returnFail
       ] ++
-      fwdInitCalls ++
+      initJsonEvalIds ++
+      initCalls ++
       [ runGC
       , returnSuccess
       ]
@@ -563,6 +566,32 @@ generateMainsArrayHelp :: ModuleName.Canonical -> Opt.Main -> C.InitializerList 
 generateMainsArrayHelp moduleName _ arrayElements =
   ([], (C.InitExpr $ C.addrOf $ CN.globalInitPtr moduleName "main"))
   : arrayElements
+
+
+initJsonEvalIds :: [C.CompoundBlockItem]
+initJsonEvalIds =
+  Set.foldr'
+    (\def acc -> initKernelEvalId def ++ acc)
+    []
+    jsonDecodeRunners
+
+
+initKernelEvalId :: CE.SharedDef -> [C.CompoundBlockItem]
+initKernelEvalId def =
+  case def of
+    CE.SharedJsKernel home name ->
+      [C.BlockStmt $ C.Expr $ Just $ C.Assign C.AssignOp
+        (C.Index
+          (C.MemberDot
+            (C.Var $ CN.kernelValue home name)
+            (CN.fromBuilder "values"))
+          (C.Const $ C.IntConst 0)
+        )
+        (C.nameAsVoidPtr $ CN.jsKernelEval home name)
+      ]
+
+    _ ->
+      []
 
 
 generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
