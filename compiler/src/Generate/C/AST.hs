@@ -72,15 +72,13 @@ data PartDesignator
   | RangeDesig Expression Expression
 
 
--- | C initialization (K&R A8.7, C99 6.7.8)
+-- C initialization (K&R A8.7, C99 6.7.8)
 --
 -- Initializers are either assignment expressions or initializer lists
 -- (surrounded in curly braces), whose elements are themselves
 -- initializers, paired with an optional list of designators.
 data Initializer
-  -- | assignment expression
   = InitExpr Expression
-  -- | initialization list (see 'InitList')
   | InitList InitializerList
 
 data Constant
@@ -96,20 +94,20 @@ data Declaration
     (Maybe Declarator)  -- declarator (may be omitted)
     (Maybe Initializer) -- optional initialize
                             -- annotation
-    --- | StaticAssert
+    ---   StaticAssert
     ---   Expression         -- assert expression
     ---   StringLiteral      -- assert text
                             -- annotation
 
--- | C declaration specifiers and qualifiers
+-- C declaration specifiers and qualifiers
 -- Declaration specifiers include at most one storage-class specifier (C99 6.7.1),
 -- type specifiers (6.7.2) and type qualifiers (6.7.3).
 data DeclarationSpecifier
   = TypeSpec TypeSpecifier    -- ^ type name
   | TypeQual TypeQualifier    -- ^ type qualifier (const, volatile, register, etc)
-  -- = StorageSpec StorageSpecifier -- ^ storage-class specifier or typedef
-  --- | FunSpec     FunctionSpecifier -- ^ function specifier (inline or noreturn)
-  --- | AlignSpec   AlignmentSpecifier -- ^ alignment specifier
+-- StorageSpec StorageSpecifier -- ^ storage-class specifier or typedef
+-- FunSpec     FunctionSpecifier -- ^ function specifier (inline or noreturn)
+-- AlignSpec   AlignmentSpecifier -- ^ alignment specifier
 
 
 data TypeSpecifier
@@ -122,12 +120,12 @@ data TypeSpecifier
 
 data TypeQualifier
   = ConstQual
-  -- | VolatQual
-  -- | RestrQual
-  -- | AtomicQual
-  -- | AttrQual  Attribute
-  -- | NullableQual
-  -- | NonnullQual
+--  VolatQual
+--  RestrQual
+--  AtomicQual
+--  AttrQual  Attribute
+--  NullableQual
+--  NonnullQual
 
 data Declarator
   = Declr (Maybe Name) [DerivedDeclarator]
