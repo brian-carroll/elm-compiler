@@ -24,6 +24,7 @@ import qualified Generate.C.Name as CN
 import qualified Generate.C.Expression as CE
 import qualified Generate.C.AST as C
 import qualified Generate.C.JsWrappers as JsWrappers
+import qualified Generate.C.Kernel as CKernel
 
 import qualified Generate.JavaScript as JS
 import qualified Generate.JavaScript.Builder as JSB
@@ -74,29 +75,18 @@ emptyState :: State
 emptyState =
   State
     { _seenGlobals = Set.empty
-    , _sharedDefs = jsonDecodeRunners
+    , _sharedDefs = initSharedDefs
     , _revInitGlobals = []
     , _revExtDecls = []
     , _jsState = JS.emptyState
     }
 
 
-{-
-  Json.Decode runners
-
-  These are unique because they run in JS immediately. They're not deferred thunks like Cmds.
-  They have to run in JS because things like HTML Events can't be serialised.
-  And they can't be deferred because app code must be able to pattern match on the return value.
-
-  We use a handwritten Closure, but we also want entries in the JS function array and enum.
-  And we want the enum entries even if they're not used! Can't have undefined values in C.
--}
-jsonDecodeRunners :: Set.Set CE.SharedDef
-jsonDecodeRunners =
-  Set.fromList
-    [ CE.SharedJsKernel (Name.fromChars "Json") (Name.fromChars "run")
-    , CE.SharedJsKernel (Name.fromChars "Json") (Name.fromChars "runOnString")
-    ]
+initSharedDefs :: Set.Set CE.SharedDef
+initSharedDefs =
+  Set.map
+    (\name -> CE.SharedJsKernel "Json" name)
+    CKernel.jsonDecodeRunners
 
 
 {-----------------------------------------------------------
@@ -421,14 +411,14 @@ generateSharedDefItem def =
       []
 
     CE.SharedJsKernel home name ->
-      if Set.member def jsonDecodeRunners then
-        [] -- don't clash with handwritten Closures
-      else
+      if CKernel.shouldGenStruct home name then
         [generateClosure (CN.kernelValue home name)
           (C.nameAsVoidPtr $ CN.jsKernelEval home name)
           maxClosureArity
           []
         ]
+      else
+        []
 
     CE.SharedJsGlobal (Opt.Global home name) ->
       [generateClosure (CN.global home name)
@@ -573,7 +563,7 @@ initJsonEvalIds =
   Set.foldr'
     (\def acc -> initKernelEvalId def ++ acc)
     []
-    jsonDecodeRunners
+    initSharedDefs
 
 
 initKernelEvalId :: CE.SharedDef -> [C.CompoundBlockItem]
@@ -698,17 +688,16 @@ addGlobalHelp debugIndentHere graph global state =
         (Opt.Global home@(ModuleName.Canonical _ moduleName) _) = global
         depState =
           if moduleName == Name.debugger then
-            -- Don't want debugger dependencies in C
-            -- Haven't written all the kernel code yet
-            state
+            state -- haven't written debugger dependencies in C yet!
           else
             addDeps deps state
       in
-      if Set.member home CE.cKernelModules then
-        depState
-      else
+      if CKernel.shouldGenJsCode home then
         depState { _jsState =
-          JS.addGlobal debugIndent jsMode graph (_jsState state) global }
+          JS.addGlobal debugIndent jsMode graph (_jsState state) global
+        }
+      else
+        depState
 
     Opt.Enum _ ->
       generateCtor global 0 state
@@ -1001,10 +990,10 @@ addDef global@(Opt.Global home' name') expr state =
 
     Opt.VarKernel home name ->
       defineAlias (CN.kernelValue home name) $
-      if Set.member home' CE.cKernelModules then
-        state
-      else
+      if CKernel.shouldGenJsEnumId home name then
         addShared (CE.SharedJsKernel home name) state
+      else
+        state
 
     Opt.VarLocal _ -> error "COMPILER BUG: Global variable cannot also be local"
     Opt.TailCall _ _ -> error "COMPILER BUG: Tail recursive global should be in a DefineTailFunc node rather than a Define node"

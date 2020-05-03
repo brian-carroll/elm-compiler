@@ -10,10 +10,10 @@ module Generate.C.Expression
  , generateTailDefEval
  , generateCycleFn
  , globalDefsFromExprState
- , cKernelModules
 )
 where
 
+import Control.Monad (when)
 import Control.Monad.State (State, get, put, gets, modify)
 import qualified Control.Monad.State as State
 
@@ -28,6 +28,7 @@ import qualified Data.Name as N
 
 import qualified Generate.C.Name as CN
 import qualified Generate.C.AST as C
+import qualified Generate.C.Kernel as CKernel
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
@@ -39,6 +40,8 @@ import qualified Data.Index as Index
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
 import qualified Optimize.DecisionTree as DT
+
+import Debug.Trace as Debug
 
 
 -- Globals in C but not in Elm AST or in JS
@@ -54,26 +57,6 @@ data SharedDef
   | SharedJsKernel N.Name N.Name
   | SharedJsGlobal Opt.Global
   deriving (Eq, Ord)
-
-
-cKernelModules :: Set.Set ModuleName.Canonical
-cKernelModules =
-  Set.fromList
-    [ ModuleName.basics
-    , ModuleName.list
-    , ModuleName.string
-    , ModuleName.char
-    ]
-
-
-cKernelNames :: Set.Set N.Name
-cKernelNames =
-  Set.fromList
-    [ N.basics
-    , N.list
-    , N.string
-    , N.char
-    ]
 
 
 -- STATE AND HELPERS
@@ -242,12 +225,10 @@ generate expr =
       return $ C.addrOf $ CN.global home name
 
     Opt.VarKernel home name ->
-      if Set.member home cKernelNames then
+      do
+        when (CKernel.shouldGenJsEnumId home name)
+          (addShared $ SharedJsKernel home name)
         return $ C.addrOf $ CN.kernelValue home name
-      else
-        addSharedExpr
-          (SharedJsKernel home name)
-          (CN.kernelValue home name)
 
     Opt.List entries ->
       generateList entries
@@ -1070,3 +1051,10 @@ generateHeader header =
     HEADER_RECORD n -> varSize "HEADER_RECORD" n
     HEADER_FIELDGROUP n -> varSize "HEADER_FIELDGROUP" n
     HEADER_CLOSURE n -> varSize "HEADER_CLOSURE" n
+
+
+traceBuilder :: B.Builder -> a -> a
+traceBuilder builder thing =
+  Debug.trace
+    (show $ B.toLazyByteString builder)
+    thing
