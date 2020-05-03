@@ -156,6 +156,15 @@ addLocal name =
     state { _localScope = Set.insert name (_localScope state) })
 
 
+updateScope :: N.Name -> State ExprState ()
+updateScope name =
+  modify (\state ->
+    if Set.member name (_localScope state) then
+      state
+    else
+      state { _freeVars = Set.insert name (_freeVars state) })
+
+
 nextTmpVarIndex :: State ExprState Int
 nextTmpVarIndex =
   do
@@ -214,11 +223,7 @@ generate expr =
 
     Opt.VarLocal name ->
       do
-        modify (\state ->
-          if Set.member name (_localScope state) then
-            state
-          else
-            state { _freeVars = Set.insert name (_freeVars state) })
+        updateScope name
         return $ C.Var $ CN.local name
 
     Opt.VarGlobal (Opt.Global home name) ->
@@ -573,6 +578,7 @@ generateIfBranch resultName (condElm, thenElm) state =
 generateCase :: N.Name -> N.Name -> Opt.Decider Opt.Choice -> [(Int, Opt.Expr)] -> State ExprState C.Expression
 generateCase label root decider jumps =
   do
+    updateScope root
     resultName <- getTmpVarName
     addBlockItem $ C.BlockDecl $ C.declare resultName Nothing
     defaultStmt <- generateDecider resultName label root decider
