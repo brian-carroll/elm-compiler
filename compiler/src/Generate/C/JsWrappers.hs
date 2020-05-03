@@ -104,8 +104,7 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
             [JsNull]: null
         };
     })();
-    const CTOR_KERNEL_ARRAY = 'CTOR_KERNEL_ARRAY';
-    generatedAppTypes.ctors.push(CTOR_KERNEL_ARRAY);
+    const CTOR_KERNEL_ARRAY = 0xffffffff;
     const appTypes = {
         ctors: arrayToEnum(generatedAppTypes.ctors),
         fields: arrayToEnum(generatedAppTypes.fields),
@@ -204,31 +203,20 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                 const elmConst = wasmConstAddrs[addr]; // True/False/Unit/JsNull
                 if (elmConst !== undefined)
                     return elmConst;
-                const nFields = size - 2;
                 const wasmCtor = mem32[index + 1];
-                if (wasmCtor >= KERNEL_CTOR_OFFSET) {
-                    const custom = {
-                        $: wasmCtor - KERNEL_CTOR_OFFSET
-                    };
-                    const fieldNames = readWasmValue(mem32[index + 2]).split(' ');
-                    for (let i = 1; i < nFields; i++) {
-                        const field = fieldNames[i];
-                        const childAddr = mem32[index + 2 + i];
-                        custom[field] = readWasmValue(childAddr);
-                    }
-                    return custom;
-                }
-                const jsCtor = appTypes.ctors[wasmCtor];
-                if (jsCtor === CTOR_KERNEL_ARRAY) {
+                if (wasmCtor === CTOR_KERNEL_ARRAY) {
                     const kernelArray = [];
-                    mem32.slice(index + 2, index + nFields).forEach(childAddr => {
+                    mem32.slice(index + 2, index + size).forEach(childAddr => {
                         kernelArray.push(readWasmValue(childAddr));
                     });
                     return kernelArray;
                 }
+                const jsCtor = wasmCtor >= KERNEL_CTOR_OFFSET
+                    ? wasmCtor - KERNEL_CTOR_OFFSET
+                    : appTypes.ctors[wasmCtor];
                 const custom = { $: jsCtor };
                 const fieldNames = 'abcdefghijklmnopqrstuvwxyz';
-                for (let i = 0; i < nFields; i++) {
+                for (let i = 0; i < size - 2; i++) {
                     const field = fieldNames[i];
                     const childAddr = mem32[index + 2 + i];
                     custom[field] = readWasmValue(childAddr);
@@ -343,12 +331,6 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
         }
         mem32[index] = value;
     }
-    function write16(index, value) {
-        if (index > maxWriteIndex16) {
-            throw heapOverflowError;
-        }
-        mem16[index] = value;
-    }
     function handleWasmWrite(writer) {
         for (let attempts = 0; attempts < 2; attempts++) {
             try {
@@ -389,10 +371,12 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                 return writeFromBuilder(nextIndex, builder, tag);
             }
             case 'kernelArray': {
-                const customObj = value.slice();
-                customObj.$ = CTOR_KERNEL_ARRAY;
-                const builder = wasmBuilder(Tag.Custom, customObj);
-                return writeFromBuilder(nextIndex, builder, Tag.Closure);
+                const builder = {
+                    body: [CTOR_KERNEL_ARRAY],
+                    jsChildren: value,
+                    bodyWriter: null
+                };
+                return writeFromBuilder(nextIndex, builder, Tag.Custom);
             }
         }
     }
@@ -485,8 +469,11 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                         const s = value;
                         const offset16 = bodyAddr >> 1;
                         const lenAligned = s.length + (s.length % 2); // for odd length, write an extra word (gets coerced to 0)
+                        if (offset16 + lenAligned > maxWriteIndex16) {
+                            throw heapOverflowError;
+                        }
                         for (let i = 0; i < lenAligned; i++) {
-                            write16(offset16 + i, s.charCodeAt(i));
+                            mem16[offset16 + i] = s.charCodeAt(i);
                         }
                         const wordsWritten = lenAligned >> 1;
                         return wordsWritten;
@@ -507,23 +494,30 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
                 };
             case Tag.Custom: {
                 const jsCtor = value.$;
-                let body;
-                const jsChildren = [];
                 const keys = Object.keys(value).filter(k => k !== '$');
-                if (typeof jsCtor === 'number') {
-                    body = [KERNEL_CTOR_OFFSET + jsCtor];
-                    const keyString = keys.join(' ');
-                    jsChildren.push(keyString);
+                if (typeof jsCtor === 'string') {
+                    return {
+                        body: [appTypes.ctors[jsCtor]],
+                        jsChildren: keys.map(k => value[k]),
+                        bodyWriter: null
+                    };
                 }
                 else {
-                    body = [appTypes.ctors[jsCtor]];
+                    const jsChildren = [];
+                    const fieldNames = 'abcdefghijklmnopqrstuvwxyz'.split('');
+                    keys.forEach(k => {
+                        const i = fieldNames.indexOf(k);
+                        if (i === -1) {
+                            throw new Error(`Unsupported Kernel Custom field '${k}'`);
+                        }
+                        jsChildren[i] = value[k];
+                    });
+                    return {
+                        body: [KERNEL_CTOR_OFFSET + jsCtor],
+                        jsChildren,
+                        bodyWriter: null
+                    };
                 }
-                keys.forEach(k => jsChildren.push(value[k]));
-                return {
-                    body,
-                    jsChildren,
-                    bodyWriter: null
-                };
             }
             case Tag.Record: {
                 const body = [];
@@ -603,11 +597,12 @@ wrapEmscriptenForElm = "function " <> (B.stringUtf8 wrapEmscriptenForElmFnName)
              */
             const { body, jsChildren } = builder;
             const childAddrs = [];
-            jsChildren.forEach(child => {
+            for (let i = 0; i < jsChildren.length; i++) {
+                const child = jsChildren[i];
                 const update = writeWasmValue(nextIndex, child); // recurse
                 childAddrs.push(update.addr);
                 nextIndex = update.nextIndex;
-            });
+            }
             const addr = nextIndex << 2;
             const size = 1 + body.length + childAddrs.length;
             write32(nextIndex++, encodeHeader(tag, size));
