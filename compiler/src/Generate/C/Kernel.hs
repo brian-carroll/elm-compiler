@@ -75,6 +75,7 @@ jsonDecodeCtors =
     , "map6"
     , "map7"
     , "map8"
+    , "wrap"
     ]
 
 
