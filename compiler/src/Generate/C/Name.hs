@@ -37,6 +37,8 @@ module Generate.C.Name
   , utilsDestructIndex
   , utilsEqual
   , nullPtr
+  , jsonRun
+  , jsonRunEvalIndex
   , wrapperFieldGroups
   , wrapperMains
   , gcTceData
@@ -299,6 +301,16 @@ utilsEqual =
 nullPtr :: Name
 nullPtr =
   Name "NULL"
+
+
+jsonRunEvalIndex :: Name
+jsonRunEvalIndex =
+  Name "Json_run_eval_index"
+
+
+jsonRun :: Name
+jsonRun =
+  Name "Json_run"
 
 
 wrapperFieldGroups :: Name

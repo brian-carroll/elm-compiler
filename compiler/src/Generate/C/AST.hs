@@ -114,6 +114,7 @@ data TypeSpecifier
   = TypeDef KernelTypeDef
   | Void
   | Int
+  | SizeT
   | Char
   | Enum [Name]
 

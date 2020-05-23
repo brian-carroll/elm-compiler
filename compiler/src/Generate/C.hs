@@ -75,18 +75,11 @@ emptyState :: State
 emptyState =
   State
     { _seenGlobals = Set.empty
-    , _sharedDefs = initSharedDefs
+    , _sharedDefs = Set.singleton $ CE.SharedJsKernel "Json" "run"
     , _revInitGlobals = []
     , _revExtDecls = []
     , _jsState = JS.emptyState
     }
-
-
-initSharedDefs :: Set.Set CE.SharedDef
-initSharedDefs =
-  Set.map
-    (\name -> CE.SharedJsKernel "Json" name)
-    CKernel.jsonDecodeRunners
 
 
 {-----------------------------------------------------------
@@ -256,6 +249,7 @@ buildC mains state =
   prependExtDecls (_revExtDecls state) $
   prependExtDecls [generateFunctionDebugNames (_revExtDecls state)] $
   prependExtDecls [generateMainsArray mains, C.BlankLineExt] $
+  prependExtDecls [jsonRunIndexAssignment] $
   prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt]
     ""
 
@@ -353,8 +347,16 @@ generateFieldGroupArray fieldGroups =
   in
   C.DeclExt $ C.Decl
   [C.TypeSpec $ C.TypeDef CN.FieldGroup]
-  (Just $ C.Declr (Just $ CN.wrapperFieldGroups) [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
+  (Just $ C.Declr (Just CN.wrapperFieldGroups) [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
   (Just $ C.InitExpr $ C.CompoundLit $ pointerArray)
+
+
+jsonRunIndexAssignment :: C.ExternalDeclaration
+jsonRunIndexAssignment =
+  C.DeclExt $ C.Decl
+    [C.TypeSpec C.SizeT]
+    (Just $ C.Declr (Just CN.jsonRunEvalIndex) [])
+    (Just $ C.InitExpr $ C.Var $ CN.jsKernelEval "Json" "run")
 
 
 generateSharedDefItem :: CE.SharedDef -> [C.ExternalDeclaration]
@@ -524,7 +526,6 @@ generateCMain revInitGlobals =
       [ initGC
       , returnFail
       ] ++
-      initJsonEvalIds ++
       initCalls ++
       [ runGC
       , returnSuccess
@@ -556,14 +557,6 @@ generateMainsArrayHelp :: ModuleName.Canonical -> Opt.Main -> C.InitializerList 
 generateMainsArrayHelp moduleName _ arrayElements =
   ([], (C.InitExpr $ C.addrOf $ CN.globalInitPtr moduleName "main"))
   : arrayElements
-
-
-initJsonEvalIds :: [C.CompoundBlockItem]
-initJsonEvalIds =
-  Set.foldr'
-    (\def acc -> initKernelEvalId def ++ acc)
-    []
-    initSharedDefs
 
 
 initKernelEvalId :: CE.SharedDef -> [C.CompoundBlockItem]

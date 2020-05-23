@@ -306,6 +306,7 @@ fromTypeSpecifier typeSpec =
   case typeSpec of
     Void -> "void"
     Int -> "int"
+    SizeT -> "size_t"
     Char -> "char"
 
     Enum names ->
