@@ -15,8 +15,8 @@
 
 # TODO: Code gen bug fixes
 
-- [ ] `elm_core_List_foldrHelper`, need to pre-declare the `Closure` in the case of non-tail self-recursion.
-- [ ] `eval_elm_core_List_foldl` getting generated without any `args` array!
+- [x] `elm_core_List_foldrHelper`, need to pre-declare the `Closure` in the case of non-tail self-recursion.
+- [x] `eval_elm_core_List_foldl` getting generated without any `args` array!
 
 # TODO: Code gen improvements
 
@@ -24,7 +24,8 @@
   - Could use some "empty expression" marker like `CommentExpr "unreachable code after TCE goto"`
 - [ ] TCE args assignments are backwards (still correct, just unintentional)
 - [ ] get rid of extra nested blocks in `if` statements
-- [ ] fix warning assigning ctor to `void*` tmp var in case destructuring
+- [x] fix warning assigning ctor to `void*` tmp var in case destructuring
+- [ ] in nested case like `eval_elm_core_Dict_removeHelpPrepEQGT` the generation of nested `if` looks weird. Correct but hard to read.
 
 # Tail Calls
 
