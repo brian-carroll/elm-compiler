@@ -1,3 +1,63 @@
+# type inf
+extra param on canonical
+every ast node has a type variable
+type inference works up from leaf of AST
+compiler/src/Type/Solve.hs
+
+
+# fixing the custom vs tuple issue
+
+in ast/optimized.hs
+
+path data type needs a new constructor, same as index but different for custom vs built-ins
+optimized/expression uses them differently
+destruct and its helpers
+Change Index to a different word, follow the errors, fix them all to the two new ones
+
+
+# msg constructors
+
+builder/src/Generate.hs
+debug loads types
+
+compiler/src/Generate/JavaScript/Expression.hs
+toDebugMetadata
+generateMain
+Opt.Dynamic msgType decoder
+Extract.fromMsg
+
+could generate a Json decoder from the Msg type
+Port.toEncoder
+then decode either int or float
+
+port declarations get added to optimize AST in Module.hs
+Optimize.Module.addPort
+
+what does optimize do?
+- drop stuff to shrink elmo files, which are Opt AST
+- most of the compile time for big proj is reading that file
+
+
+# Evan's notes
+
+Generate.debug
+-- calls Generate.loadTypes which loads in
+-- all the interface files (.elmi) that will
+-- allow us to get the full Msg type
+--
+-- that info is carried around in
+-- Generate.Mode.Dev (Just interfaces)
+Generate.JavaScript.Expression.toDebugMetadata
+-- place where you start crawling message type
+Elm.Compiler.Type.Extract.fromMsg
+-- crawl types to gather complete Msg type
+Optimize.Port.toEncoder/toDecoder
+-- example of converting types to decoders,
+-- used in Optimize.Module.addPort to turn
+-- ports into "normal optimized nodes"
+
+
+
 ## Issues for GitHub
 
 - Optimise saturated calls to some Basics/Utils functions as in JS
