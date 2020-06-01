@@ -86,3 +86,36 @@ Here are a few points to note about the C code
 - Elm names are prefixed with `x_`, so that the Elm name `model` becomes the C name `x_model`. This is to help ensure that any compiler-generated names can't clash with user-defined names. The JS code generator achieves the same thing by prefixing compiler-generated names with an underscore, but that approach is more dangerous in C. There are a lot of hidden magic symbols that begin with underscores.
 - Macros like `A1`, `A2`, `A3` are used for function application, just like in the JavaScript code generator. These are C preprocessor macros defined in the [C implementation of the Elm core libraries](https://github.com/brian-carroll/elm_c_wasm/blob/fa096c3516fafdcc88c2047744dc686e05cd3cd2/src/kernel/utils.h)
 - Macros like `NEW_RECORD` and `NEW_CLOSURE` handle memory allocation. They also handle the case where the GC runs out of heap space. In that case all functions return early, just like an "exception". We then do a GC and try again. (See [GC docs](https://github.com/brian-carroll/elm_c_wasm/blob/fa096c3516fafdcc88c2047744dc686e05cd3cd2/docs/gc.md))
+
+## Architecture Challenges
+
+I decided to restrict myself to only touching the code-generation part of the compiler, and leaving everything else alone as much as possible. There are only a few minor changes to the command-line interface so that you can specify whether you want to generate JS or C output files.
+
+The main drawback is that the code generator does not have access to Elm type information. All the type annotations in the AST are dropped at an earlier stage in the compiler pipeline.
+
+### Ambiguity between Int and Float at JS/Wasm interface
+
+When a message from the Elm runtime to the Wasm module contains a number, the wrapper needs to convert it from a JS `number` to the byte-level representation of either an Int or a Float. To choose the right one, the code generator would need to know which app Msg constructor parameters are Int and which are Float. But it doesn't.
+
+The current workaround is to guess that a round number is always an Int! But that is quite unreliable, and a mistake could result in programs silently processing corrupted data.
+
+However, apps that never use a Float in any Msg constructor are safe. Neither the TODO MVC example nor the Elm SPA Example use Floats in messages, so they cannot suffer from this issue.
+
+### Ambiguity de-structuring Cons, Tuple and Custom
+
+The AST used in the code generator makes no distinction between accessing the head of a list, and accessing the first parameter of a Tuple or Custom type. This is OK in JavaScript because the same object shape is used for all three.
+
+But in my Wasm implementation, Cons and Tuple use smaller, more optimised structures than Custom types. So I can't use the same code to access the data inside them. Instead I generate code that detects the type at runtime, and then accesses it in the appropriate way for the detected type. This is slower than it needs to be.
+
+The other possible workaround would be to use the same memory layout for all of these structures. But that would make Cons and Tuple2 33% bigger, wasting space. This would impact performance by reducing the amount of useful data that can fit in CPU cache.
+
+Having type information in the AST would allow me to generate the most optimal code.
+
+### Time module
+
+The WebAssembly code uses 32-bit values for the Elm Int type. It could use 64-bit integers but that would prevent using a fairly basic optimisation called "unboxing" in the future.
+
+Elm's Json.Decode.int function only allows integers in the 32-bit range. The Bitwise module uses 32-bit integers. But the Time module uses Int values that are around 42 bits.
+
+
+&nbsp;
