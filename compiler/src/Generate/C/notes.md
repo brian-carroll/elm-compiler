@@ -1,3 +1,28 @@
+# Json-like library for encoding/decoding Wasm, with code gen from types
+
+Specific use case: generate jsToWasmMsg, knowing Msg
+from building blocks
+jsToWasmInt: JS function. Takes a number, writes header and value to ArrayBuffer
+jsToWasmFloat: JS function. Takes a number, writes header and value to ArrayBuffer
+jsToWasmString
+jsToWasmRecord
+jsToWasmCustom
+jsToWasmClosure
+
+OK basically this is the wrapper but with lots of stuff partially-compiled into it
+Don't need to detect types, don't need the WasmBuilder stuff. It's more stripped down and faster.
+
+Calling a JS kernel function from Wasm
+
+wasmToJsInt
+wasmToJsFloat
+wasmToJsString
+wasmToJsRecord
+wasmToJsCustom
+wasmToJsClosure
+
+
+
 # type inf
 extra param on canonical
 every ast node has a type variable
