@@ -1,3 +1,119 @@
+# Byecode ideas
+
+What would a bytecode for Elm look like?
+
+- compile to very low level bytecodes and have a VM to interpret them
+- GC stack tracing would be a lot easier for one thing. We're using our own stack instead of the native one so it's easy.
+- A stack frame would have one slot per arg and one per `let`
+- The VM would be a stack machine!! Could we use the Wasm stack itself?? Meta!!
+
+| AST Expr  | bytecode description                           |
+| --------- | ---------------------------------------------- |
+| Bool      | load global                                    |
+| Chr       | load global                                    |
+| Str       | load global                                    |
+| Int       | load global                                    |
+| Float     | load global                                    |
+| VarLocal  | load local                                     |
+| VarGlobal | load global                                    |
+| VarEnum   | load global                                    |
+| VarBox    | load global                                    |
+| VarCycle  | load global                                    |
+| VarDebug  | load global                                    |
+| VarKernel | load global                                    |
+| List      | alloc, store heap                              |
+| Function  | alloc, store const (fn ptr), store (free vars) |
+| Call      | load locals, jump                              |
+| TailCall  | load locals, jump                              |
+| If        | jumpif, jump                                   |
+| Let       | store local                         |
+| Destruct  | heap load at offset                            |
+| Case      | jumps                                          |
+| Accessor  | load global                                    |
+| Access    | heap load at offset                            |
+| Update    | alloc, load, lookup field, store               |
+| Record    | alloc, store ptrs                              |
+| Unit      | load global                                    |
+| Tuple     | alloc, store                                   |
+| Shader    | load global?                                   |
+
+## VM structure
+
+array of global data
+array of bytecodes
+stack of intermediate vars
+locals array
+program counter
+
+## Bytecode instruction set
+
+```hs
+
+data ByteCode
+  = LoadGlobal Int        -- index into global array
+  | LoadConst Int
+  | LoadLocal Int         -- index into locals array
+  | StoreLocal Int        -- index into locals array
+  | Allocate Int          -- number of pointer-sized slots
+  | Clone
+  | StoreHeapAtOffset Int -- arity 2 (ref, value)
+  | LoadHeapAtOffset Int
+  | Jump Int              -- target index in bytecode array
+  | JumpIf Int            -- target index in bytecode array
+  | LookupFieldConst Int  -- field ID
+  | LookupField           -- arity 2 (record, field ID)
+  | CallKernel Int Int    -- num args, fn index
+```
+
+## VM Pros
+- stack tracing is now possible and in fact easy
+- the VM can have different implementations - Wasm, C, JS
+- could have one that's directly in Wasm
+
+## VM Cons
+- There's not really any such thing as a function anymore
+- All of this might be bad for optimisation, especially compared to browser JITs
+
+## Translating bytecode to Wasm / machine code
+- each bytecode written out in target language
+- dispatch is done at compile time
+- how does the stack work?
+  - could make our own global array for it
+  - actual C stack would not really be used
+- no C functions
+  - could have one big switch statement, where each case is an Elm function.
+- with C functions
+  - better for inlining... although we can't really inline anything anyway since we have indirect calls and can't detect saturated calls.
+
+- custom stack!
+  - use a global array
+  - whenever you enter a function you push the args to the custom stack, then call a C evaluator function that has no args
+  - the evaluator loads the args from the custom stack
+  - the C stack is only used to keep track of return addresses
+- During GC, there's still no way to clear registers
+
+
+Let's say we want optimisation within a function only. Can still beat Elm JS with that, because JS version of A2, A3 is unoptimisable
+```c
+void* stack[10240];
+void* stack_idx;
+
+size_t some_elm_func_eval() {
+  void* arg0 = stack[--stack_idx];
+  void* arg1 = stack[--stack_idx];
+  void* arg2 = stack[--stack_idx];
+  void* let0;
+  void* let1;
+
+  // bytecode
+  // bytecode
+  // bytecode
+}
+```
+
+
+
+
 # Json-like library for encoding/decoding Wasm, with code gen from types
 
 Specific use case: generate jsToWasmMsg, knowing Msg
@@ -21,14 +137,12 @@ wasmToJsRecord
 wasmToJsCustom
 wasmToJsClosure
 
-
-
 # type inf
+
 extra param on canonical
 every ast node has a type variable
 type inference works up from leaf of AST
 compiler/src/Type/Solve.hs
-
 
 # fixing the custom vs tuple issue
 
@@ -38,7 +152,6 @@ path data type needs a new constructor, same as index but different for custom v
 optimized/expression uses them differently
 destruct and its helpers
 Change Index to a different word, follow the errors, fix them all to the two new ones
-
 
 # msg constructors
 
@@ -59,9 +172,9 @@ port declarations get added to optimize AST in Module.hs
 Optimize.Module.addPort
 
 what does optimize do?
+
 - drop stuff to shrink elmo files, which are Opt AST
 - most of the compile time for big proj is reading that file
-
 
 # Evan's notes
 
@@ -80,8 +193,6 @@ Optimize.Port.toEncoder/toDecoder
 -- example of converting types to decoders,
 -- used in Optimize.Module.addPort to turn
 -- ports into "normal optimized nodes"
-
-
 
 ## Issues for GitHub
 
