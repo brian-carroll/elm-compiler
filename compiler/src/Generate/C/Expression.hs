@@ -735,17 +735,31 @@ generateTest value test =
 pathToCExpr :: N.Name -> DT.Path -> C.Expression
 pathToCExpr root path =
   case path of
-    DT.Index index subPath ->
-      C.Call (C.Var CN.utilsDestructIndex)
-        [ pathToCExpr root subPath
-        , C.Const $ C.IntConst $ Index.toMachine index
-        ]
-
-    DT.Unbox subPath ->
-      -- ((Custom*)subPath)->values[0]
+    DT.IndexBuiltin index subPath ->
+      -- ((Tuple3*)(subPath))->a
+      C.MemberArrow
+        (C.Parens $
+          C.castAsPtrTo (C.TypeDef CN.Tuple3) $
+          C.Parens (pathToCExpr root subPath))
+        (CN.fromSmallIndex index)
+    
+    DT.IndexCustom index subPath ->
+      -- ((Custom*)(subPath))->values[3]
       C.Index
         (C.MemberArrow
-          (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) (pathToCExpr root subPath))
+          (C.Parens $
+            C.castAsPtrTo (C.TypeDef CN.Custom) $
+            C.Parens (pathToCExpr root subPath))
+          (CN.fromBuilder "values"))
+        (C.Const $ C.IntConst $ Index.toMachine index)
+
+    DT.Unbox subPath ->
+      -- ((Custom*)(subPath))->values[0]
+      C.Index
+        (C.MemberArrow
+          (C.Parens $
+            C.castAsPtrTo (C.TypeDef CN.Custom) $
+            C.Parens (pathToCExpr root subPath))
           (CN.fromBuilder "values"))
         (C.Const $ C.IntConst 0)
 
@@ -771,11 +785,23 @@ generateDestruct name path =
 generatePath :: Opt.Path -> C.Expression
 generatePath path =
   case path of
-    Opt.Index index subPath ->
-      C.Call (C.Var CN.utilsDestructIndex)
-        [ generatePath subPath
-        , C.Const $ C.IntConst $ Index.toMachine index
-        ]
+    Opt.IndexBuiltin index subPath ->
+      -- ((Tuple3*)(subPath))->a
+      C.MemberArrow
+        (C.Parens $
+          C.castAsPtrTo (C.TypeDef CN.Tuple3) $
+          C.Parens (generatePath subPath))
+        (CN.fromSmallIndex index)
+    
+    Opt.IndexCustom index subPath ->
+      -- ((Custom*)(subPath))->values[3]
+      C.Index
+        (C.MemberArrow
+          (C.Parens $
+            C.castAsPtrTo (C.TypeDef CN.Custom) $
+            C.Parens (generatePath subPath))
+          (CN.fromBuilder "values"))
+        (C.Const $ C.IntConst $ Index.toMachine index)
 
     Opt.Root name ->
       C.Var $ CN.local name 
@@ -789,10 +815,12 @@ generatePath path =
         ]
 
     Opt.Unbox subPath ->
-      -- ((Custom*)subPath)->values[0]
+      -- ((Custom*)(subPath))->values[0]
       C.Index
         (C.MemberArrow
-          (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) (generatePath subPath))
+          (C.Parens $
+            C.castAsPtrTo (C.TypeDef CN.Custom) $
+            C.Parens (generatePath subPath))
           (CN.fromBuilder "values"))
         (C.Const $ C.IntConst 0)
 

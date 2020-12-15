@@ -4,6 +4,7 @@ module Generate.C.Name
   ( Name
   , fromBuilder
   , toBuilder
+  , fromSmallIndex
   , local
   , tmp
   , label
@@ -34,7 +35,6 @@ module Generate.C.Name
   , utilsInitGlobal
   , utilsAccessEval
   , utilsUpdate
-  , utilsDestructIndex
   , utilsEqual
   , nullPtr
   , jsonRun
@@ -60,6 +60,7 @@ import qualified Data.Utf8 as Utf8
 import Data.Word (Word8)
 import qualified Data.List as List
 import qualified Data.Char as Char
+import qualified Data.Index as Index
 
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
@@ -78,6 +79,11 @@ newtype Name =
 
 fromBuilder :: B.Builder -> Name
 fromBuilder = Name
+
+
+fromSmallIndex :: Index.ZeroBased -> Name
+fromSmallIndex index =
+  Name $ B.char8 $ Char.chr $ (Char.ord 'a') + (Index.toMachine index)
 
 
 local :: Name.Name -> Name
@@ -286,11 +292,6 @@ utilsAccessEval =
 utilsUpdate :: Name
 utilsUpdate =
   kernelValue Name.utils (Name.fromChars "update")
-
-
-utilsDestructIndex :: Name
-utilsDestructIndex =
-  kernelValue Name.utils (Name.fromChars "destruct_index")
 
 
 utilsEqual :: Name
