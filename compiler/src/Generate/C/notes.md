@@ -10,214 +10,33 @@ However if I do this for all files (d.dat, i.dat, o.dat, .elmi) then the overhea
 
 ## Baseline case
 ```
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.141s
-user    0m0.859s
-sys     0m1.781s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.782s
-user    0m1.453s
-sys     0m2.859s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.143s
-user    0m0.813s
-sys     0m2.078s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.081s
-user    0m0.719s
-sys     0m1.797s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.729s
-user    0m1.109s
-sys     0m2.875s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.065s
-user    0m0.859s
-sys     0m1.625s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-
 $ du -sh elm-stuff/0.19.1/
 1.2M    elm-stuff/0.19.1/
-
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
 ```
+real    0m1.141s  0m1.782s  0m1.143s  0m1.081s  0m1.729s  0m1.065s
+user    0m0.859s  0m1.453s  0m0.813s  0m0.719s  0m1.109s  0m0.859s
+sys     0m1.781s  0m2.859s  0m2.078s  0m1.797s  0m2.875s  0m1.625s
 
 ## .elmo is a zip file
 ```
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.476s
-user    0m1.078s
-sys     0m2.359s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.127s
-user    0m0.828s
-sys     0m1.922s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.095s
-user    0m0.922s
-sys     0m1.844s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.174s
-user    0m0.844s
-sys     0m1.922s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.134s
-user    0m1.047s
-sys     0m1.844s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.767s
-user    0m1.234s
-sys     0m3.063s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.096s
-user    0m0.953s
-sys     0m1.781s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-
 $ du -sh elm-stuff/0.19.1/
 1.1M    elm-stuff/0.19.1/
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
 ```
+real    0m1.476s  0m1.127s  0m1.095s  0m1.174s  0m1.134s  0m1.767s  0m1.096s
+user    0m1.078s  0m0.828s  0m0.922s  0m0.844s  0m1.047s  0m1.234s  0m0.953s
+sys     0m2.359s  0m1.922s  0m1.844s  0m1.922s  0m1.844s  0m3.063s  0m1.781s
 
 ## .elmo and o.dat are zip files
 ```
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.497s
-user    0m0.984s
-sys     0m2.297s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.127s
-user    0m1.016s
-sys     0m1.875s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.796s
-user    0m1.203s
-sys     0m3.000s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.759s
-user    0m1.375s
-sys     0m2.859s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.770s
-user    0m1.125s
-sys     0m3.125s
-brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
-$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
-Success! Compiled 33 modules.
-
-    Main ───> elm.js
-
-
-real    0m1.809s
-user    0m1.172s
-sys     0m2.969s
-
 $ du -sh elm-stuff/0.19.1/
 504K    elm-stuff/0.19.1/
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
 ```
+real    0m1.497s  0m1.127s  0m1.796s  0m1.759s  0m1.770s  0m1.809s
+user    0m0.984s  0m1.016s  0m1.203s  0m1.375s  0m1.125s  0m1.172s
+sys     0m2.297s  0m1.875s  0m3.000s  0m2.859s  0m3.125s  0m2.969s
 
 
 # Json-like library for encoding/decoding Wasm, with code gen from types
