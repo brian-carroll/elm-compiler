@@ -153,6 +153,73 @@ $ du -sh elm-stuff/0.19.1/
 1.1M    elm-stuff/0.19.1/
 ```
 
+## .elmo and o.dat are zip files
+```
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.497s
+user    0m0.984s
+sys     0m2.297s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.127s
+user    0m1.016s
+sys     0m1.875s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.796s
+user    0m1.203s
+sys     0m3.000s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.759s
+user    0m1.375s
+sys     0m2.859s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.770s
+user    0m1.125s
+sys     0m3.125s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.809s
+user    0m1.172s
+sys     0m2.969s
+
+$ du -sh elm-stuff/0.19.1/
+504K    elm-stuff/0.19.1/
+```
+
+
 # Json-like library for encoding/decoding Wasm, with code gen from types
 
 Specific use case: generate jsToWasmMsg, knowing Msg

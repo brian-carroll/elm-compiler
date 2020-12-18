@@ -3,6 +3,7 @@ module BackgroundWriter
   ( Scope
   , withScope
   , writeBinary
+  , writeBinaryZip
   )
   where
 
@@ -40,3 +41,11 @@ writeBinary (Scope workList) path value =
       let !newWork = mvar:oldWork
       putMVar workList newWork
 
+
+writeBinaryZip :: (Binary.Binary a) => Scope -> FilePath -> a -> IO ()
+writeBinaryZip (Scope workList) path value =
+  do  mvar <- newEmptyMVar
+      _ <- forkIO (File.writeBinaryZip path value >> putMVar mvar ())
+      oldWork <- takeMVar workList
+      let !newWork = mvar:oldWork
+      putMVar workList newWork

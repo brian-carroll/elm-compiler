@@ -128,7 +128,7 @@ loadObjects :: FilePath -> Details -> IO (MVar (Maybe Opt.GlobalGraph))
 loadObjects root (Details _ _ _ _ _ extras) =
   case extras of
     ArtifactsFresh _ o -> newMVar (Just o)
-    ArtifactsCached    -> fork (File.readBinary (Stuff.objects root))
+    ArtifactsCached    -> fork (File.readBinaryZip (Stuff.objects root))
 
 
 loadInterfaces :: FilePath -> Details -> IO (MVar (Maybe Interfaces))
@@ -333,7 +333,7 @@ verifyDependencies env@(Env key scope root cache _ _ _) time outline solution di
             foreigns = Map.map (OneOrMore.destruct Foreign) $ Map.foldrWithKey gatherForeigns Map.empty $ Map.intersection artifacts directDeps
             details = Details time outline 0 Map.empty foreigns (ArtifactsFresh ifaces objs)
           in
-          do  BW.writeBinary scope (Stuff.objects    root) objs
+          do  BW.writeBinaryZip scope (Stuff.objects    root) objs
               BW.writeBinary scope (Stuff.interfaces root) ifaces
               BW.writeBinary scope (Stuff.details    root) details
               return (Right details)
