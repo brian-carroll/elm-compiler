@@ -123,6 +123,11 @@ data Def
   = Def (A.Located Name) [Pattern] Expr
   | TypedDef (A.Located Name) FreeVars [(Pattern, Type)] Expr Type
 
+instance Show Def where
+  show d =
+    case d of
+      Def (A.At _ n) _ _ -> "Def " ++ show n ++ "\n"
+      TypedDef (A.At _ n) _ _ _ _ -> "TypedDef " ++ show n ++ "\n"
 
 
 -- DECLARATIONS
@@ -132,6 +137,7 @@ data Decls
   = Declare Def Decls
   | DeclareRec Def [Def] Decls
   | SaveTheEnvironment
+  deriving Show
 
 
 
@@ -182,7 +188,7 @@ data PatternCtorArg =
 
 
 data Annotation = Forall FreeVars Type
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 type FreeVars = Map.Map Name ()
@@ -196,17 +202,17 @@ data Type
   | TUnit
   | TTuple Type Type (Maybe Type)
   | TAlias ModuleName.Canonical Name [(Name, Type)] AliasType
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 data AliasType
   = Holey Type
   | Filled Type
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 data FieldType = FieldType {-# UNPACK #-} !Word16 Type
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 -- NOTE: The Word16 marks the source order, but it may not be available

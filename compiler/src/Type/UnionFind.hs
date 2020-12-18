@@ -32,6 +32,7 @@ import Control.Monad ( when )
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Word (Word32)
 
+import System.IO.Unsafe (unsafePerformIO)
 
 
 -- POINT
@@ -46,6 +47,15 @@ data PointInfo a
   = Info {-# UNPACK #-} !(IORef Word32) {-# UNPACK #-} !(IORef a)
   | Link {-# UNPACK #-} !(Point a)
 
+
+instance (Show a) => Show (Point a) where
+  show (Pt ioref) = show $ unsafePerformIO $ readIORef ioref
+
+instance (Show a) => Show (PointInfo a) where
+  show pi =
+    case pi of
+      Info _ ioref -> show $ unsafePerformIO $ readIORef ioref
+      Link link -> show link
 
 
 -- HELPERS

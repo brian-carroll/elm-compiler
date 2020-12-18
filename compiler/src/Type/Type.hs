@@ -28,6 +28,7 @@ module Type.Type
   )
   where
 
+import qualified Data.List as List
 
 import Control.Monad.State.Strict (StateT, liftIO)
 import qualified Control.Monad.State.Strict as State
@@ -66,6 +67,60 @@ data Constraint
       }
 
 
+instance Show Constraint where
+  show c = showConstraint "" c
+
+showConstraint :: String -> Constraint -> String
+showConstraint indent c =
+    let
+      nextIndent = indent ++ "  "
+      nextIndent2 = indent ++ "    "
+    in
+    case c of
+      CTrue ->
+        indent ++ "- CTrue"
+      CSaveTheEnvironment ->
+        indent ++ "- CSaveTheEnvironment"
+      CEqual _ _ tipe _ ->
+        indent ++ "- CEqual " ++ show tipe
+      CLocal _ name _ ->
+        indent ++ "- CLocal " ++ show name
+      CForeign _ name annotation _ ->
+        indent ++ "- CForeign " ++ show name ++ show annotation
+      CPattern _ _ tipe _ ->
+        indent ++ "- CPattern " ++ show tipe
+      CAnd cs ->
+        indent ++ "- CAnd\n" ++ (List.intercalate "\n" $ map (showConstraint nextIndent) cs)
+      CLet rigidVars flexVars header headerCon bodyCon ->
+        indent ++ "- CLet" 
+          ++ "\n" ++ nextIndent ++ "- rigidVars\t" ++ show rigidVars
+          ++ "\n" ++ nextIndent ++ "- flexVars\t" ++ show flexVars
+          ++ "\n" ++ nextIndent ++ "- header\t" ++ show header
+          ++ "\n" ++ nextIndent ++ "- headerCon\n" ++ showConstraint nextIndent2 headerCon
+          ++ "\n" ++ nextIndent ++ "- bodyCon\n" ++ showConstraint nextIndent2 bodyCon
+
+
+-- Variable
+
+instance Show (E.Expected t) where
+  show _ = ""
+
+instance Show (E.PExpected t) where
+  show _ = ""
+
+instance Show (E.PCategory) where
+  show _ = ""
+
+instance Show (E.Category) where
+  show _ = ""
+
+instance (Show t) => Show (A.Located t) where
+  show (A.At _ x) = show x
+
+instance Show (A.Region) where
+  show _ = ""
+
+
 exists :: [Variable] -> Constraint -> Constraint
 exists flexVars constraint =
   CLet [] flexVars Map.empty constraint CTrue
@@ -86,6 +141,7 @@ data FlatType
     | Record1 (Map.Map Name.Name Variable) Variable
     | Unit1
     | Tuple1 Variable Variable (Maybe Variable)
+    deriving Show
 
 
 data Type
@@ -98,6 +154,7 @@ data Type
     | RecordN (Map.Map Name.Name Type) Type
     | UnitN
     | TupleN Type Type (Maybe Type)
+    deriving Show
 
 
 
@@ -111,6 +168,7 @@ data Descriptor =
     , _mark :: Mark
     , _copy :: Maybe Variable
     }
+    deriving Show
 
 
 data Content
@@ -121,6 +179,7 @@ data Content
     | Structure FlatType
     | Alias ModuleName.Canonical Name.Name [(Name.Name,Variable)] Variable
     | Error
+    deriving Show
 
 
 data SuperType
@@ -128,7 +187,7 @@ data SuperType
   | Comparable
   | Appendable
   | CompAppend
-  deriving (Eq)
+  deriving (Eq, Show)
 
 
 makeDescriptor :: Content -> Descriptor
@@ -155,7 +214,7 @@ outermostRank =
 
 
 newtype Mark = Mark Word32
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 
 noMark :: Mark

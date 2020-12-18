@@ -279,6 +279,12 @@ instance Ord (Utf8 t) where
         | True                     -> EQ
 
 
+-- SHOW
+
+
+instance Show (Utf8 t) where
+  show = toChars
+
 
 -- FROM STRING
 

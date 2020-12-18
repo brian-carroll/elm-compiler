@@ -1,4 +1,86 @@
-# Byecode ideas
+# Unboxed ints
+
+| AST Expr       | need more AST type info for unboxing?                 |
+| -------------- | ----------------------------------------------------- |
+| Bool           | No (obvious)                                          |
+| Chr            | No (obvious)                                          |
+| Str            | No (obvious)                                          |
+| Int            | No (obvious)                                          |
+| Float          | No (obvious)                                          |
+| VarLocal       | No                                                    |
+| VarGlobal      | No                                                    |
+| VarEnum        | No                                                    |
+| VarBox         | No                                                    |
+| VarCycle       | No                                                    |
+| VarDebug       | No                                                    |
+| VarKernel      | No                                                    |
+| List           | _YES_ (header flags)                                  |
+| Function       | _YES_ (header flags)                                  |
+| Call           | _MAYBE_ (int/float ops - maybe switch function name?) |
+| TailCall       | No                                                    |
+| If             | No                                                    |
+| Let            | No                                                    |
+| Destruct       | No (cannot destruct Int/Bool/Char)                    |
+| Case           | No (enough info already)                              |
+| Accessor       | No (makes no sense)                                   |
+| Access         | No (makes no sense)                                   |
+| Update         | No (makes no sense)                                   |
+| Record         | _YES_ (header flags)                                  |
+| Unit           | No                                                    |
+| Tuple          | _YES_ (header flags)                                  |
+| Shader         | No                                                    |
+| ---------      | --------------------------------                      |
+| Define         | No                                                    |
+| DefineTailFunc | No                                                    |
+| Ctor           | _YES_ (header flags)                                  |
+| Enum           | No (obvious)                                          |
+| Box            | No                                                    |
+| Link           | No                                                    |
+| Cycle          | No                                                    |
+| Manager        | No                                                    |
+| Kernel         | No                                                    |
+| PortIncoming   | No                                                    |
+| PortOutgoing   | No                                                    |
+
+Code analysis
+```hs
+compile :: Pkg.Name -> Map.Map ModuleName.Raw I.Interface -> Src.Module -> Either E.Error Artifacts
+compile pkg ifaces modul =
+  do  canonical   <- canonicalize pkg ifaces modul
+      annotations <- typeCheck modul canonical
+      ()          <- nitpick canonical
+      objects     <- optimize modul annotations canonical
+      return (Artifacts canonical annotations objects)
+```
+- I printed out values (creating Show instances of all the types, ugh)
+- `annotations` is a map of top level names and their types
+  - The types of deeply-nested nodes are _thrown away_ during the type solve
+  - It doesn't modify the AST at all, just _checks_ it
+    - But for unboxing, we would need to return a modified AST from typeCheck
+- nitpick does some extra error checks and stuff, don't care
+- Then `Compile.optimize` just reduces the graph down to min size
+  - `objects :: Opt.LocalGraph` is saved to an .elmo object file
+
+So how to get type solver to gives us info for unboxing?
+- `Type.Constrain.Module.constrain` takes Canonical AST and returns `Constraint`
+- `Type.Solve.run` takes Constraints, returns error or `Map Name Annotation`
+- Constraint is defined in Type.Type
+
+Analysis of Constraint type
+
+
+### Basics functions/ops that need to be specialised int/float
+
+```
++, -, *, ^, ==, /=, <, >, <=, >=
+max, min, compare, negate, abs, clamp
+```
+
+There are about twice as many that don't need specialisation
+I wonder if we could literally change the function name at some earlier stage in the compiler,
+like `Optimize`
+
+# Bytecode ideas
 
 What would a bytecode for Elm look like?
 
@@ -26,7 +108,7 @@ What would a bytecode for Elm look like?
 | Call      | load locals, jump                              |
 | TailCall  | load locals, jump                              |
 | If        | jumpif, jump                                   |
-| Let       | store local                         |
+| Let       | store local                                    |
 | Destruct  | heap load at offset                            |
 | Case      | jumps                                          |
 | Accessor  | load global                                    |
@@ -66,15 +148,18 @@ data ByteCode
 ```
 
 ## VM Pros
+
 - stack tracing is now possible and in fact easy
 - the VM can have different implementations - Wasm, C, JS
 - could have one that's directly in Wasm
 
 ## VM Cons
+
 - There's not really any such thing as a function anymore
 - All of this might be bad for optimisation, especially compared to browser JITs
 
 ## Translating bytecode to Wasm / machine code
+
 - each bytecode written out in target language
 - dispatch is done at compile time
 - how does the stack work?
@@ -83,6 +168,7 @@ data ByteCode
 - no C functions
   - could have one big switch statement, where each case is an Elm function.
 - with C functions
+
   - better for inlining... although we can't really inline anything anyway since we have indirect calls and can't detect saturated calls.
 
 - custom stack!
@@ -92,8 +178,8 @@ data ByteCode
   - the C stack is only used to keep track of return addresses
 - During GC, there's still no way to clear registers
 
-
 Let's say we want optimisation within a function only. Can still beat Elm JS with that, because JS version of A2, A3 is unoptimisable
+
 ```c
 void* stack[10240];
 void* stack_idx;
@@ -111,10 +197,9 @@ size_t some_elm_func_eval() {
 }
 ```
 
+# Notes from talking to Evan
 
-
-
-# Json-like library for encoding/decoding Wasm, with code gen from types
+## Json-like library for encoding/decoding Wasm, with code gen from types
 
 Specific use case: generate jsToWasmMsg, knowing Msg
 from building blocks
@@ -137,14 +222,14 @@ wasmToJsRecord
 wasmToJsCustom
 wasmToJsClosure
 
-# type inf
+## type inf
 
 extra param on canonical
 every ast node has a type variable
 type inference works up from leaf of AST
 compiler/src/Type/Solve.hs
 
-# fixing the custom vs tuple issue
+## fixing the custom vs tuple issue
 
 in ast/optimized.hs
 
@@ -153,7 +238,7 @@ optimized/expression uses them differently
 destruct and its helpers
 Change Index to a different word, follow the errors, fix them all to the two new ones
 
-# msg constructors
+## msg constructors
 
 builder/src/Generate.hs
 debug loads types
@@ -176,7 +261,7 @@ what does optimize do?
 - drop stuff to shrink elmo files, which are Opt AST
 - most of the compile time for big proj is reading that file
 
-# Evan's notes
+## Evan's notes
 
 Generate.debug
 -- calls Generate.loadTypes which loads in

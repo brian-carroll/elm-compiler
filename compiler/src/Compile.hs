@@ -6,6 +6,7 @@ module Compile
   where
 
 
+import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 
@@ -26,7 +27,7 @@ import qualified Type.Solve as Type
 
 import System.IO.Unsafe (unsafePerformIO)
 
-
+import Debug.Trace (trace)
 
 -- COMPILE
 
@@ -56,7 +57,10 @@ canonicalize :: Pkg.Name -> Map.Map ModuleName.Raw I.Interface -> Src.Module -> 
 canonicalize pkg ifaces modul =
   case snd $ R.run $ Canonicalize.canonicalize pkg ifaces modul of
     Right canonical ->
-      Right canonical
+      Right (trace (
+          "\n_decls\n"
+          ++ (show $ Can._decls canonical) ++ "\n"
+        ) canonical)
 
     Left errors ->
       Left $ E.BadNames errors
@@ -66,7 +70,12 @@ typeCheck :: Src.Module -> Can.Module -> Either E.Error (Map.Map Name.Name Can.A
 typeCheck modul canonical =
   case unsafePerformIO (Type.run =<< Type.constrain canonical) of
     Right annotations ->
-      Right annotations
+      Right (trace ("\nannotations\n" ++ (
+        List.intercalate "\n" $
+        map (\(name, tipe) -> show name ++ "\t" ++ show tipe) $
+          Map.toList annotations
+      )) annotations)
+        
 
     Left errors ->
       Left (E.BadTypes (Localizer.fromModule modul) errors)

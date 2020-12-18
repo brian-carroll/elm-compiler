@@ -33,6 +33,7 @@ import qualified Type.UnionFind as UF
 run :: Constraint -> IO (Either (NE.List Error.Error) (Map.Map Name.Name Can.Annotation))
 run constraint =
   do  pools <- MVector.replicate 8 []
+      putStrLn $ show constraint
 
       (State env _ errors) <-
         solve Map.empty outermostRank pools emptyState constraint

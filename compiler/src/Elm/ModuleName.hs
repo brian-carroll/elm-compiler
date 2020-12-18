@@ -134,6 +134,8 @@ data Canonical =
     , _module :: !Name.Name
     }
 
+instance Show Canonical where
+  show c = show (_module c)
 
 
 -- INSTANCES
