@@ -716,7 +716,7 @@ compile (Env key root projectType _ buildID _ _) docsNeed (Details.Local path ti
           do  let name = Src.getName modul
               let iface = I.fromModule pkg canonical annotations
               let elmi = Stuff.elmi root name
-              File.writeBinary (Stuff.elmo root name) objects
+              File.writeBinaryZip (Stuff.elmo root name) objects
               maybeOldi <- File.readBinary elmi
               case maybeOldi of
                 Just oldi | oldi == iface ->

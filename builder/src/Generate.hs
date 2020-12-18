@@ -154,7 +154,7 @@ loadObject root modul =
 
     Build.Cached name _ _ ->
       do  mvar <- newEmptyMVar
-          _ <- forkIO $ putMVar mvar =<< File.readBinary (Stuff.elmo root name)
+          _ <- forkIO $ putMVar mvar =<< File.readBinaryZip (Stuff.elmo root name)
           return (name, mvar)
 
 

@@ -1,118 +1,157 @@
-# Byecode ideas
+# Zipping elmo files
 
-What would a bytecode for Elm look like?
+On large projects the compiler spends a lot of its time reading .elmo files and that's the main reason we have Ast.Optimized, which is essentially just a more concise version of AST.Canonical
+BUT it still contains lots of values that are using more bits than they need (like enums of 2 or 3 values that take up a full 8 bits, etc.)
+So if a re-compile is I/O-bound, should .elmo files be stored in compressed format?
+Maybe the CPU overhead of decompressing is worth the reduced I/O?
 
-- compile to very low level bytecodes and have a VM to interpret them
-- GC stack tracing would be a lot easier for one thing. We're using our own stack instead of the native one so it's easy.
-- A stack frame would have one slot per arg and one per `let`
-- The VM would be a stack machine!! Could we use the Wasm stack itself?? Meta!!
+Quick test results on elm-spa-example (which I suppose is not that big) seem to show a 20% speed-up.
+However if I do this for all files (d.dat, i.dat, o.dat, .elmi) then the overhead is not worth it. Doing .elmo alone gets the biggest bang for your buck.
 
-| AST Expr  | bytecode description                           |
-| --------- | ---------------------------------------------- |
-| Bool      | load global                                    |
-| Chr       | load global                                    |
-| Str       | load global                                    |
-| Int       | load global                                    |
-| Float     | load global                                    |
-| VarLocal  | load local                                     |
-| VarGlobal | load global                                    |
-| VarEnum   | load global                                    |
-| VarBox    | load global                                    |
-| VarCycle  | load global                                    |
-| VarDebug  | load global                                    |
-| VarKernel | load global                                    |
-| List      | alloc, store heap                              |
-| Function  | alloc, store const (fn ptr), store (free vars) |
-| Call      | load locals, jump                              |
-| TailCall  | load locals, jump                              |
-| If        | jumpif, jump                                   |
-| Let       | store local                         |
-| Destruct  | heap load at offset                            |
-| Case      | jumps                                          |
-| Accessor  | load global                                    |
-| Access    | heap load at offset                            |
-| Update    | alloc, load, lookup field, store               |
-| Record    | alloc, store ptrs                              |
-| Unit      | load global                                    |
-| Tuple     | alloc, store                                   |
-| Shader    | load global?                                   |
+## Baseline case
+```
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
 
-## VM structure
+    Main ───> elm.js
 
-array of global data
-array of bytecodes
-stack of intermediate vars
-locals array
-program counter
 
-## Bytecode instruction set
+real    0m1.141s
+user    0m0.859s
+sys     0m1.781s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
 
-```hs
+    Main ───> elm.js
 
-data ByteCode
-  = LoadGlobal Int        -- index into global array
-  | LoadConst Int
-  | LoadLocal Int         -- index into locals array
-  | StoreLocal Int        -- index into locals array
-  | Allocate Int          -- number of pointer-sized slots
-  | Clone
-  | StoreHeapAtOffset Int -- arity 2 (ref, value)
-  | LoadHeapAtOffset Int
-  | Jump Int              -- target index in bytecode array
-  | JumpIf Int            -- target index in bytecode array
-  | LookupFieldConst Int  -- field ID
-  | LookupField           -- arity 2 (record, field ID)
-  | CallKernel Int Int    -- num args, fn index
+
+real    0m1.782s
+user    0m1.453s
+sys     0m2.859s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.143s
+user    0m0.813s
+sys     0m2.078s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.081s
+user    0m0.719s
+sys     0m1.797s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.729s
+user    0m1.109s
+sys     0m2.875s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.065s
+user    0m0.859s
+sys     0m1.625s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+
+$ du -sh elm-stuff/0.19.1/
+1.2M    elm-stuff/0.19.1/
+
 ```
 
-## VM Pros
-- stack tracing is now possible and in fact easy
-- the VM can have different implementations - Wasm, C, JS
-- could have one that's directly in Wasm
-
-## VM Cons
-- There's not really any such thing as a function anymore
-- All of this might be bad for optimisation, especially compared to browser JITs
-
-## Translating bytecode to Wasm / machine code
-- each bytecode written out in target language
-- dispatch is done at compile time
-- how does the stack work?
-  - could make our own global array for it
-  - actual C stack would not really be used
-- no C functions
-  - could have one big switch statement, where each case is an Elm function.
-- with C functions
-  - better for inlining... although we can't really inline anything anyway since we have indirect calls and can't detect saturated calls.
-
-- custom stack!
-  - use a global array
-  - whenever you enter a function you push the args to the custom stack, then call a C evaluator function that has no args
-  - the evaluator loads the args from the custom stack
-  - the C stack is only used to keep track of return addresses
-- During GC, there's still no way to clear registers
-
-
-Let's say we want optimisation within a function only. Can still beat Elm JS with that, because JS version of A2, A3 is unoptimisable
-```c
-void* stack[10240];
-void* stack_idx;
-
-size_t some_elm_func_eval() {
-  void* arg0 = stack[--stack_idx];
-  void* arg1 = stack[--stack_idx];
-  void* arg2 = stack[--stack_idx];
-  void* let0;
-  void* let1;
-
-  // bytecode
-  // bytecode
-  // bytecode
-}
+## .elmo is a zip file
 ```
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
 
 
+real    0m1.476s
+user    0m1.078s
+sys     0m2.359s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
 
+    Main ───> elm.js
+
+
+real    0m1.127s
+user    0m0.828s
+sys     0m1.922s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.095s
+user    0m0.922s
+sys     0m1.844s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.174s
+user    0m0.844s
+sys     0m1.922s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.134s
+user    0m1.047s
+sys     0m1.844s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.767s
+user    0m1.234s
+sys     0m3.063s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+$ find src -name '*.elm' | xargs touch && time elm make src/Main.elm --output elm.js
+Success! Compiled 33 modules.
+
+    Main ───> elm.js
+
+
+real    0m1.096s
+user    0m0.953s
+sys     0m1.781s
+brian@brian-lenovo:~/Code/wasm/c/elm_c_wasm/demos/elm-spa-example/repo
+
+$ du -sh elm-stuff/0.19.1/
+1.1M    elm-stuff/0.19.1/
+```
 
 # Json-like library for encoding/decoding Wasm, with code gen from types
 

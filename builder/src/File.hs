@@ -4,6 +4,8 @@ module File
   , zeroTime
   , writeBinary
   , readBinary
+  , writeBinaryZip
+  , readBinaryZip
   , writeUtf8
   , readUtf8
   , writeBuilder
@@ -93,6 +95,60 @@ readBinary path =
                         , "+-------------------------------------------------------------------------------"
                         ]
                       return Nothing
+        else
+          return Nothing
+
+
+writeBinaryZip :: (Binary.Binary a) => FilePath -> a -> IO ()
+writeBinaryZip path value =
+  do  currentTime <- Time.getPOSIXTime
+      let uncompressed = Binary.encode value
+      let entry = Zip.toEntry path (floor currentTime) uncompressed
+      let archive = Zip.addEntryToArchive entry Zip.emptyArchive
+      writeBinary path archive
+
+
+readBinaryZip :: (Binary.Binary a) => FilePath -> IO (Maybe a)
+readBinaryZip path =
+  do  pathExists <- Dir.doesFileExist path
+      if pathExists
+        then
+          do  fileBytes <- LBS.readFile path
+              let archiveResult = Zip.toArchiveOrFail fileBytes
+              case archiveResult of
+                Left message ->
+                  do  IO.hPutStrLn IO.stderr $ unlines $
+                        [ "+-------------------------------------------------------------------------------"
+                        , "|  Invalid Zip File: " ++ path
+                        , "|           Message: " ++ message
+                        , "|"
+                        , "| Please report this to https://github.com/elm/compiler/issues"
+                        , "| Trying to continue anyway."
+                        , "+-------------------------------------------------------------------------------"
+                        ]
+                      return Nothing
+
+                Right archive ->
+                  do
+                    let entry = head $ Zip.zEntries archive
+                    let uncompressed = Zip.fromEntry entry
+                    let result = Binary.decodeOrFail uncompressed
+                    case result of
+                      Right (_, _, a) ->
+                        return (Just a)
+
+                      Left (_, offset, message) ->
+                        do  IO.hPutStrLn IO.stderr $ unlines $
+                              [ "+-------------------------------------------------------------------------------"
+                              , "|  Corrupt File: " ++ path
+                              , "|   Byte Offset: " ++ show offset
+                              , "|       Message: " ++ message
+                              , "|"
+                              , "| Please report this to https://github.com/elm/compiler/issues"
+                              , "| Trying to continue anyway."
+                              , "+-------------------------------------------------------------------------------"
+                              ]
+                            return Nothing
         else
           return Nothing
 
