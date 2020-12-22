@@ -57,10 +57,7 @@ canonicalize :: Pkg.Name -> Map.Map ModuleName.Raw I.Interface -> Src.Module -> 
 canonicalize pkg ifaces modul =
   case snd $ R.run $ Canonicalize.canonicalize pkg ifaces modul of
     Right canonical ->
-      Right (trace (
-          "\n_decls\n"
-          ++ (show $ Can._decls canonical) ++ "\n"
-        ) canonical)
+      Right (trace (show canonical) canonical)
 
     Left errors ->
       Left $ E.BadNames errors
@@ -70,7 +67,7 @@ typeCheck :: Src.Module -> Can.Module -> Either E.Error (Map.Map Name.Name Can.A
 typeCheck modul canonical =
   case unsafePerformIO (Type.run =<< Type.constrain canonical) of
     Right annotations ->
-      Right (trace ("\nannotations\n" ++ (
+      Right (trace ("\n\n# Annotations after Type.Solve.run\n\n" ++ (
         List.intercalate "\n" $
         map (\(name, tipe) -> show name ++ "\t" ++ show tipe) $
           Map.toList annotations

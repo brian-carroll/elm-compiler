@@ -17,6 +17,10 @@ import Type.Type as Type
 import qualified Type.UnionFind as UF
 
 
+-- import Debug.Trace (trace)
+
+trace :: String -> a -> a
+trace _ x = x
 
 -- UNIFY
 
@@ -136,6 +140,12 @@ data Context =
     , _secondDesc :: Descriptor
     }
 
+instance Show Context where
+  show c =
+    "\n" ++ (show $ _first c)
+    ++ "\n" ++ (show $ _firstDesc c)
+    ++ "\n" ++ (show $ _second c)
+    ++ "\n" ++ (show $ _secondDesc c)
 
 reorient :: Context -> Context
 reorient (Context var1 desc1 var2 desc2) =
@@ -189,6 +199,7 @@ actuallyUnify context@(Context _ (Descriptor firstContent _ _ _) _ (Descriptor s
         unifyFlex context firstContent secondContent
 
     FlexSuper super _ ->
+        trace ("\nactuallyUnify FlexSuper" ++ show context) $
         unifyFlexSuper context super firstContent secondContent
 
     RigidVar _ ->
@@ -289,6 +300,7 @@ unifyFlexSuper :: Context -> SuperType -> Content -> Content -> Unify ()
 unifyFlexSuper context super content otherContent =
   case otherContent of
     Structure flatType ->
+        trace ("\nunifyFlexSuper Structure") $
         unifyFlexSuperStructure context super flatType
 
     RigidVar _ ->
@@ -301,9 +313,11 @@ unifyFlexSuper context super content otherContent =
             mismatch
 
     FlexVar _ ->
+        trace ("\nunifyFlexSuper FlexVar\t" ++ show context) $
         merge context content
 
     FlexSuper otherSuper _ ->
+      trace ("\nunifyFlexSuper FlexSuper\t" ++ show context) $
       case super of
         Number ->
           case otherSuper of
@@ -334,6 +348,7 @@ unifyFlexSuper context super content otherContent =
             Number     -> mismatch
 
     Alias _ _ _ realVar ->
+        trace "unifyFlexSuper Alias" $
         subUnify (_first context) realVar
 
     Error ->
@@ -349,6 +364,7 @@ combineRigidSupers rigid flex =
 
 atomMatchesSuper :: SuperType -> ModuleName.Canonical -> Name.Name -> Bool
 atomMatchesSuper super home name =
+  trace ("\natomMatchesSuper " ++ show super ++ " " ++ show home ++ " " ++ show name ) $
   case super of
     Number ->
       isNumber home name
@@ -374,6 +390,7 @@ isNumber home name =
 
 unifyFlexSuperStructure :: Context -> SuperType -> FlatType -> Unify ()
 unifyFlexSuperStructure context super flatType =
+  trace ("\nunifyFlexSuperStructure\n" ++ show context ++ "\n" ++ show super ++ "\n" ++ show flatType ++ "\n\n") $
   case flatType of
     App1 home name [] ->
       if atomMatchesSuper super home name then
@@ -512,6 +529,12 @@ unifyAliasArgs vars context args1 args2 ok err =
 
 unifyStructure :: Context -> FlatType -> Content -> Content -> Unify ()
 unifyStructure context flatType content otherContent =
+  trace ("\nunifyStructure "
+    ++ "\ncontext:" ++ (show context)
+    ++ "\nflatType:"  ++ (show flatType)
+    ++ "\ncontent:" ++ (show content)
+    ++ "\notherContent:"  ++ (show otherContent)
+  ) $
   case otherContent of
     FlexVar _ ->
         merge context content

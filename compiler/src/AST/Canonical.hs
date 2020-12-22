@@ -115,6 +115,77 @@ data FieldUpdate =
   FieldUpdate A.Region Expr
 
 
+instance Show Expr_ where
+  show e_ = showExpr_ "" e_
+
+showExpr :: String -> Expr -> String
+showExpr indent (A.At _ e_) =
+  showExpr_ indent e_
+
+showExprs :: String -> [Expr] -> String
+showExprs indent exprs =
+  List.intercalate ("\n" ++ indent) $ map (showExpr (indent ++ "  ")) exprs
+
+showIndentedList :: Show a => String -> [a] -> String
+showIndentedList indent list =
+  List.intercalate ("\n" ++ indent) $ map show list
+
+
+showExpr_ :: String -> Expr_ -> String
+showExpr_ indent e =
+  let
+    nextIndent = indent ++ "  "
+    nextIndent2 = indent ++ "    "
+  in
+  case e of
+    VarLocal name -> "- VarLocal " ++ show name
+    VarTopLevel moduleName name -> "- VarTopLevel " ++ show moduleName ++ "." ++ show name
+    VarKernel kName name -> "- VarKernel " ++ show kName ++ "." ++ show name
+    VarForeign moduleName name annotation -> "- VarForeign " ++ show moduleName ++ "." ++ show name ++ " : " ++ show annotation
+    VarCtor ctorOpts moduleName name index annotation -> "- VarCtor " ++ show ctorOpts ++ " " ++ show moduleName ++ "." ++ show name ++ "[" ++ (show $ Index.toMachine index) ++ "] : " ++ show annotation
+    VarDebug moduleName name annotation -> "- VarDebug " ++ show moduleName ++ "." ++ show name ++ " : " ++ show annotation
+    VarOperator name1 moduleName name2 annotation -> "- VarOperator " ++ show name1 ++ "(" ++ show moduleName ++ "." ++ show name2 ++ ") : " ++ show annotation
+    Chr eString -> "- Chr '" ++ show eString ++ "'"
+    Str eString -> "- Str \"" ++ show eString ++ "\""
+    Int int -> "- Int " ++ show int
+    Float float -> "- Float " ++ show float
+    List exprs -> "- List\n" ++ nextIndent ++ showExprs nextIndent exprs
+    Negate expr -> "- Negate " ++ showExpr nextIndent expr
+    Binop name1 moduleName name2 annotation expr1 expr2 ->
+      "- Binop\n"
+      ++ nextIndent ++ show name1 ++ "(" ++ show moduleName ++ "." ++ show name2 ++ ") : " ++ show annotation
+      ++ "\n" ++ nextIndent ++ showExpr nextIndent2 expr1
+      ++ "\n" ++ nextIndent ++ showExpr nextIndent2 expr2
+    Lambda patterns expr -> "- Lambda\n"
+      ++ nextIndent ++ "- patterns\n" -- ++ showIndentedList nextIndent2 patterns
+      ++ nextIndent ++ "- expr\n" ++ nextIndent2 ++ showExpr nextIndent2 expr
+    Call func args -> "- Call\n"
+      ++ nextIndent ++ "- func\n" ++ nextIndent2 ++ showExpr nextIndent2 func ++ "\n"
+      ++ nextIndent ++ "- args\n" ++ nextIndent2 ++ showExprs nextIndent2 args
+    If condThenPairs elseExpr -> "- If\n"
+      ++ (concatMap
+          (\(condExpr, thenExpr) -> ""
+            ++ nextIndent ++ "- cond\n" ++ nextIndent2 ++ showExpr nextIndent2 condExpr ++ "\n"
+            ++ nextIndent ++ "- then\n" ++ nextIndent2 ++ showExpr nextIndent2 thenExpr ++ "\n"
+          )
+          condThenPairs)
+      ++ nextIndent ++ "- else\n" ++ nextIndent2 ++ showExpr nextIndent2 elseExpr
+    Let def expr -> "- Let\n"
+      ++ nextIndent ++ show def ++ "\n"
+      ++ nextIndent ++ showExpr nextIndent expr
+    LetRec defs expr -> "- LetRec"
+    LetDestruct pattern dxpr1 expr2 -> "- LetDestruct"
+    Case expr caseBranches -> "- Case"
+    Accessor name -> "- Accessor"
+    Access expr name -> "- Access"
+    Update name expr mapFieldUpdates -> "- Update"
+    Record mapExprs -> "- Record"
+    Unit -> "- Unit"
+    Tuple expr1 expr2 mExpr3 -> "- Tuple"
+    Shader source types -> "- Shader"
+
+
+
 
 -- DEFS
 
@@ -126,8 +197,14 @@ data Def
 instance Show Def where
   show d =
     case d of
-      Def (A.At _ n) _ _ -> "Def " ++ show n ++ "\n"
-      TypedDef (A.At _ n) _ _ _ _ -> "TypedDef " ++ show n ++ "\n"
+      Def (A.At _ n) _ expr ->
+        "Def " ++ show n ++ "\n  " ++ showExpr "  " expr
+
+      TypedDef (A.At _ name) freeVars _ expr tipe ->
+        "TypedDef " ++ show name ++ "\n"
+          ++ "  - freeVars:\t" ++ show freeVars ++ "\n"
+          ++ "  - type:\t" ++ show tipe ++ "\n"
+          ++ showExpr "    " expr
 
 
 -- DECLARATIONS
@@ -137,9 +214,14 @@ data Decls
   = Declare Def Decls
   | DeclareRec Def [Def] Decls
   | SaveTheEnvironment
-  deriving Show
 
 
+instance Show Decls where
+  show ds =
+    case ds of 
+      Declare def decls -> "\nDeclare\n" ++ show def ++ "\n" ++ show decls
+      DeclareRec def defs decls -> "\nDeclareRec\n" ++ show def ++ (List.intercalate "\n\n -" (map show defs)) ++ "\n\n" ++ show decls
+      SaveTheEnvironment -> "\n\n"
 
 -- PATTERNS
 
@@ -188,8 +270,11 @@ data PatternCtorArg =
 
 
 data Annotation = Forall FreeVars Type
-  deriving (Eq, Show)
+  deriving Eq
 
+instance Show Annotation where
+  show (Forall freeVars tipe) =
+    "forall " ++ show (Map.keys freeVars) ++ " => " ++ show tipe
 
 type FreeVars = Map.Map Name ()
 
@@ -248,6 +333,12 @@ data Module =
     }
 
 
+instance Show Module where
+  show (Module name exports docs decls unions aliases binops effects) =
+    "\n\n\n# MODULE " ++ show name ++ "\n\n"
+    ++ "## decls\n\n" ++ show decls
+
+
 data Alias = Alias [Name] Type
   deriving (Eq)
 
@@ -270,7 +361,7 @@ data CtorOpts
   = Normal
   | Enum
   | Unbox
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 
 data Ctor = Ctor Name Index.ZeroBased Int [Type] -- CACHE length args
