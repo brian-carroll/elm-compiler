@@ -1,6 +1,8 @@
 # Unboxed ints
 
-| Opt AST        | need more AST type info for unboxing? |
+## Optimized AST
+
+| Expr/Node      | need more AST type info for unboxing? |
 | -------------- | ------------------------------------- |
 | Bool           | No (obvious)                          |
 | Chr            | No (obvious)                          |
@@ -41,6 +43,39 @@
 | Kernel         | No                                    |
 | PortIncoming   | No                                    |
 | PortOutgoing   | No                                    |
+
+## Canonical AST
+
+| Expr        | need more AST type info for unboxing?  |
+| ----------- | -------------------------------------- |
+| VarLocal    | _YES_ (Int reference to a number var?) |
+| VarTopLevel | _YES_ (Int reference to a number var?) |
+| VarKernel   | No                                     |
+| VarForeign  | _YES_ (Int reference to a number var?) |
+| VarCtor     | _YES_ (Int reference to a number var?) |
+| VarDebug    | No                                     |
+| VarOperator | _YES_ (Int reference to a number var?) |
+| Chr         | No                                     |
+| Str         | No                                     |
+| Int         | No                                     |
+| Float       | No                                     |
+| List        | _YES_ (header flags)                   |
+| Negate      | _YES_ (number->number function ref)    |
+| Binop       | _YES_ (Int reference to a number var?) |
+| Lambda      | _YES_ (header flags)                   |
+| Call        | No                                     |
+| If          | No                                     |
+| Let         | No                                     |
+| LetRec      | No                                     |
+| LetDestruct | No (does not dereference inner value)  |
+| Case        | No                                     |
+| Accessor    | No (does not dereference field value)  |
+| Access      | No (does not dereference field value)  |
+| Update      | No (does not dereference field value)  |
+| Record      | _YES_ (header flags)                   |
+| Unit        | No                                     |
+| Tuple       | _YES_ (header flags)                   |
+| Shader      | No                                     |
 
 # elm.js analysis
 
