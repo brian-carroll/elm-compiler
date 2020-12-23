@@ -1,4 +1,4 @@
-module Main exposing (main)
+module Original exposing (main)
 
 import Browser
 import Html exposing (Html, div, text, br)
@@ -15,7 +15,11 @@ sum list =
 
 
 -- numberTotal : number
--- should be illegal! Can't generate instructions for `number`, only Int or Float
+-- Can't generate instructions for `number`, only Int or Float
+-- A supertype can never escape the program via effects BUT that's not good enough!
+-- We cannot even construct this `List number`!
+-- The Optimized AST represents these number literals as Ints so that's what we'd do
+-- BUT when targeting JS it's OK to have inconsistencies! Not with a typed target.
 numberTotal =
     sum [1, 2, 3]
 
