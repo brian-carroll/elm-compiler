@@ -19,11 +19,16 @@ sum list =
 numberTotal =
     sum [1, 2, 3]
 
+
 -- supertype specialization: needs to affect code gen somehow!
--- either here or at some related location via type inference
-intTotal : Int
+intList : List Int
+intList =
+    [1, 2, 3]
+
+
+-- intTotal : Int
 intTotal =
-    numberTotal 
+    sum [1, 2, 3] 
 
 
 -- floatTotal : Float
