@@ -105,6 +105,7 @@ data Expr_
   | Unit
   | Tuple Expr Expr (Maybe Expr)
   | Shader Shader.Source Shader.Types
+  | UniqueTypeVar Name Expr
 
 
 data CaseBranch =
@@ -125,11 +126,6 @@ showExpr indent (A.At _ e_) =
 showExprs :: String -> [Expr] -> String
 showExprs indent exprs =
   List.intercalate ("\n" ++ indent) $ map (showExpr (indent ++ "  ")) exprs
-
-showIndentedList :: Show a => String -> [a] -> String
-showIndentedList indent list =
-  List.intercalate ("\n" ++ indent) $ map show list
-
 
 showExpr_ :: String -> Expr_ -> String
 showExpr_ indent e =
@@ -156,7 +152,7 @@ showExpr_ indent e =
       ++ nextIndent ++ show name1 ++ "(" ++ show moduleName ++ "." ++ show name2 ++ ") : " ++ show annotation
       ++ "\n" ++ nextIndent ++ showExpr nextIndent2 expr1
       ++ "\n" ++ nextIndent ++ showExpr nextIndent2 expr2
-    Lambda patterns expr -> "- Lambda\n"
+    Lambda _patterns expr -> "- Lambda\n"
       ++ nextIndent ++ "- patterns\n" -- ++ showIndentedList nextIndent2 patterns
       ++ nextIndent ++ "- expr\n" ++ nextIndent2 ++ showExpr nextIndent2 expr
     Call func args -> "- Call\n"
@@ -173,16 +169,18 @@ showExpr_ indent e =
     Let def expr -> "- Let\n"
       ++ nextIndent ++ show def ++ "\n"
       ++ nextIndent ++ showExpr nextIndent expr
-    LetRec defs expr -> "- LetRec"
-    LetDestruct pattern dxpr1 expr2 -> "- LetDestruct"
-    Case expr caseBranches -> "- Case"
-    Accessor name -> "- Accessor"
-    Access expr name -> "- Access"
-    Update name expr mapFieldUpdates -> "- Update"
-    Record mapExprs -> "- Record"
+    LetRec _defs _expr -> "- LetRec (todo)"
+    LetDestruct _pattern _expr1 _expr2 -> "- LetDestruct (todo)"
+    Case _expr _caseBranches -> "- Case (todo)"
+    Accessor name -> "- Accessor " ++ show name
+    Access _expr _name -> "- Access (todo)"
+    Update _name _expr _mapFieldUpdates -> "- Update (todo)"
+    Record _mapExprs -> "- Record (todo)"
     Unit -> "- Unit"
-    Tuple expr1 expr2 mExpr3 -> "- Tuple"
-    Shader source types -> "- Shader"
+    Tuple _expr1 _expr2 _mExpr3 -> "- Tuple (todo)"
+    Shader _source _types -> "- Shader (todo)"
+    UniqueTypeVar name expr -> "- UniqueTypeVar " ++ show name
+      ++ "\n" ++ nextIndent ++ showExpr nextIndent expr
 
 
 
@@ -334,7 +332,7 @@ data Module =
 
 
 instance Show Module where
-  show (Module name exports docs decls unions aliases binops effects) =
+  show (Module name _exports _docs decls _unions _aliases _binops _effects) =
     "\n\n\n# MODULE " ++ show name ++ "\n\n"
     ++ "## decls\n\n" ++ show decls
 

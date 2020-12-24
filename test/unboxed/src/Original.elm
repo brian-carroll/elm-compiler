@@ -32,7 +32,7 @@ intList =
 
 -- intTotal : Int
 intTotal =
-    sum [1, 2, 3] 
+    sum intList
 
 
 -- floatTotal : Float

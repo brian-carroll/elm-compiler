@@ -151,6 +151,13 @@ constrain rtv (A.At region expression) expected =
     Can.Shader _src types ->
       constrainShader region types expected
 
+    Can.UniqueTypeVar name expr ->
+      let
+        equivalent = A.At region $ Can.Let
+          (Can.Def (A.At region name) [] expr)
+          (A.At region $ Can.VarLocal name)
+      in
+      constrain rtv equivalent expected
 
 
 -- CONSTRAIN LAMBDA

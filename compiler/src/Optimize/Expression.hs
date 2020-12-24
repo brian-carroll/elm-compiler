@@ -173,6 +173,8 @@ optimize cycle (A.At region expression) =
     Can.Shader src (Shader.Types attributes uniforms _varyings) ->
       pure (Opt.Shader src (Map.keysSet attributes) (Map.keysSet uniforms))
 
+    Can.UniqueTypeVar _ expr ->
+      optimize cycle expr
 
 
 -- UPDATE
