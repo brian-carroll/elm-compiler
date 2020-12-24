@@ -17,10 +17,10 @@ import Type.Type as Type
 import qualified Type.UnionFind as UF
 
 
--- import Debug.Trace (trace)
+import Debug.Trace (trace)
 
-trace :: String -> a -> a
-trace _ x = x
+-- trace :: String -> a -> a
+-- trace _ x = x
 
 -- UNIFY
 

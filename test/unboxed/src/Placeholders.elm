@@ -9,9 +9,9 @@ doAdd a b =
     let
         -- placeholder trick doesn't work here!
         -- typeclass value needs to get passed down
-        placeholder = (+)
+        placeholder0 = (+)
     in
-    placeholder a b
+    placeholder0 a b
 
 
 -- sum : List number -> number
@@ -27,9 +27,9 @@ sum list =
 -- should be illegal! Can't generate instructions for `number`, only Int or Float
 numberTotal =
     let
-        placeholder = sum
+        placeholder3 = sum
     in
-    placeholder [1, 2, 3]
+    placeholder3 [1, 2, 3]
 
 
 -- supertype specialization: needs to affect code gen somehow!
@@ -41,17 +41,17 @@ intList =
 -- intTotal : Int
 intTotal =
     let
-        placeholder = sum
+        placeholder4 = sum
     in
-    placeholder [1, 2, 3] 
+    placeholder4 intList
 
 
 -- floatTotal : Float
 floatTotal =
     let
-        placeholder = sum
+        placeholder5 = sum
     in
-    placeholder [1.1, 2.2, 3.3]
+    placeholder5 [1.1, 2.2, 3.3]
 
 
 main : Html ()
