@@ -431,9 +431,49 @@ Questions:
   - Well if the placeholder is a `let` with an annotation then the info is all there. Compare it to the original var.
   - That's part of the conversion from Canonical to Optimized
 
+
+## Type solver for `let` placeholders
+Compiler changes
+- Placeholders automatically inserted into AST during canonicalization
+- Placeholder is a new AST node treated like `let` with an illegal Elm name containing region
+- Constraint inserted exactly the same as `let`
+- No changes to type solver.
+
+Application of `sum : List number -> number` to a `List Int`
+- solve CLet for intTotal
+  - solve CLet (no vars, no header)
+    - solve CAnd (empty)
+    - solve CLet (anonymous type variable flex)
+      - solve CAnd
+              - CAnd
+                - CLet sum_35:5-35:8
+                - CEqual (anonymous type variable flex)
+                - CAnd
+                  - CLet intList_35:9-35:16
+                - CEqual (anonymous type variable flex)
+        - solve CLet sum_35:5-35:8
+          - Same result in both header and locals: `List number`
+          - never actually get `List Int` directly attached to the placeholder name!
+          - => **Need something more than just the nested annotations**
+
+Ideas
+- I think we really do need a unique type var
+- But can't put it on the AST cos it creates cyclic imports in compiler
+- Where to put it?
+  - In the solver state, threaded around the calls? (A new param separate from the Env annotations)
+  - In a Map that we create from `constrain`, then just let `solve` mutate it for us!
+
+- `Map Region Type.Variable`
+
+How to test this out?
+- need to know if having a Variable will actually work
+- fuck it just do it ffs
+
+
 ## Stuff to do
 
-- When creating Canonical AST, insert the placeholders
+- [x] When creating Canonical AST, insert the placeholders
+- [x] Figure out what's going on in current system for placeholders with standard Let
 
 ---
 
