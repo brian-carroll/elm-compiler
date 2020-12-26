@@ -117,9 +117,6 @@ instance Show (E.Category) where
 instance (Show t) => Show (A.Located t) where
   show (A.At _ x) = show x
 
-instance Show (A.Region) where
-  show _ = ""
-
 
 exists :: [Variable] -> Constraint -> Constraint
 exists flexVars constraint =
