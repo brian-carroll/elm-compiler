@@ -105,7 +105,7 @@ data Expr_
   | Unit
   | Tuple Expr Expr (Maybe Expr)
   | Shader Shader.Source Shader.Types
-  | UniqueTypeVar Name Expr
+  | UniqueTypeVar Expr
 
 
 data CaseBranch =
@@ -116,19 +116,16 @@ data FieldUpdate =
   FieldUpdate A.Region Expr
 
 
-instance Show Expr_ where
-  show e_ = showExpr_ "" e_
-
 showExpr :: String -> Expr -> String
-showExpr indent (A.At _ e_) =
-  showExpr_ indent e_
+showExpr indent (A.At region e_) =
+  showExpr_ indent region e_
 
 showExprs :: String -> [Expr] -> String
 showExprs indent exprs =
   List.intercalate ("\n" ++ indent) $ map (showExpr (indent ++ "  ")) exprs
 
-showExpr_ :: String -> Expr_ -> String
-showExpr_ indent e =
+showExpr_ :: String -> A.Region -> Expr_ -> String
+showExpr_ indent region e =
   let
     nextIndent = indent ++ "  "
     nextIndent2 = indent ++ "    "
@@ -179,7 +176,7 @@ showExpr_ indent e =
     Unit -> "- Unit"
     Tuple _expr1 _expr2 _mExpr3 -> "- Tuple (todo)"
     Shader _source _types -> "- Shader (todo)"
-    UniqueTypeVar name expr -> "- UniqueTypeVar " ++ show name
+    UniqueTypeVar expr -> "- UniqueTypeVar " ++ show region
       ++ "\n" ++ nextIndent ++ showExpr nextIndent expr
 
 

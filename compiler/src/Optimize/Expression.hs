@@ -173,7 +173,10 @@ optimize cycle (A.At region expression) =
     Can.Shader src (Shader.Types attributes uniforms _varyings) ->
       pure (Opt.Shader src (Map.keysSet attributes) (Map.keysSet uniforms))
 
-    Can.UniqueTypeVar _ expr ->
+    Can.UniqueTypeVar expr ->
+      -- insert a node into Opt AST with the region
+      -- we can put the lookup Map in the module along with the other Name.register* Maps
+      -- Do the actual lookup during code gen, only if needed (not in JS)
       optimize cycle expr
 
 

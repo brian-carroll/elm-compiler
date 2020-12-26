@@ -20,9 +20,9 @@ Declare
 Def doAdd
   - Binop
     +(Basics.add) : forall [number] => TLambda (TVar number) (TLambda (TVar number) (TVar number))
-    - UniqueType _v1
+    - UniqueTypeVar 9:5-9:6
         - VarLocal a
-    - UniqueType _v3
+    - UniqueTypeVar 9:9-9:10
         - VarLocal b
 
 Declare
@@ -31,17 +31,17 @@ Def sum
     - func
       - VarForeign List.foldl : forall [a,b] => TLambda (TLambda (TVar a) (TLambda (TVar b) (TVar b))) (TLambda (TVar b) (TLambda (TType List List [TVar a]) (TVar b)))
     - args
-      - UniqueType _v1
+      - UniqueTypeVar 14:16-14:21
           - VarTopLevel Original.doAdd
       - Int 0
-      - UniqueType _v3
+      - UniqueTypeVar 14:24-14:28
           - VarLocal list
 
 Declare
 Def floatTotal
   - Call
     - func
-      - UniqueType _v1
+      - UniqueTypeVar 40:5-40:8
         - VarTopLevel Original.sum
     - args
       - List
@@ -53,10 +53,10 @@ Declare
 Def intTotal
   - Call
     - func
-      - UniqueType _v1
+      - UniqueTypeVar 35:5-35:8
         - VarTopLevel Original.sum
     - args
-      - UniqueType _v3
+      - UniqueTypeVar 35:9-35:16
           - VarTopLevel Original.intList
 
 Declare
@@ -65,7 +65,7 @@ TypedDef main
   - type:	TAlias Html Html [(msg,TUnit)] (Holey (TType VirtualDom Node [TVar msg]))
 - Call
       - func
-        - UniqueType _v0
+        - UniqueTypeVar 45:5-45:8
           - VarForeign Html.div : forall [msg] => TLambda (TType List List [TAlias Html Attribute [(msg,TVar msg)] (Filled (TType VirtualDom Attribute [TVar msg]))]) (TLambda (TType List List [TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg]))]) (TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg]))))
       - args
         - List
@@ -73,7 +73,7 @@ TypedDef main
         - List
             - Binop
                 <|(Basics.apL) : forall [a,b] => TLambda (TLambda (TVar a) (TVar b)) (TLambda (TVar a) (TVar b))
-                - UniqueType _v1
+                - UniqueTypeVar 46:11-46:15
                     - VarForeign Html.text : forall [msg] => TLambda (TType String String []) (TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg])))
                 - Binop
                     ++(Basics.append) : forall [appendable] => TLambda (TVar appendable) (TLambda (TVar appendable) (TVar appendable))
@@ -82,11 +82,11 @@ TypedDef main
                         - func
                           - VarForeign String.fromInt : forall [] => TLambda (TType Basics Int []) (TType String String [])
                         - args
-                          - UniqueType _v3
+                          - UniqueTypeVar 46:51-46:59
                               - VarTopLevel Original.intTotal
             - Call
                 - func
-                  - UniqueType _v4
+                  - UniqueTypeVar 47:11-47:13
                     - VarForeign Html.br : forall [msg] => TLambda (TType List List [TAlias Html Attribute [(msg,TVar msg)] (Filled (TType VirtualDom Attribute [TVar msg]))]) (TLambda (TType List List [TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg]))]) (TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg]))))
                 - args
                   - List
@@ -95,7 +95,7 @@ TypedDef main
                       
             - Binop
                 <|(Basics.apL) : forall [a,b] => TLambda (TLambda (TVar a) (TVar b)) (TLambda (TVar a) (TVar b))
-                - UniqueType _v5
+                - UniqueTypeVar 48:11-48:15
                     - VarForeign Html.text : forall [msg] => TLambda (TType String String []) (TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg])))
                 - Binop
                     ++(Basics.append) : forall [appendable] => TLambda (TVar appendable) (TLambda (TVar appendable) (TVar appendable))
@@ -104,14 +104,14 @@ TypedDef main
                         - func
                           - VarForeign String.fromFloat : forall [] => TLambda (TType Basics Float []) (TType String String [])
                         - args
-                          - UniqueType _v7
+                          - UniqueTypeVar 48:55-48:65
                               - VarTopLevel Original.floatTotal
 
 Declare
 Def numberTotal
   - Call
     - func
-      - UniqueType _v1
+      - UniqueTypeVar 24:5-24:8
         - VarTopLevel Original.sum
     - args
       - List
@@ -196,7 +196,7 @@ Def numberTotal
                   - CLet
                     - rigidVars	[]
                     - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                    - header	fromList [(_v1,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                    - header	fromList [(!uniqueTypeVar_9:5-9:6,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                     - headerCon
                       - CLet
                         - rigidVars	[]
@@ -208,11 +208,11 @@ Def numberTotal
                         - bodyCon
                           - CLocal a
                     - bodyCon
-                      - CLocal _v1
+                      - CLocal !uniqueTypeVar_9:5-9:6
                   - CLet
                     - rigidVars	[]
                     - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                    - header	fromList [(_v3,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                    - header	fromList [(!uniqueTypeVar_9:9-9:10,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                     - headerCon
                       - CLet
                         - rigidVars	[]
@@ -224,7 +224,7 @@ Def numberTotal
                         - bodyCon
                           - CLocal b
                     - bodyCon
-                      - CLocal _v3
+                      - CLocal !uniqueTypeVar_9:9-9:10
                   - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
               - bodyCon
                 - CTrue
@@ -254,7 +254,7 @@ Def numberTotal
                         - CLet
                           - rigidVars	[]
                           - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                          - header	fromList [(_v1,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                          - header	fromList [(!uniqueTypeVar_14:16-14:21,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                           - headerCon
                             - CLet
                               - rigidVars	[]
@@ -266,7 +266,7 @@ Def numberTotal
                               - bodyCon
                                 - CLocal doAdd
                           - bodyCon
-                            - CLocal _v1
+                            - CLocal !uniqueTypeVar_14:16-14:21
                         - CLet
                           - rigidVars	[]
                           - flexVars	[Descriptor {_content = FlexSuper Number Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
@@ -278,7 +278,7 @@ Def numberTotal
                         - CLet
                           - rigidVars	[]
                           - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                          - header	fromList [(_v3,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                          - header	fromList [(!uniqueTypeVar_14:24-14:28,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                           - headerCon
                             - CLet
                               - rigidVars	[]
@@ -290,7 +290,7 @@ Def numberTotal
                               - bodyCon
                                 - CLocal list
                           - bodyCon
-                            - CLocal _v3
+                            - CLocal !uniqueTypeVar_14:24-14:28
                       - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                   - bodyCon
                     - CTrue
@@ -317,7 +317,7 @@ Def numberTotal
                           - CLet
                             - rigidVars	[]
                             - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                            - header	fromList [(_v1,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                            - header	fromList [(!uniqueTypeVar_40:5-40:8,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                             - headerCon
                               - CLet
                                 - rigidVars	[]
@@ -329,7 +329,7 @@ Def numberTotal
                                 - bodyCon
                                   - CLocal sum
                             - bodyCon
-                              - CLocal _v1
+                              - CLocal !uniqueTypeVar_40:5-40:8
                           - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                           - CAnd
                             - CLet
@@ -371,7 +371,7 @@ Def numberTotal
                               - CLet
                                 - rigidVars	[]
                                 - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                - header	fromList [(_v1,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                                - header	fromList [(!uniqueTypeVar_35:5-35:8,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                                 - headerCon
                                   - CLet
                                     - rigidVars	[]
@@ -383,13 +383,13 @@ Def numberTotal
                                     - bodyCon
                                       - CLocal sum
                                 - bodyCon
-                                  - CLocal _v1
+                                  - CLocal !uniqueTypeVar_35:5-35:8
                               - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                               - CAnd
                                 - CLet
                                   - rigidVars	[]
                                   - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                  - header	fromList [(_v3,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                                  - header	fromList [(!uniqueTypeVar_35:9-35:16,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                                   - headerCon
                                     - CLet
                                       - rigidVars	[]
@@ -401,7 +401,7 @@ Def numberTotal
                                       - bodyCon
                                         - CLocal intList
                                   - bodyCon
-                                    - CLocal _v3
+                                    - CLocal !uniqueTypeVar_35:9-35:16
                               - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                           - bodyCon
                             - CTrue
@@ -428,7 +428,7 @@ Def numberTotal
                                   - CLet
                                     - rigidVars	[]
                                     - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                    - header	fromList [(_v0,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                                    - header	fromList [(!uniqueTypeVar_45:5-45:8,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                                     - headerCon
                                       - CLet
                                         - rigidVars	[]
@@ -440,7 +440,7 @@ Def numberTotal
                                         - bodyCon
                                           - CForeign divforall [msg] => TLambda (TType List List [TAlias Html Attribute [(msg,TVar msg)] (Filled (TType VirtualDom Attribute [TVar msg]))]) (TLambda (TType List List [TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg]))]) (TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg]))))
                                     - bodyCon
-                                      - CLocal _v0
+                                      - CLocal !uniqueTypeVar_45:5-45:8
                                   - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                                   - CAnd
                                     - CLet
@@ -471,7 +471,7 @@ Def numberTotal
                                                   - CLet
                                                     - rigidVars	[]
                                                     - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                                    - header	fromList [(_v1,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                                                    - header	fromList [(!uniqueTypeVar_46:11-46:15,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                                                     - headerCon
                                                       - CLet
                                                         - rigidVars	[]
@@ -483,7 +483,7 @@ Def numberTotal
                                                         - bodyCon
                                                           - CForeign textforall [msg] => TLambda (TType String String []) (TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg])))
                                                     - bodyCon
-                                                      - CLocal _v1
+                                                      - CLocal !uniqueTypeVar_46:11-46:15
                                                   - CLet
                                                     - rigidVars	[]
                                                     - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing},Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing},Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
@@ -504,7 +504,7 @@ Def numberTotal
                                                                 - CLet
                                                                   - rigidVars	[]
                                                                   - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                                                  - header	fromList [(_v3,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                                                                  - header	fromList [(!uniqueTypeVar_46:51-46:59,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                                                                   - headerCon
                                                                     - CLet
                                                                       - rigidVars	[]
@@ -516,7 +516,7 @@ Def numberTotal
                                                                       - bodyCon
                                                                         - CLocal intTotal
                                                                   - bodyCon
-                                                                    - CLocal _v3
+                                                                    - CLocal !uniqueTypeVar_46:51-46:59
                                                               - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                                                           - bodyCon
                                                             - CTrue
@@ -535,7 +535,7 @@ Def numberTotal
                                                   - CLet
                                                     - rigidVars	[]
                                                     - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                                    - header	fromList [(_v4,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                                                    - header	fromList [(!uniqueTypeVar_47:11-47:13,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                                                     - headerCon
                                                       - CLet
                                                         - rigidVars	[]
@@ -547,7 +547,7 @@ Def numberTotal
                                                         - bodyCon
                                                           - CForeign brforall [msg] => TLambda (TType List List [TAlias Html Attribute [(msg,TVar msg)] (Filled (TType VirtualDom Attribute [TVar msg]))]) (TLambda (TType List List [TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg]))]) (TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg]))))
                                                     - bodyCon
-                                                      - CLocal _v4
+                                                      - CLocal !uniqueTypeVar_47:11-47:13
                                                   - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                                                   - CAnd
                                                     - CLet
@@ -585,7 +585,7 @@ Def numberTotal
                                                   - CLet
                                                     - rigidVars	[]
                                                     - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                                    - header	fromList [(_v5,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                                                    - header	fromList [(!uniqueTypeVar_48:11-48:15,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                                                     - headerCon
                                                       - CLet
                                                         - rigidVars	[]
@@ -597,7 +597,7 @@ Def numberTotal
                                                         - bodyCon
                                                           - CForeign textforall [msg] => TLambda (TType String String []) (TAlias Html Html [(msg,TVar msg)] (Filled (TType VirtualDom Node [TVar msg])))
                                                     - bodyCon
-                                                      - CLocal _v5
+                                                      - CLocal !uniqueTypeVar_48:11-48:15
                                                   - CLet
                                                     - rigidVars	[]
                                                     - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing},Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing},Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
@@ -618,7 +618,7 @@ Def numberTotal
                                                                 - CLet
                                                                   - rigidVars	[]
                                                                   - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                                                  - header	fromList [(_v7,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                                                                  - header	fromList [(!uniqueTypeVar_48:55-48:65,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                                                                   - headerCon
                                                                     - CLet
                                                                       - rigidVars	[]
@@ -630,7 +630,7 @@ Def numberTotal
                                                                       - bodyCon
                                                                         - CLocal floatTotal
                                                                   - bodyCon
-                                                                    - CLocal _v7
+                                                                    - CLocal !uniqueTypeVar_48:55-48:65
                                                               - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                                                           - bodyCon
                                                             - CTrue
@@ -669,7 +669,7 @@ Def numberTotal
                                       - CLet
                                         - rigidVars	[]
                                         - flexVars	[Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                        - header	fromList [(_v1,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
+                                        - header	fromList [(!uniqueTypeVar_24:5-24:8,VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing})]
                                         - headerCon
                                           - CLet
                                             - rigidVars	[]
@@ -681,7 +681,7 @@ Def numberTotal
                                             - bodyCon
                                               - CLocal sum
                                         - bodyCon
-                                          - CLocal _v1
+                                          - CLocal !uniqueTypeVar_24:5-24:8
                                       - CEqual VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                                       - CAnd
                                         - CLet
@@ -704,15 +704,7 @@ Def numberTotal
                                                   - flexVars	[Descriptor {_content = FlexSuper Number Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
                                                   - header	fromList []
                                                   - headerCon
-                                                    - CEqual VarN Descriptor {_content = FlexSuper Number Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
-                                                  - bodyCon
-                                                    - CTrue
-                                                - CLet
-                                                  - rigidVars	[]
-                                                  - flexVars	[Descriptor {_content = FlexSuper Number Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
-                                                  - header	fromList []
-                                                  - headerCon
-                 
+                                                    - CEqual VarN Descriptor {_content = Flex
 actuallyUnify FlexSuper
 Descriptor {_content = FlexSuper Number Nothing, _rank = 1, _mark = Mark 2, _copy = Nothing}
 Descriptor {_content = FlexSuper Number Nothing, _rank = 1, _mark = Mark 2, _copy = Nothing}
@@ -1946,7 +1938,15 @@ intTotal	forall [] => TType Basics Int []
 main	forall [] => TAlias Html Html [(msg,TUnit)] (Filled (TType VirtualDom Node [TUnit]))
 numberTotal	forall [number] => TVar number
 sum	forall [number] => TLambda (TType List List [TVar number]) (TVar number)
-                                   - CEqual VarN Descriptor {_content = FlexSuper Number Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
+Super Number Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
+                                                  - bodyCon
+                                                    - CTrue
+                                                - CLet
+                                                  - rigidVars	[]
+                                                  - flexVars	[Descriptor {_content = FlexSuper Number Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]
+                                                  - header	fromList []
+                                                  - headerCon
+                                                    - CEqual VarN Descriptor {_content = FlexSuper Number Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}
                                                   - bodyCon
                                                     - CTrue
                                               - CEqual AppN List List [VarN Descriptor {_content = FlexVar Nothing, _rank = 0, _mark = Mark 2, _copy = Nothing}]

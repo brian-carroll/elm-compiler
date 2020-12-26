@@ -60,6 +60,10 @@ data Position =
   deriving (Eq)
 
 
+instance Show Position where
+  show (Position line col) = show line ++ ":" ++ show col
+
+
 at :: Position -> Position -> a -> Located a
 at start end a =
   At (Region start end) a
@@ -71,6 +75,10 @@ at start end a =
 
 data Region = Region Position Position
   deriving (Eq)
+
+instance Show Region where
+  show (Region start end) =
+    show start ++ "-" ++ show end
 
 
 toRegion :: Located a -> Region

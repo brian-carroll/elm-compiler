@@ -596,20 +596,6 @@ getDefName def =
 
 
 
--- INSERT UNIQUE TYPE NODE
-
-
-insertUniqueType :: A.Region -> Can.Expr_ -> Result FreeLocals w Can.Expr_
-insertUniqueType region expr =
-  Result.Result $ \freeLocals warnings _ good ->
-    let
-      uniqueName = Name.fromVarIndex $ Map.size freeLocals
-    in
-    good (Map.insert uniqueName oneDirectUse freeLocals) warnings $
-      Can.UniqueTypeVar uniqueName (A.At region expr)
-
-
-
 -- LOG VARIABLE USES
 
 
@@ -704,20 +690,18 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
     Just var ->
       case var of
         Env.Local _ ->
-          insertUniqueType region =<<
-            logVar name (Can.VarLocal name)
+          logVar name (Can.UniqueTypeVar $ A.At region $ Can.VarLocal name)
 
         Env.TopLevel _ ->
-          insertUniqueType region =<<
-            logVar name (Can.VarTopLevel localHome name)
+          logVar name (Can.UniqueTypeVar $ A.At region $ Can.VarTopLevel localHome name)
 
         Env.Foreign home annotation ->
-          if home == ModuleName.debug then
-            Result.ok $
+          Result.ok $
+            if home == ModuleName.debug then
               Can.VarDebug localHome name annotation
-          else
-            insertUniqueType region $
-              Can.VarForeign home name annotation
+            else
+              Can.UniqueTypeVar $ A.At region $
+                Can.VarForeign home name annotation
 
         Env.Foreigns h hs ->
           Result.throw (Error.AmbiguousVar region Nothing name h hs)
