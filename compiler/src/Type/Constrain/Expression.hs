@@ -154,7 +154,7 @@ constrain rtv (A.At region expression) expected =
     Can.UniqueTypeVar expr ->
       let
         name =
-          Name.fromChars $ "!uniqueTypeVar_" ++ show region
+          Name.fromRegion region
 
         equivalent =
           A.At region $ Can.Let

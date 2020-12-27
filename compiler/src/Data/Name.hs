@@ -23,6 +23,7 @@ module Data.Name
   , fromManyNames
   , fromTypeVariable
   , fromTypeVariableScheme
+  , fromRegion
   , sepBy
   --
   , int, float, bool, char, string
@@ -57,6 +58,7 @@ import GHC.Prim
 import GHC.Word (Word8(W8#))
 
 import qualified Elm.String as ES
+import qualified Reporting.Annotation as A
 
 
 
@@ -285,6 +287,20 @@ fromTypeVariableScheme scheme =
           freeze mba
   )
 
+
+
+-- FROM REGION
+
+
+fromRegion :: A.Region -> Name
+fromRegion (A.Region (A.Position startLine startCol) (A.Position endLine endCol)) =
+  let
+    colon = 0x3A
+    hyphen = 0x2D
+    start = sepBy colon startLine startCol
+    end = sepBy colon endLine endCol
+  in
+  sepBy hyphen start end
 
 
 -- FROM MANY NAMES
