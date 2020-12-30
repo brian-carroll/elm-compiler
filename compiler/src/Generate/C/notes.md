@@ -456,24 +456,6 @@ Application of `sum : List number -> number` to a `List Int`
           - never actually get `List Int` directly attached to the placeholder name!
           - => **Need something more than just the nested annotations**
 
-Ideas
-- I think we really do need a unique type var
-- But can't put it on the AST cos it creates cyclic imports in compiler
-- Where to put it?
-  - In the solver state, threaded around the calls? (A new param separate from the Env annotations)
-  - In a Map that we create from `constrain`, then just let `solve` mutate it for us!
-
-- `Map Region Type.Variable`
-
-How to test this out?
-- need to know if having a Variable will actually work
-- fuck it just do it ffs
-
-
-## Stuff to do
-
-- [x] When creating Canonical AST, insert the placeholders
-- [x] Figure out what's going on in current system for placeholders with standard Let
 
 ---
 

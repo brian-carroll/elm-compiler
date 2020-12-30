@@ -18,6 +18,7 @@ module Data.Name
   , isComparableType
   , isAppendableType
   , isCompappendType
+  , isRegion
   , fromVarIndex
   , fromWords
   , fromManyNames
@@ -41,6 +42,7 @@ import Prelude hiding (length, maybe, negate)
 import Control.Exception (assert)
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Builder.Internal as B
+import qualified Data.Char as Char
 import qualified Data.Coerce as Coerce
 import qualified Data.List as List
 import qualified Data.String as Chars
@@ -175,6 +177,9 @@ isAppendableType = Utf8.startsWith prefix_appendable
 isCompappendType :: Name -> Bool
 isCompappendType = Utf8.startsWith prefix_compappend
 
+isRegion :: Name -> Bool
+isRegion = Utf8.startsWithChar Char.isDigit
+
 {-# NOINLINE prefix_kernel #-}
 prefix_kernel :: Name
 prefix_kernel = fromChars "Elm.Kernel."
@@ -293,14 +298,9 @@ fromTypeVariableScheme scheme =
 
 
 fromRegion :: A.Region -> Name
-fromRegion (A.Region (A.Position startLine startCol) (A.Position endLine endCol)) =
-  let
-    colon = 0x3A
-    hyphen = 0x2D
-    start = sepBy colon startLine startCol
-    end = sepBy colon endLine endCol
-  in
-  sepBy hyphen start end
+fromRegion region =
+  fromChars $ show region
+
 
 
 -- FROM MANY NAMES

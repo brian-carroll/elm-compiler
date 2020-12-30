@@ -38,8 +38,10 @@ run constraint =
       --   "\n\n# Constraints going into Type.Solve.run\n\n" ++ show constraint
       --   ++ "\n\n# Solving...\n\n"
 
-      (State env _ errors) <-
+      (State env _ errors utv) <-
         solve "" Map.empty outermostRank pools emptyState constraint
+      
+      putStrLn $ "\n\nrun UTV\n\n" ++ show utv
 
       case errors of
         [] ->
@@ -53,7 +55,7 @@ run constraint =
 {-# NOINLINE emptyState #-}
 emptyState :: State
 emptyState =
-  State Map.empty (nextMark noMark) []
+  State Map.empty (nextMark noMark) [] Map.empty
 
 
 
@@ -73,11 +75,13 @@ data State =
     { _env :: Env
     , _mark :: Mark
     , _errors :: [Error.Error]
+    , _utv :: Map.Map Name.Name Variable
     }
 
 showState :: String -> State -> String
-showState indent (State env _ _) =
-    showMap indent env
+showState indent (State env _ _ utv) =
+    "env\n" ++ indent ++ showMap indent env ++
+    "utv\n" ++ indent ++ showMap indent utv 
 
 showListLines :: (Show v) => String -> [v] -> String
 showListLines indent list =
@@ -120,7 +124,7 @@ solve indent env rank pools state constraint =
   do
   putStrLn $ "\n" ++ indent ++ "- solve " ++ (showConstraintShort indent constraint)
   let nextIndent = indent ++ "  "
-  nextState@(State nextEnv _ _) <-
+  nextState@(State nextEnv _ _ nextUTV) <-
       case constraint of
         CTrue ->
           return state
@@ -202,10 +206,14 @@ solve indent env rank pools state constraint =
         CLet [] [] header headerCon subCon ->
           do  state1 <- solve nextIndent env rank pools state headerCon
               locals <- traverse (A.traverse (typeToVariable rank pools)) header
-              let newEnv = Map.union env (Map.map A.toValue locals)
+              let localValues = Map.map A.toValue locals
+              let newEnv = Map.union env localValues
               -- newEnv is the inner function scope populated with a local var for each arg
               state2 <- solve nextIndent newEnv rank pools state1 subCon
               -- state2 is the solver state after completing the body subtree
+
+              let uniqueTypeVars = Map.filterWithKey (\k _ -> Name.isRegion k) localValues
+              let state3 = state2 { _utv = Map.union (_utv state2) uniqueTypeVars }
 
               putStrLn $ "\n"
                 ++ "\n" ++ indent ++ " header\t" ++ showMap indent header
@@ -215,7 +223,7 @@ solve indent env rank pools state constraint =
                 ++ "\n"
 
               -- error check for infinite types in the function header, otherwise passthrough
-              foldM occurs state2 $ Map.toList locals
+              foldM occurs state3 $ Map.toList locals
 
         CLet rigids flexs header headerCon subCon ->
           do
@@ -236,7 +244,7 @@ solve indent env rank pools state constraint =
 
               -- run solver in next pool
               locals <- traverse (A.traverse (typeToVariable nextRank nextPools)) header
-              (State savedEnv mark errors) <-
+              (State savedEnv mark errors utv) <-
                 solve nextIndent env nextRank nextPools state headerCon
 
               let youngMark = mark
@@ -250,8 +258,10 @@ solve indent env rank pools state constraint =
               -- check that things went well
               mapM_ isGeneric rigids
 
-              let newEnv = Map.union env (Map.map A.toValue locals)
-              let tempState = State savedEnv finalMark errors
+              let localValues = Map.map A.toValue locals
+              let newEnv = Map.union env localValues
+              let uniqueTypeVars = Map.filterWithKey (\k _ -> Name.isRegion k) localValues
+              let tempState = State savedEnv finalMark errors uniqueTypeVars
               newState <- solve nextIndent newEnv rank nextPools tempState subCon
               -- solving the subCon is what eliminates the placeholder from the env/state,
               -- having just been added by union above
@@ -266,7 +276,7 @@ solve indent env rank pools state constraint =
                 ++ "\n"
 
               foldM occurs newState (Map.toList locals)
-  putStrLn $ indent ++ "nextEnv = " ++ showMap indent nextEnv
+  putStrLn $ indent ++ "nextUTV = " ++ showMap indent nextUTV
   return nextState
 
 -- Check that a variable has rank == noRank, meaning that it can be generalized.
@@ -319,8 +329,8 @@ patternExpectationToVariable rank pools expectation =
 
 
 addError :: State -> Error.Error -> State
-addError (State savedEnv rank errors) err =
-  State savedEnv rank (err:errors)
+addError (State savedEnv rank errors utv) err =
+  State savedEnv rank (err:errors) utv
 
 
 
