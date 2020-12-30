@@ -431,31 +431,98 @@ Questions:
   - Well if the placeholder is a `let` with an annotation then the info is all there. Compare it to the original var.
   - That's part of the conversion from Canonical to Optimized
 
-
 ## Type solver for `let` placeholders
+
 Compiler changes
+
 - Placeholders automatically inserted into AST during canonicalization
 - Placeholder is a new AST node treated like `let` with an illegal Elm name containing region
 - Constraint inserted exactly the same as `let`
 - No changes to type solver.
 
 Application of `sum : List number -> number` to a `List Int`
+
 - solve CLet for intTotal
   - solve CLet (no vars, no header)
     - solve CAnd (empty)
     - solve CLet (anonymous type variable flex)
-      - solve CAnd
-              - CAnd
-                - CLet sum_35:5-35:8
-                - CEqual (anonymous type variable flex)
-                - CAnd
-                  - CLet intList_35:9-35:16
-                - CEqual (anonymous type variable flex)
+      - solve CAnd - CAnd - CLet sum_35:5-35:8 - CEqual (anonymous type variable flex) - CAnd - CLet intList_35:9-35:16 - CEqual (anonymous type variable flex)
         - solve CLet sum_35:5-35:8
           - Same result in both header and locals: `List number`
-          - never actually get `List Int` directly attached to the placeholder name!
-          - => **Need something more than just the nested annotations**
 
+**Blocker!**
+
+- never actually get `List Int` directly attached to the placeholder name!
+- => Need something more than just the placeholder `let`s!
+- Maybe the solver semantics are different to what the Haskell paper was saying
+  - Maybe it thinks it's OK to call a `number` function with `Int` stuff without solving
+  - It probably does cos until now, why not?
+- So we would need a new constraint somehow
+  - But what?
+
+## Back to square 1
+
+How do I do this for the easy case? And what is the easy case?
+
+Easiest is a function call that just takes `Int` and has no `number` anywhere
+But if we're just copying the value, we don't even care whether it's a pointer or a number!
+This case is so simple it's actually trivial.
+
+Next simplest is addition on obviously-`Int` arguments
+
+```elm
+thing : Int
+thing = 1 + 2 -- I want to generate an _integer_ add
+```
+
+So the simplest case where we care at all still involves `number`!
+
+Putting a placeholder on `+` fails because we don't get the specialized annotation
+What if we put placeholders on all `Call` nodes instead? func and args
+
+After solving, during optimization:
+
+- iterate over func parameter types and corresponding applied arg types
+  - If no SuperTypes anywhere, remove the placeholder from Opt AST
+  - If param contains `number` and arg contains `Int`
+    - keep the placeholder wrapper in the optimized AST, noting the supertype assignment
+    - we also need this to work for `List number` and more complex nested things
+    - SuperType value is known at compile time
+      - if it's a Basics op, only generate the code for that concrete type
+      - if it's a user function, generate a supertype assignment, write it to the Closure and pass it down
+  - If param contains `Int` and arg contains `number` and they are function types
+    - keep the placeholder wrapper around the arg in the Optimized AST
+    - Later, generated code will copy the Closure and write to its supertype flags (unless already set how we want them)
+    - Also need to write to unboxed flags for GC purposes
+  - If param contains `number` and arg contains `number`
+    - pretty normal situation
+    - This can only happen inside the scope of a function whose signature contains `number`
+    - Generate runtime code for passing along supertype from parent scope & writing unboxed flags.
+    - If it's a Basics op, do runtime detection of supertype value
+  - If param contains `Int` or `Float` and arg contains `number`... but it's a value, not a function!
+    - Keep the wrapper around the arg
+    - This can only happen inside the scope of a function whose signature contains `number`
+    - Insert a check on the runtime representation of `number` to see if it matches the arg type, and throw a runtime exception if not...
+
+Normal function calls:
+
+| param | arg              |     | optimize | runtime val | write callee | write arg | assert match? |
+| ----- | ---------------- | --- | -------- | ----------- | ------------ | --------- | ------------- |
+| type  | type (value)     |     | remove   |             |              |           |               |
+| type  | type (function)  |     | remove   |             |              |           |               |
+| type  | super (value)    |     | keep     | from parent |              |           | y             |
+| type  | super (function) |     | keep     | from parent |              | y         |               |
+| super | type (value)     |     | keep     | constant    | y            |           |               |
+| super | type (function)  |     | keep     | constant    | y            |           |               |
+| super | super (value)    |     | keep     | from parent | y            |           |               |
+| super | super (function) |     | keep     | from parent | y            | y         |               |
+
+Basics op calls:
+
+| arg supertype? |     | runtime value | code gen                                      |
+| -------------- | --- | ------------- | --------------------------------------------- |
+| n              |     | -             | code for one type                             |
+| y              |     | parent        | code for each type, throw if no concrete type |
 
 ---
 
