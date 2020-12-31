@@ -7,7 +7,6 @@ module Type.Solve
 
 
 import Control.Monad
-import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict ((!))
 import qualified Data.Name as Name
@@ -37,11 +36,12 @@ run constraint =
       (State env _ errors placeholders) <-
         solve "" Map.empty outermostRank pools emptyState constraint
 
-      putStrLn $ show placeholders
+      annotations <- traverse Type.toAnnotation (Map.union env placeholders)
+      putStrLn $ "\n\nANNOTATIONS\n\n" ++ show annotations
 
       case errors of
         [] ->
-          Right <$> traverse Type.toAnnotation (Map.union env placeholders)
+          return $ Right annotations
 
         e:es ->
           return $ Left (NE.List e es)

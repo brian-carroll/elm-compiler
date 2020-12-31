@@ -310,8 +310,10 @@ toBinopStep makeBinop rootOp@(Env.Binop _ _ _ _ rootAssociativity rootPrecedence
 
 toBinop :: Env.Binop -> Can.Expr -> Can.Expr -> Can.Expr
 toBinop (Env.Binop op home name annotation _ _) left right =
-  A.merge left right (Can.Binop op home name annotation left right)
-
+  A.merge left right
+    (Can.Binop op home name annotation
+      (annotateSuperTypeValue left)
+      (annotateSuperTypeValue right))
 
 
 -- CANONICALIZE LET
