@@ -22,11 +22,13 @@ module AST.Optimized
 
 
 import Control.Monad (liftM, liftM2, liftM3, liftM4)
-import Data.Binary (Binary, get, put, getWord8, putWord8)
+import Data.Binary (Binary, Get, get, put, getWord8, putWord8)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import Data.Name (Name)
 import qualified Data.Set as Set
+import Data.Bits ((.|.), (.&.), shiftL, shiftR)
+import Data.Word (Word8, Word32)
 
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Shader as Shader
@@ -38,6 +40,7 @@ import qualified Elm.Package as Pkg
 import qualified Elm.String as ES
 import qualified Optimize.DecisionTree as DT
 import qualified Reporting.Annotation as A
+import qualified Type.Type as Type
 
 
 
@@ -72,10 +75,35 @@ data Expr
   | Unit
   | Tuple Expr Expr (Maybe Expr)
   | Shader Shader.Source (Set.Set Name) (Set.Set Name)
+  | SuperTypeOp [(Type.SuperType, SuperTypeOp)] Expr
+  | UnboxFlags BitFlags Expr
 
 
 data Global = Global ModuleName.Canonical Name
 
+
+
+-- UNBOXING TYPE INFO
+
+
+data BitFlags
+  = BitFlags [Bool]
+
+
+data SuperTypeOp
+  = SuperTypeAssign SuperTypeValue
+  | SuperTypeAssert SuperTypeValue
+  | SuperTypeInherit
+
+
+data SuperTypeValue
+  = SuperInt
+  | SuperFloat
+  | SuperChar
+  | SuperString
+  | SuperList SuperTypeValue
+  | SuperTuple2 SuperTypeValue
+  | SuperTuple3 SuperTypeValue
 
 
 -- DEFINITIONS
@@ -278,6 +306,8 @@ instance Binary Expr where
       Unit             -> putWord8 24
       Tuple a b c      -> putWord8 25 >> put a >> put b >> put c
       Shader a b c     -> putWord8 26 >> put a >> put b >> put c
+      SuperTypeOp a b  -> putWord8 27 >> put a >> put b
+      UnboxFlags a b   -> putWord8 28 >> put a >> put b
 
   get =
     do  word <- getWord8
@@ -309,7 +339,79 @@ instance Binary Expr where
           24 -> pure   Unit
           25 -> liftM3 Tuple get get get
           26 -> liftM3 Shader get get get
+          27 -> liftM2 SuperTypeOp get get
+          28 -> liftM2 UnboxFlags get get
           _  -> fail "problem getting Opt.Expr binary"
+
+
+instance Binary BitFlags where
+  put (BitFlags bools) =
+    let
+      encode :: Bool -> Int -> Int
+      encode bool word =
+        (if bool then 1 else 0) .|. (word `shiftL` 1)
+
+      flags :: Word32
+      flags = fromIntegral $ (foldr encode 0 bools)
+
+      len :: Word8
+      len = fromIntegral $ length bools
+    in
+    putWord8 len >> put flags
+
+  get =
+    let
+      decode :: [Bool] -> Int -> Int -> [Bool]
+      decode acc mask value =
+        if mask == 0
+        then acc
+        else decode (((value .&. mask) > 0) : acc)
+              (mask `shiftR` 1) value
+    in
+    do  len <- getWord8
+        flags <- get :: Get Word32
+        let mask = 1 `shiftL` (fromIntegral len)
+        return $ BitFlags $ decode [] mask (fromIntegral flags)
+
+
+instance Binary SuperTypeOp where
+  put op =
+    case op of
+      SuperTypeAssign a  -> putWord8 0 >> put a
+      SuperTypeAssert a  -> putWord8 1 >> put a
+      SuperTypeInherit   -> putWord8 2
+
+  get =
+    do  word <- getWord8
+        case word of
+          0 -> liftM SuperTypeAssign get
+          1 -> liftM SuperTypeAssert get
+          2 -> pure SuperTypeInherit
+          _ -> fail "problem getting Opt.SuperTypeOp binary"
+
+
+instance Binary SuperTypeValue where
+  put val =
+    case val of
+      SuperInt       -> putWord8 0
+      SuperFloat     -> putWord8 1
+      SuperChar      -> putWord8 2
+      SuperString    -> putWord8 3
+      SuperList a    -> putWord8 4 >> put a
+      SuperTuple2 a  -> putWord8 5 >> put a
+      SuperTuple3 a  -> putWord8 6 >> put a
+
+  get =
+    do  word <- getWord8
+        case word of
+          0 -> pure SuperInt
+          1 -> pure SuperFloat
+          2 -> pure SuperChar
+          3 -> pure SuperString
+          4 -> liftM SuperList get
+          5 -> liftM SuperTuple2 get
+          6 -> liftM SuperTuple3 get
+          _ -> fail "problem getting Opt.SuperTypeValue binary"
 
 
 instance Binary Def where

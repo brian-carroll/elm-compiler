@@ -32,6 +32,7 @@ import qualified Data.List as List
 
 import Control.Monad.State.Strict (StateT, liftIO)
 import qualified Control.Monad.State.Strict as State
+import Data.Binary (Binary, get, put, getWord8, putWord8)
 import Data.Foldable (foldrM)
 import qualified Data.Map.Strict as Map
 import qualified Data.Name as Name
@@ -780,3 +781,21 @@ addName index givenName var makeContent takenNames =
             if same
               then return takenNames
               else addName (index + 1) givenName var makeContent takenNames
+
+
+instance Binary SuperType where
+  put st =
+    case st of
+      Number -> putWord8 0
+      Comparable -> putWord8 1
+      Appendable -> putWord8 2
+      CompAppend -> putWord8 3
+
+  get =
+    do  word <- getWord8
+        case word of
+          0 -> pure Number
+          1 -> pure Comparable
+          2 -> pure Appendable
+          3 -> pure CompAppend
+          _  -> fail "problem getting Type.SuperType binary"
