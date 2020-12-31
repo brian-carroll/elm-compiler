@@ -195,7 +195,7 @@ addDecls home annotations decls graph =
       let defs = d:ds in
       case findMain defs of
         Nothing ->
-          addDecls home annotations subDecls (addRecDefs home defs graph)
+          addDecls home annotations subDecls (addRecDefs annotations home defs graph)
 
         Just region ->
           Result.throw $ E.BadCycle region (defToName d) (map defToName ds)
@@ -245,13 +245,13 @@ addDef home annotations def graph =
 addDefHelp :: A.Region -> Annotations -> ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.LocalGraph -> Result i w Opt.LocalGraph
 addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes fieldCounts) =
   if name /= Name._main then
-    Result.ok (addDefNode home name args body Set.empty graph)
+    Result.ok (addDefNode annotations home name args body Set.empty graph)
   else
     let
       (Can.Forall _ tipe) = annotations ! name
 
       addMain (deps, fields, main) =
-        addDefNode home name args body deps $
+        addDefNode annotations home name args body deps $
           Opt.LocalGraph (Just main) nodes (Map.unionWith (+) fields fieldCounts)
     in
     case Type.deepDealias tipe of
@@ -272,18 +272,18 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
           Result.throw (E.BadType region tipe)
 
 
-addDefNode :: ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Set.Set Opt.Global -> Opt.LocalGraph -> Opt.LocalGraph
-addDefNode home name args body mainDeps graph =
+addDefNode :: Expr.Annotations -> ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Set.Set Opt.Global -> Opt.LocalGraph -> Opt.LocalGraph
+addDefNode annotations home name args body mainDeps graph =
   let
     (deps, fields, def) =
       Names.run $
         case args of
           [] ->
-            Expr.optimize Set.empty body
+            Expr.optimize annotations Set.empty body
 
           _ ->
             do  (argNames, destructors) <- Expr.destructArgs args
-                obody <- Expr.optimize Set.empty body
+                obody <- Expr.optimize annotations Set.empty body
                 pure $ Opt.Function argNames $
                   foldr Opt.Destruct obody destructors
   in
@@ -301,8 +301,8 @@ data State =
     }
 
 
-addRecDefs :: ModuleName.Canonical -> [Can.Def] -> Opt.LocalGraph -> Opt.LocalGraph
-addRecDefs home defs (Opt.LocalGraph main nodes fieldCounts) =
+addRecDefs :: Expr.Annotations -> ModuleName.Canonical -> [Can.Def] -> Opt.LocalGraph -> Opt.LocalGraph
+addRecDefs annotations home defs (Opt.LocalGraph main nodes fieldCounts) =
   let
     names = reverse (map toName defs)
     cycleName = Opt.Global home (Name.fromManyNames names)
@@ -311,7 +311,7 @@ addRecDefs home defs (Opt.LocalGraph main nodes fieldCounts) =
 
     (deps, fields, State values funcs) =
       Names.run $
-        foldM (addRecDef cycle) (State [] []) defs
+        foldM (addRecDef annotations cycle) (State [] []) defs
   in
   Opt.LocalGraph
     main
@@ -347,23 +347,23 @@ addLink home link def links =
 -- ADD RECURSIVE DEFS
 
 
-addRecDef :: Set.Set Name.Name -> State -> Can.Def -> Names.Tracker State
-addRecDef cycle state def =
+addRecDef :: Expr.Annotations -> Set.Set Name.Name -> State -> Can.Def -> Names.Tracker State
+addRecDef annotations cycle state def =
   case def of
     Can.Def (A.At _ name) args body ->
-      addRecDefHelp cycle state name args body
+      addRecDefHelp annotations cycle state name args body
 
     Can.TypedDef (A.At _ name) _ args body _ ->
-      addRecDefHelp cycle state name (map fst args) body
+      addRecDefHelp annotations cycle state name (map fst args) body
 
 
-addRecDefHelp :: Set.Set Name.Name -> State -> Name.Name -> [Can.Pattern] -> Can.Expr -> Names.Tracker State
-addRecDefHelp cycle (State values funcs) name args body =
+addRecDefHelp :: Expr.Annotations -> Set.Set Name.Name -> State -> Name.Name -> [Can.Pattern] -> Can.Expr -> Names.Tracker State
+addRecDefHelp annotations cycle (State values funcs) name args body =
   case args of
     [] ->
-      do  obody <- Expr.optimize cycle body
+      do  obody <- Expr.optimize annotations cycle body
           pure $ State ((name, obody) : values) funcs
 
     _:_ ->
-      do  odef <- Expr.optimizePotentialTailCall cycle name args body
+      do  odef <- Expr.optimizePotentialTailCall annotations cycle name args body
           pure $ State values (odef : funcs)

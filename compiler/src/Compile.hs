@@ -6,7 +6,6 @@ module Compile
   where
 
 
-import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 

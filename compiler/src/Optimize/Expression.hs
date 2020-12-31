@@ -4,6 +4,7 @@ module Optimize.Expression
   ( optimize
   , destructArgs
   , optimizePotentialTailCall
+  , Annotations
   )
   where
 
@@ -32,8 +33,12 @@ type Cycle =
   Set.Set Name.Name
 
 
-optimize :: Cycle -> Can.Expr -> Names.Tracker Opt.Expr
-optimize cycle (A.At region expression) =
+type Annotations =
+  Map.Map Name.Name Can.Annotation
+
+
+optimize :: Annotations -> Cycle -> Can.Expr -> Names.Tracker Opt.Expr
+optimize annotations cycle (A.At region expression) =
   case expression of
     Can.VarLocal name ->
       pure (Opt.VarLocal name)
@@ -73,58 +78,58 @@ optimize cycle (A.At region expression) =
 
     Can.List entries ->
       Names.registerKernel Name.list Opt.List
-        <*> traverse (optimize cycle) entries
+        <*> traverse (optimize annotations cycle) entries
 
     Can.Negate expr ->
       do  func <- Names.registerGlobal ModuleName.basics Name.negate
-          arg <- optimize cycle expr
+          arg <- optimize annotations cycle expr
           pure $ Opt.Call func [arg]
 
     Can.Binop _ home name _ left right ->
       do  optFunc <- Names.registerGlobal home name
-          optLeft <- optimize cycle left
-          optRight <- optimize cycle right
+          optLeft <- optimize annotations cycle left
+          optRight <- optimize annotations cycle right
           return (Opt.Call optFunc [optLeft, optRight])
 
     Can.Lambda args body ->
       do  (argNames, destructors) <- destructArgs args
-          obody <- optimize cycle body
+          obody <- optimize annotations cycle body
           pure $ Opt.Function argNames (foldr Opt.Destruct obody destructors)
 
     Can.Call func args ->
       Opt.Call
-        <$> optimize cycle func
-        <*> traverse (optimize cycle) args
+        <$> optimize annotations cycle func
+        <*> traverse (optimize annotations cycle) args
 
     Can.If branches finally ->
       let
         optimizeBranch (condition, branch) =
           (,)
-            <$> optimize cycle condition
-            <*> optimize cycle branch
+            <$> optimize annotations cycle condition
+            <*> optimize annotations cycle branch
       in
       Opt.If
         <$> traverse optimizeBranch branches
-        <*> optimize cycle finally
+        <*> optimize annotations cycle finally
 
     Can.Let def body ->
-      optimizeDef cycle def =<< optimize cycle body
+      optimizeDef annotations cycle def =<< optimize annotations cycle body
 
     Can.LetRec defs body ->
       case defs of
         [def] ->
           Opt.Let
-            <$> optimizePotentialTailCallDef cycle def
-            <*> optimize cycle body
+            <$> optimizePotentialTailCallDef annotations cycle def
+            <*> optimize annotations cycle body
 
         _ ->
-          do  obody <- optimize cycle body
-              foldM (\bod def -> optimizeDef cycle def bod) obody defs
+          do  obody <- optimize annotations cycle body
+              foldM (\bod def -> optimizeDef annotations cycle def bod) obody defs
 
     Can.LetDestruct pattern expr body ->
       do  (name, destructs) <- destruct pattern
-          oexpr <- optimize cycle expr
-          obody <- optimize cycle body
+          oexpr <- optimize annotations cycle expr
+          obody <- optimize annotations cycle body
           pure $
             Opt.Let (Opt.Def name oexpr) (foldr Opt.Destruct obody destructs)
 
@@ -132,11 +137,11 @@ optimize cycle (A.At region expression) =
       let
         optimizeBranch root (Can.CaseBranch pattern branch) =
           do  destructors <- destructCase root pattern
-              obranch <- optimize cycle branch
+              obranch <- optimize annotations cycle branch
               pure (pattern, foldr Opt.Destruct obranch destructors)
       in
       do  temp <- Names.generate
-          oexpr <- optimize cycle expr
+          oexpr <- optimize annotations cycle expr
           case oexpr of
             Opt.VarLocal root ->
               Case.optimize temp root <$> traverse (optimizeBranch root) branches
@@ -149,26 +154,26 @@ optimize cycle (A.At region expression) =
       Names.registerField field (Opt.Accessor field)
 
     Can.Access record (A.At _ field) ->
-      do  optRecord <- optimize cycle record
+      do  optRecord <- optimize annotations cycle record
           Names.registerField field (Opt.Access optRecord field)
 
     Can.Update _ record updates ->
       Names.registerFieldDict updates Opt.Update
-        <*> optimize cycle record
-        <*> traverse (optimizeUpdate cycle) updates
+        <*> optimize annotations cycle record
+        <*> traverse (optimizeUpdate annotations cycle) updates
 
     Can.Record fields ->
       Names.registerFieldDict fields Opt.Record
-        <*> traverse (optimize cycle) fields
+        <*> traverse (optimize annotations cycle) fields
 
     Can.Unit ->
       Names.registerKernel Name.utils Opt.Unit
 
     Can.Tuple a b maybeC ->
       Names.registerKernel Name.utils Opt.Tuple
-        <*> optimize cycle a
-        <*> optimize cycle b
-        <*> traverse (optimize cycle) maybeC
+        <*> optimize annotations cycle a
+        <*> optimize annotations cycle b
+        <*> traverse (optimize annotations cycle) maybeC
 
     Can.Shader src (Shader.Types attributes uniforms _varyings) ->
       pure (Opt.Shader src (Map.keysSet attributes) (Map.keysSet uniforms))
@@ -177,34 +182,37 @@ optimize cycle (A.At region expression) =
       -- insert a node into Opt AST with the region
       -- we can put the lookup Map in the module along with the other Name.register* Maps
       -- Do the actual lookup during code gen, only if needed (not in JS)
-      optimize cycle expr
+      optimize annotations cycle expr
+
+
+-- TYPE PLACEHOLDER
 
 
 -- UPDATE
 
 
-optimizeUpdate :: Cycle -> Can.FieldUpdate -> Names.Tracker Opt.Expr
-optimizeUpdate cycle (Can.FieldUpdate _ expr) =
-  optimize cycle expr
+optimizeUpdate :: Annotations -> Cycle -> Can.FieldUpdate -> Names.Tracker Opt.Expr
+optimizeUpdate annotations cycle (Can.FieldUpdate _ expr) =
+  optimize annotations cycle expr
 
 
 
 -- DEFINITION
 
 
-optimizeDef :: Cycle -> Can.Def -> Opt.Expr -> Names.Tracker Opt.Expr
-optimizeDef cycle def body =
+optimizeDef :: Annotations -> Cycle -> Can.Def -> Opt.Expr -> Names.Tracker Opt.Expr
+optimizeDef annotations cycle def body =
   case def of
     Can.Def (A.At _ name) args expr ->
-      optimizeDefHelp cycle name args expr body
+      optimizeDefHelp annotations cycle name args expr body
 
     Can.TypedDef (A.At _ name) _ typedArgs expr _ ->
-      optimizeDefHelp cycle name (map fst typedArgs) expr body
+      optimizeDefHelp annotations cycle name (map fst typedArgs) expr body
 
 
-optimizeDefHelp :: Cycle -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.Expr -> Names.Tracker Opt.Expr
-optimizeDefHelp cycle name args expr body =
-  do  oexpr <- optimize cycle expr
+optimizeDefHelp :: Annotations -> Cycle -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.Expr -> Names.Tracker Opt.Expr
+optimizeDefHelp annotations cycle name args expr body =
+  do  oexpr <- optimize annotations cycle expr
       case args of
         [] ->
           pure $ Opt.Let (Opt.Def name oexpr) body
@@ -348,28 +356,28 @@ destructCtorArg path revDs (Can.PatternCtorArg index _ arg) =
 -- TAIL CALL
 
 
-optimizePotentialTailCallDef :: Cycle -> Can.Def -> Names.Tracker Opt.Def
-optimizePotentialTailCallDef cycle def =
+optimizePotentialTailCallDef :: Annotations -> Cycle -> Can.Def -> Names.Tracker Opt.Def
+optimizePotentialTailCallDef annotations cycle def =
   case def of
     Can.Def (A.At _ name) args expr ->
-      optimizePotentialTailCall cycle name args expr
+      optimizePotentialTailCall annotations cycle name args expr
 
     Can.TypedDef (A.At _ name) _ typedArgs expr _ ->
-      optimizePotentialTailCall cycle name (map fst typedArgs) expr
+      optimizePotentialTailCall annotations cycle name (map fst typedArgs) expr
 
 
-optimizePotentialTailCall :: Cycle -> Name.Name -> [Can.Pattern] -> Can.Expr -> Names.Tracker Opt.Def
-optimizePotentialTailCall cycle name args expr =
+optimizePotentialTailCall :: Annotations -> Cycle -> Name.Name -> [Can.Pattern] -> Can.Expr -> Names.Tracker Opt.Def
+optimizePotentialTailCall annotations cycle name args expr =
   do  (argNames, destructors) <- destructArgs args
       toTailDef name argNames destructors <$>
-        optimizeTail cycle name argNames expr
+        optimizeTail annotations cycle name argNames expr
 
 
-optimizeTail :: Cycle -> Name.Name -> [Name.Name] -> Can.Expr -> Names.Tracker Opt.Expr
-optimizeTail cycle rootName argNames locExpr@(A.At _ expression) =
+optimizeTail :: Annotations -> Cycle -> Name.Name -> [Name.Name] -> Can.Expr -> Names.Tracker Opt.Expr
+optimizeTail annotations cycle rootName argNames locExpr@(A.At _ expression) =
   case expression of
     Can.Call func args ->
-      do  oargs <- traverse (optimize cycle) args
+      do  oargs <- traverse (optimize annotations cycle) args
 
           let isMatchingName =
                 case A.toValue func of
@@ -384,41 +392,41 @@ optimizeTail cycle rootName argNames locExpr@(A.At _ expression) =
                   pure $ Opt.TailCall rootName pairs
 
                 Index.LengthMismatch _ _ ->
-                  do  ofunc <- optimize cycle func
+                  do  ofunc <- optimize annotations cycle func
                       pure $ Opt.Call ofunc oargs
             else
-              do  ofunc <- optimize cycle func
+              do  ofunc <- optimize annotations cycle func
                   pure $ Opt.Call ofunc oargs
 
     Can.If branches finally ->
       let
         optimizeBranch (condition, branch) =
           (,)
-            <$> optimize cycle condition
-            <*> optimizeTail cycle rootName argNames branch
+            <$> optimize annotations cycle condition
+            <*> optimizeTail annotations cycle rootName argNames branch
       in
       Opt.If
         <$> traverse optimizeBranch branches
-        <*> optimizeTail cycle rootName argNames finally
+        <*> optimizeTail annotations cycle rootName argNames finally
 
     Can.Let def body ->
-      optimizeDef cycle def =<< optimizeTail cycle rootName argNames body
+      optimizeDef annotations cycle def =<< optimizeTail annotations cycle rootName argNames body
 
     Can.LetRec defs body ->
       case defs of
         [def] ->
           Opt.Let
-            <$> optimizePotentialTailCallDef cycle def
-            <*> optimizeTail cycle rootName argNames body
+            <$> optimizePotentialTailCallDef annotations cycle def
+            <*> optimizeTail annotations cycle rootName argNames body
 
         _ ->
-          do  obody <- optimizeTail cycle rootName argNames body
-              foldM (\bod def -> optimizeDef cycle def bod) obody defs
+          do  obody <- optimizeTail annotations cycle rootName argNames body
+              foldM (\bod def -> optimizeDef annotations cycle def bod) obody defs
 
     Can.LetDestruct pattern expr body ->
       do  (dname, destructors) <- destruct pattern
-          oexpr <- optimize cycle expr
-          obody <- optimizeTail cycle rootName argNames body
+          oexpr <- optimize annotations cycle expr
+          obody <- optimizeTail annotations cycle rootName argNames body
           pure $
             Opt.Let (Opt.Def dname oexpr) (foldr Opt.Destruct obody destructors)
 
@@ -426,11 +434,11 @@ optimizeTail cycle rootName argNames locExpr@(A.At _ expression) =
       let
         optimizeBranch root (Can.CaseBranch pattern branch) =
           do  destructors <- destructCase root pattern
-              obranch <- optimizeTail cycle rootName argNames branch
+              obranch <- optimizeTail annotations cycle rootName argNames branch
               pure (pattern, foldr Opt.Destruct obranch destructors)
       in
       do  temp <- Names.generate
-          oexpr <- optimize cycle expr
+          oexpr <- optimize annotations cycle expr
           case oexpr of
             Opt.VarLocal root ->
               Case.optimize temp root <$> traverse (optimizeBranch root) branches
@@ -440,7 +448,7 @@ optimizeTail cycle rootName argNames locExpr@(A.At _ expression) =
                   return $ Opt.Let (Opt.Def temp oexpr) (Case.optimize temp temp obranches)
 
     _ ->
-      optimize cycle locExpr
+      optimize annotations cycle locExpr
 
 
 
