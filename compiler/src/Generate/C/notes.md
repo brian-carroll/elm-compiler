@@ -524,6 +524,37 @@ Basics op calls:
 | n              |     | -             | code for one type                             |
 | y              |     | parent        | code for each type, throw if no concrete type |
 
+| Expr        | need more AST type info for unboxing? |
+| ----------- | ------------------------------------- |
+| VarLocal    | No                                    |
+| VarTopLevel | No                                    |
+| VarKernel   | No                                    |
+| VarForeign  | No                                    |
+| VarCtor     | No                                    |
+| VarDebug    | No                                    |
+| VarOperator | No                                    |
+| Chr         | No                                    |
+| Str         | No                                    |
+| Int         | No                                    |
+| Float       | No                                    |
+| List        | _YES_ (header flags)                  |
+| Negate      | _YES_ (supertypes)                    |
+| Binop       | _YES_ (supertypes)                    |
+| Lambda      | _YES_ (header flags)                  |
+| Call        | _YES_ (supertypes)                    |
+| If          | No                                    |
+| Let         | No                                    |
+| LetRec      | No                                    |
+| LetDestruct | No (does not dereference inner value) |
+| Case        | No                                    |
+| Accessor    | No (does not dereference field value) |
+| Access      | No (does not dereference field value) |
+| Update      | No (does not dereference field value) |
+| Record      | _YES_ (header flags)                  |
+| Unit        | No                                    |
+| Tuple       | _YES_ (header flags)                  |
+| Shader      | No                                    |
+
 ---
 
 # Bytecode ideas

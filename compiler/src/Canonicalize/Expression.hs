@@ -83,36 +83,39 @@ canonicalize env (A.At region expression) =
         Src.CapVar -> toVarCtor name <$> Env.findCtorQual region env prefix name
 
     Src.List exprs ->
-      Can.List <$> traverse (canonicalize env) exprs
+      annotateUnboxedChildren region <$>
+        Can.List <$> traverse (canonicalize env) exprs
 
     Src.Op op ->
       do  (Env.Binop _ home name annotation _ _) <- Env.findBinop region env op
           return (Can.VarOperator op home name annotation)
 
     Src.Negate expr ->
-      Can.Negate <$> canonicalize env expr
+      Can.Negate <$> annotateSuperTypeValue <$> canonicalize env expr
 
     Src.Binops ops final ->
       A.toValue <$> canonicalizeBinops region env ops final
 
     Src.Lambda srcArgs body ->
-      delayedUsage $
-      do  (args, bindings) <-
-            Pattern.verify Error.DPLambdaArgs $
-              traverse (Pattern.canonicalize env) srcArgs
+      annotateUnboxedChildren region <$>
+      (delayedUsage $
+        do  (args, bindings) <-
+              Pattern.verify Error.DPLambdaArgs $
+                traverse (Pattern.canonicalize env) srcArgs
 
-          newEnv <-
-            Env.addLocals bindings env
+            newEnv <-
+              Env.addLocals bindings env
 
-          (cbody, freeLocals) <-
-            verifyBindings W.Pattern bindings (canonicalize newEnv body)
+            (cbody, freeLocals) <-
+              verifyBindings W.Pattern bindings (canonicalize newEnv body)
 
-          return (Can.Lambda args cbody, freeLocals)
+            return (Can.Lambda args cbody, freeLocals)
+      )
 
     Src.Call func args ->
-      Can.Call
-        <$> canonicalize env func
-        <*> traverse (canonicalize env) args
+      do  canFunc <- canonicalize env func
+          canArgs <- traverse (canonicalize env) args
+          return $ Can.Call (annotateSuperTypeValue canFunc) (map annotateSuperTypeValue canArgs)
 
     Src.If branches finally ->
       Can.If
@@ -145,6 +148,7 @@ canonicalize env (A.At region expression) =
         <*> (sequenceA =<< makeCanFields)
 
     Src.Record fields ->
+      annotateUnboxedChildren region <$>
       do  fieldDict <- Dups.checkFields fields
           Can.Record <$> traverse (canonicalize env) fieldDict
 
@@ -152,13 +156,32 @@ canonicalize env (A.At region expression) =
       Result.ok Can.Unit
 
     Src.Tuple a b cs ->
-      Can.Tuple
+      annotateUnboxedChildren region <$>
+      (Can.Tuple
         <$> canonicalize env a
         <*> canonicalize env b
-        <*> canonicalizeTupleExtras region env cs
+        <*> canonicalizeTupleExtras region env cs)
 
     Src.Shader src tipe ->
         Result.ok (Can.Shader src tipe)
+
+
+
+-- TYPE INFERENCE PLACEHOLDERS
+
+
+annotateUnboxedChildren :: A.Region -> Can.Expr_ -> Can.Expr_
+annotateUnboxedChildren region expr_ =
+  case expr_ of
+    Can.TypePlaceholder _ -> expr_
+    _ -> Can.TypePlaceholder (A.At region expr_)
+
+
+annotateSuperTypeValue :: Can.Expr -> Can.Expr
+annotateSuperTypeValue expr@(A.At reg expr_) =
+  case expr_ of
+    Can.TypePlaceholder _ -> expr
+    _ -> A.At reg (Can.TypePlaceholder expr)
 
 
 
@@ -690,18 +713,17 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
     Just var ->
       case var of
         Env.Local _ ->
-          logVar name (Can.TypePlaceholder $ A.At region $ Can.VarLocal name)
+          logVar name (Can.VarLocal name)
 
         Env.TopLevel _ ->
-          logVar name (Can.TypePlaceholder $ A.At region $ Can.VarTopLevel localHome name)
+          logVar name (Can.VarTopLevel localHome name)
 
         Env.Foreign home annotation ->
           Result.ok $
             if home == ModuleName.debug then
               Can.VarDebug localHome name annotation
             else
-              Can.TypePlaceholder $ A.At region $
-                Can.VarForeign home name annotation
+              Can.VarForeign home name annotation
 
         Env.Foreigns h hs ->
           Result.throw (Error.AmbiguousVar region Nothing name h hs)
