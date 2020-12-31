@@ -34,18 +34,14 @@ import qualified Type.UnionFind as UF
 run :: Constraint -> IO (Either (NE.List Error.Error) (Map.Map Name.Name Can.Annotation))
 run constraint =
   do  pools <- MVector.replicate 8 []
-      -- putStrLn $
-      --   "\n\n# Constraints going into Type.Solve.run\n\n" ++ show constraint
-      --   ++ "\n\n# Solving...\n\n"
-
-      (State env _ errors utv) <-
+      (State env _ errors placeholders) <-
         solve "" Map.empty outermostRank pools emptyState constraint
-      
-      putStrLn $ "\n\nrun UTV\n\n" ++ show utv
+
+      putStrLn $ show placeholders
 
       case errors of
         [] ->
-          Right <$> traverse Type.toAnnotation env
+          Right <$> traverse Type.toAnnotation (Map.union env placeholders)
 
         e:es ->
           return $ Left (NE.List e es)
@@ -75,13 +71,17 @@ data State =
     { _env :: Env
     , _mark :: Mark
     , _errors :: [Error.Error]
-    , _utv :: Map.Map Name.Name Variable
+    , _placeholders :: Env
     }
 
+{-   
+
+-- DEBUG SHOW INSTANCES
+
 showState :: String -> State -> String
-showState indent (State env _ _ utv) =
+showState indent (State env _ _ placeholders) =
     "env\n" ++ indent ++ showMap indent env ++
-    "utv\n" ++ indent ++ showMap indent utv 
+    "placeholders\n" ++ indent ++ showMap indent placeholders 
 
 showListLines :: (Show v) => String -> [v] -> String
 showListLines indent list =
@@ -117,167 +117,141 @@ showConstraintShort indent c =
         ++ "\n" ++ nextIndent ++ "rigidVars\t" ++ show rigidVars
         ++ "\n" ++ nextIndent ++ "flexVars\t" ++ show flexVars
         ++ "\n" ++ nextIndent ++ "header\t" ++ show header
+-}
 
-
+-- TODO: remove indent (for debug printing)
 solve :: String -> Env -> Int -> Pools -> State -> Constraint -> IO State
 solve indent env rank pools state constraint =
-  do
-  putStrLn $ "\n" ++ indent ++ "- solve " ++ (showConstraintShort indent constraint)
   let nextIndent = indent ++ "  "
-  nextState@(State nextEnv _ _ nextUTV) <-
-      case constraint of
-        CTrue ->
-          return state
+  in
+  case constraint of
+    CTrue ->
+      return state
 
-        CSaveTheEnvironment ->
-          return (state { _env = env })
+    CSaveTheEnvironment ->
+      return (state { _env = env })
 
-        CEqual region category tipe expectation ->
-          do  actual <- typeToVariable rank pools tipe
-              expected <- expectedToVariable rank pools expectation
-              answer <- Unify.unify actual expected
-              case answer of
-                Unify.Ok vars ->
-                  do  introduce rank pools vars
-                      return state
+    CEqual region category tipe expectation ->
+      do  actual <- typeToVariable rank pools tipe
+          expected <- expectedToVariable rank pools expectation
+          answer <- Unify.unify actual expected
+          case answer of
+            Unify.Ok vars ->
+              do  introduce rank pools vars
+                  return state
 
-                Unify.Err vars actualType expectedType ->
-                  do  introduce rank pools vars
-                      return $ addError state $
-                        Error.BadExpr region category actualType $
-                          Error.typeReplace expectation expectedType
+            Unify.Err vars actualType expectedType ->
+              do  introduce rank pools vars
+                  return $ addError state $
+                    Error.BadExpr region category actualType $
+                      Error.typeReplace expectation expectedType
 
-        CLocal region name expectation ->
-          do  actual <- makeCopy rank pools (env ! name)
-              expected <- expectedToVariable rank pools expectation
-              answer <- Unify.unify actual expected
-              case answer of
-                Unify.Ok vars ->
-                  do  introduce rank pools vars
-                      putStrLn $ indent ++ "answer " ++ showListLines indent vars
-                      return state
+    CLocal region name expectation ->
+      do  actual <- makeCopy rank pools (env ! name)
+          expected <- expectedToVariable rank pools expectation
+          answer <- Unify.unify actual expected
+          case answer of
+            Unify.Ok vars ->
+              do  introduce rank pools vars
+                  return state
 
-                Unify.Err vars actualType expectedType ->
-                  do  introduce rank pools vars
-                      return $ addError state $
-                        Error.BadExpr region (Error.Local name) actualType $
-                          Error.typeReplace expectation expectedType
+            Unify.Err vars actualType expectedType ->
+              do  introduce rank pools vars
+                  return $ addError state $
+                    Error.BadExpr region (Error.Local name) actualType $
+                      Error.typeReplace expectation expectedType
 
-        CForeign region name (Can.Forall freeVars srcType) expectation ->
-          do  actual <- srcTypeToVariable rank pools freeVars srcType
-              expected <- expectedToVariable rank pools expectation
-              answer <- Unify.unify actual expected
-              case answer of
-                Unify.Ok vars ->
-                  do  introduce rank pools vars
-                      putStrLn $ indent ++ "answer " ++ showListLines indent vars
-                      return state
+    CForeign region name (Can.Forall freeVars srcType) expectation ->
+      do  actual <- srcTypeToVariable rank pools freeVars srcType
+          expected <- expectedToVariable rank pools expectation
+          answer <- Unify.unify actual expected
+          case answer of
+            Unify.Ok vars ->
+              do  introduce rank pools vars
+                  return state
 
-                Unify.Err vars actualType expectedType ->
-                  do  introduce rank pools vars
-                      return $ addError state $
-                        Error.BadExpr region (Error.Foreign name) actualType $
-                          Error.typeReplace expectation expectedType
+            Unify.Err vars actualType expectedType ->
+              do  introduce rank pools vars
+                  return $ addError state $
+                    Error.BadExpr region (Error.Foreign name) actualType $
+                      Error.typeReplace expectation expectedType
 
-        CPattern region category tipe expectation ->
-          do  actual <- typeToVariable rank pools tipe
-              expected <- patternExpectationToVariable rank pools expectation
-              answer <- Unify.unify actual expected
-              case answer of
-                Unify.Ok vars ->
-                  do  introduce rank pools vars
-                      putStrLn $ indent ++ "answer " ++ showListLines indent vars
-                      return state
+    CPattern region category tipe expectation ->
+      do  actual <- typeToVariable rank pools tipe
+          expected <- patternExpectationToVariable rank pools expectation
+          answer <- Unify.unify actual expected
+          case answer of
+            Unify.Ok vars ->
+              do  introduce rank pools vars
+                  return state
 
-                Unify.Err vars actualType expectedType ->
-                  do  introduce rank pools vars
-                      return $ addError state $
-                        Error.BadPattern region category actualType
-                          (Error.ptypeReplace expectation expectedType)
+            Unify.Err vars actualType expectedType ->
+              do  introduce rank pools vars
+                  return $ addError state $
+                    Error.BadPattern region category actualType
+                      (Error.ptypeReplace expectation expectedType)
 
-        CAnd constraints ->
-          foldM (solve nextIndent env rank pools) state constraints
+    CAnd constraints ->
+      foldM (solve nextIndent env rank pools) state constraints
 
-        CLet [] flexs _ headerCon CTrue ->
-          do  introduce rank pools flexs
-              solve nextIndent env rank pools state headerCon
+    CLet [] flexs _ headerCon CTrue ->
+      do  introduce rank pools flexs
+          solve nextIndent env rank pools state headerCon
 
-        -- if it has a subConstraint (a.k.a. _bodyCon) then it is a function
-        CLet [] [] header headerCon subCon ->
-          do  state1 <- solve nextIndent env rank pools state headerCon
-              locals <- traverse (A.traverse (typeToVariable rank pools)) header
-              let localValues = Map.map A.toValue locals
-              let newEnv = Map.union env localValues
-              -- newEnv is the inner function scope populated with a local var for each arg
-              state2 <- solve nextIndent newEnv rank pools state1 subCon
-              -- state2 is the solver state after completing the body subtree
+    -- if it has a subConstraint (a.k.a. _bodyCon) then it is a function
+    CLet [] [] header headerCon subCon ->
+      do  state1 <- solve nextIndent env rank pools state headerCon
+          locals <- traverse (A.traverse (typeToVariable rank pools)) header
+          let localValues = Map.map A.toValue locals
+          let newEnv = Map.union env localValues
+          state2 <- solve nextIndent newEnv rank pools state1 subCon
 
-              let uniqueTypeVars = Map.filterWithKey (\k _ -> Name.isRegion k) localValues
-              let state3 = state2 { _utv = Map.union (_utv state2) uniqueTypeVars }
+          let localPlaceholders = Map.filterWithKey (\k _ -> Name.isRegion k) localValues
+          let state3 = state2 { _placeholders = Map.union (_placeholders state2) localPlaceholders }
 
-              putStrLn $ "\n"
-                ++ "\n" ++ indent ++ " header\t" ++ showMap indent header
-                ++ "\n" ++ indent ++ " state1\t" ++ showState indent state1
-                ++ "\n" ++ indent ++ " locals\t" ++ showMap indent locals
-                ++ "\n" ++ indent ++ " state2\t" ++ showState indent state2
-                ++ "\n"
+          foldM occurs state3 $ Map.toList locals
 
-              -- error check for infinite types in the function header, otherwise passthrough
-              foldM occurs state3 $ Map.toList locals
+    CLet rigids flexs header headerCon subCon ->
+      do
+          -- work in the next pool to localize header
+          let nextRank = rank + 1
+          let poolsLength = MVector.length pools
+          nextPools <-
+            if nextRank < poolsLength
+              then return pools
+              else MVector.grow pools poolsLength
 
-        CLet rigids flexs header headerCon subCon ->
-          do
-              -- work in the next pool to localize header
-              let nextRank = rank + 1
-              let poolsLength = MVector.length pools
-              nextPools <-
-                if nextRank < poolsLength
-                  then return pools
-                  else MVector.grow pools poolsLength
+          -- introduce variables
+          let vars = rigids ++ flexs
+          forM_ vars $ \var ->
+            UF.modify var $ \(Descriptor content _ mark copy) ->
+              Descriptor content nextRank mark copy
+          MVector.write nextPools nextRank vars
 
-              -- introduce variables
-              let vars = rigids ++ flexs
-              forM_ vars $ \var ->
-                UF.modify var $ \(Descriptor content _ mark copy) ->
-                  Descriptor content nextRank mark copy
-              MVector.write nextPools nextRank vars
+          -- run solver in next pool
+          locals <- traverse (A.traverse (typeToVariable nextRank nextPools)) header
+          (State savedEnv mark errors placeholders) <-
+            solve nextIndent env nextRank nextPools state headerCon
 
-              -- run solver in next pool
-              locals <- traverse (A.traverse (typeToVariable nextRank nextPools)) header
-              (State savedEnv mark errors utv) <-
-                solve nextIndent env nextRank nextPools state headerCon
+          let youngMark = mark
+          let visitMark = nextMark youngMark
+          let finalMark = nextMark visitMark
 
-              let youngMark = mark
-              let visitMark = nextMark youngMark
-              let finalMark = nextMark visitMark
+          -- pop pool
+          generalize youngMark visitMark nextRank nextPools
+          MVector.write nextPools nextRank []
 
-              -- pop pool
-              generalize youngMark visitMark nextRank nextPools
-              MVector.write nextPools nextRank []
+          -- check that things went well
+          mapM_ isGeneric rigids
 
-              -- check that things went well
-              mapM_ isGeneric rigids
+          let localValues = Map.map A.toValue locals
+          let newEnv = Map.union env localValues
+          let localPlaceholders = Map.filterWithKey (\k _ -> Name.isRegion k) localValues
+          let tempState = State savedEnv finalMark errors $ Map.union placeholders localPlaceholders
+          newState <- solve nextIndent newEnv rank nextPools tempState subCon
 
-              let localValues = Map.map A.toValue locals
-              let newEnv = Map.union env localValues
-              let uniqueTypeVars = Map.filterWithKey (\k _ -> Name.isRegion k) localValues
-              let tempState = State savedEnv finalMark errors uniqueTypeVars
-              newState <- solve nextIndent newEnv rank nextPools tempState subCon
-              -- solving the subCon is what eliminates the placeholder from the env/state,
-              -- having just been added by union above
+          foldM occurs newState (Map.toList locals)
 
-              putStrLn $ "\n"
-                ++ "\n" ++ indent ++ "rigids\t" ++ showListLines nextIndent rigids
-                ++ "\n" ++ indent ++ "flexs\t" ++ showListLines nextIndent flexs
-                ++ "\n" ++ indent ++ "header\t" ++ showMap nextIndent header
-                -- ++ " ++ indent ++ ""\n headerCon\t" ++ show headerCon
-                ++ "\n" ++ indent ++ "locals\t" ++ showMap nextIndent locals
-                ++ "\n" ++ indent ++ "newState\t" ++ showState nextIndent newState
-                ++ "\n"
-
-              foldM occurs newState (Map.toList locals)
-  putStrLn $ indent ++ "nextUTV = " ++ showMap indent nextUTV
-  return nextState
 
 -- Check that a variable has rank == noRank, meaning that it can be generalized.
 isGeneric :: Variable -> IO ()
@@ -329,8 +303,8 @@ patternExpectationToVariable rank pools expectation =
 
 
 addError :: State -> Error.Error -> State
-addError (State savedEnv rank errors utv) err =
-  State savedEnv rank (err:errors) utv
+addError (State savedEnv rank errors placeholders) err =
+  State savedEnv rank (err:errors) placeholders
 
 
 

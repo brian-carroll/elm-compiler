@@ -354,7 +354,7 @@ checkExpr (A.At region expression) errors =
     Can.Shader _ _ ->
       errors
 
-    Can.UniqueTypeVar expr ->
+    Can.TypePlaceholder expr ->
       checkExpr expr errors
 
 

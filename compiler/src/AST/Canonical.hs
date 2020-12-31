@@ -105,7 +105,7 @@ data Expr_
   | Unit
   | Tuple Expr Expr (Maybe Expr)
   | Shader Shader.Source Shader.Types
-  | UniqueTypeVar Expr
+  | TypePlaceholder Expr
 
 
 data CaseBranch =
@@ -176,7 +176,7 @@ showExpr_ indent region e =
     Unit -> "- Unit"
     Tuple _expr1 _expr2 _mExpr3 -> "- Tuple (todo)"
     Shader _source _types -> "- Shader (todo)"
-    UniqueTypeVar expr -> "- UniqueTypeVar " ++ show region
+    TypePlaceholder expr -> "- TypePlaceholder " ++ show region
       ++ "\n" ++ nextIndent ++ showExpr nextIndent expr
 
 

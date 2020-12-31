@@ -690,17 +690,17 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
     Just var ->
       case var of
         Env.Local _ ->
-          logVar name (Can.UniqueTypeVar $ A.At region $ Can.VarLocal name)
+          logVar name (Can.TypePlaceholder $ A.At region $ Can.VarLocal name)
 
         Env.TopLevel _ ->
-          logVar name (Can.UniqueTypeVar $ A.At region $ Can.VarTopLevel localHome name)
+          logVar name (Can.TypePlaceholder $ A.At region $ Can.VarTopLevel localHome name)
 
         Env.Foreign home annotation ->
           Result.ok $
             if home == ModuleName.debug then
               Can.VarDebug localHome name annotation
             else
-              Can.UniqueTypeVar $ A.At region $
+              Can.TypePlaceholder $ A.At region $
                 Can.VarForeign home name annotation
 
         Env.Foreigns h hs ->

@@ -151,7 +151,7 @@ constrain rtv (A.At region expression) expected =
     Can.Shader _src types ->
       constrainShader region types expected
 
-    Can.UniqueTypeVar expr ->
+    Can.TypePlaceholder expr ->
       let
         name =
           Name.fromRegion region

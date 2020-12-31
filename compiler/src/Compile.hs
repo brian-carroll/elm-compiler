@@ -68,12 +68,6 @@ typeCheck modul canonical =
   case unsafePerformIO (Type.run =<< Type.constrain canonical) of
     Right annotations ->
       Right annotations
-      -- Right (trace ("\n\n# Annotations after Type.Solve.run\n\n" ++ (
-      --   List.intercalate "\n" $
-      --   map (\(name, tipe) -> show name ++ "\t" ++ show tipe) $
-      --     Map.toList annotations
-      -- )) annotations)
-        
 
     Left errors ->
       Left (E.BadTypes (Localizer.fromModule modul) errors)
