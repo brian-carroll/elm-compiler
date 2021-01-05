@@ -105,7 +105,6 @@ buildJs appEnums jsState mains =
   <> JsWrappers.emscriptenPostRun (
       JsFunctions.functions
       <> JS.stateToBuilder jsState
-      <> JsWrappers.wrapEmscriptenForElm
       <> jsInitWrapper appEnums
       <> jsAssignMains mains
       <> JS.toMainExports jsMode mains
@@ -198,6 +197,11 @@ jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) 
     name =
       JSN.fromLocal . Name.fromChars
 
+    wrapperImportObj =
+      JSB.Object $ map
+        (\n -> (n, JSB.Ref n))
+        JsWrappers.importsFromElm
+
     fgStrings = map
       (\fNames ->
         JSB.String $
@@ -228,8 +232,9 @@ jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) 
   in
   JSB.stmtToBuilder $ JSB.ExprStmt $
     JSB.Assign (JSB.LRef wasmWrapperName) $
-    JSB.Call (JSB.Ref $ name JsWrappers.wrapEmscriptenForElmFnName) 
-      [ JSB.Access emscriptenModule (name "buffer")
+    JSB.Call (JSB.Ref $ name JsWrappers.wrapWasmElmApp) 
+      [ wrapperImportObj
+      , JSB.Access (JSB.Access emscriptenModule (name "HEAPU32")) (name "buffer")
       , JSB.Access emscriptenModule (name "asm")
       , appTypes
       , kernelRecord
