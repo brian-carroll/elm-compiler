@@ -9,13 +9,13 @@ What would a bytecode for Elm look like?
 
 | AST Expr  | bytecode description                           |
 | --------- | ---------------------------------------------- |
-| Bool      | load global                                    |
-| Chr       | load global                                    |
-| Str       | load global                                    |
-| Int       | load global                                    |
-| Float     | load global                                    |
-| VarLocal  | load local                                     |
-| VarGlobal | load global                                    |
+| Bool      | load const                                     |
+| Chr       | load const                                     |
+| Str       | load const                                     |
+| Int       | load const                                     |
+| Float     | load const                                     |
+| VarLocal  | load from stack frame                          |
+| VarGlobal | load const or heap                             |
 | VarEnum   | load global                                    |
 | VarBox    | load global                                    |
 | VarCycle  | load global                                    |
@@ -47,23 +47,7 @@ program counter
 
 ## Bytecode instruction set
 
-```hs
-
-data ByteCode
-  = LoadGlobal Int        -- index into global array
-  | LoadConst Int
-  | LoadLocal Int         -- index into locals array
-  | StoreLocal Int        -- index into locals array
-  | Allocate Int          -- number of pointer-sized slots
-  | Clone
-  | StoreHeapAtOffset Int -- arity 2 (ref, value)
-  | LoadHeapAtOffset Int
-  | Jump Int              -- target index in bytecode array
-  | JumpIf Int            -- target index in bytecode array
-  | LookupFieldConst Int  -- field ID
-  | LookupField           -- arity 2 (record, field ID)
-  | CallKernel Int Int    -- num args, fn index
-```
+See ByteCode.hs
 
 ## VM Pros
 - stack tracing is now possible and in fact easy
