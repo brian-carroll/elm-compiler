@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Generate.C
+module Generate.ByteCode
   ( generate
   )
   where
@@ -9,25 +9,20 @@ import qualified Data.ByteString.Builder as B
 
 import qualified AST.Optimized as Opt
 import qualified Elm.ModuleName as ModuleName
+import qualified Generate.ByteCode.Name (Name)
 
 
 data Program =
   Program
-    { progConstants :: Map.Map GcRootId ConstValue
-    , progEvalFuncs :: Map.Map EvalFuncId Procedure
-    , progNumGcRoots :: Int
+    { progConstants :: Map.Map Name ConstValue
+    , progEvalFuncs :: Map.Map Name Procedure
+    , progGcRootInits :: Map.Map Name Procedure
+    , progMains :: [Name]
     }
 
-data ConstValue =
-  ConstValue TypeTag BS.ByteString [HeapValue]
-
--- Do I really want int IDs? Even .obj and .wat files have symbolic names...
-newtype ConstId    = ConstId    Int
-newtype GcRootId   = GcRootId   Int
-newtype LocalId    = LocalId    Int
-newtype EvalFuncId = EvalFuncId Int
-newtype LabelId    = LabelId    Int
-newtype FieldId    = FieldId    Int
+data ConstValue
+  = ConstStruct TypeTag BS.ByteString [ConstValue]
+  | ConstUnboxed Int
 
 data TypeTag
   = ElmInt
@@ -51,16 +46,16 @@ data Procedure =
     }
 
 data Instruction
-  = LoadConst ConstId
-  | LoadEvalFunc EvalFuncId
-  | LoadLocal LocalId
-  | LoadGcRoot GcRootId
+  = LoadConst Name
+  | LoadEvalFunc Name
+  | LoadLocal Name
+  | LoadGcRoot Name
   | LoadChild StructInfo Int Instruction
-  | LoadField FieldId Instruction
-  | StoreLocal LocalId Instruction
-  | StoreGcRoot GcRootId Instruction
+  | LoadField Name Instruction
+  | StoreLocal Name Instruction
+  | StoreGcRoot Name Instruction
   | StoreChild StructInfo Int Instruction Instruction
-  | StoreField FieldId Instruction Instruction
+  | StoreField Name Instruction Instruction
   | Copy Instruction
   | Construct TypeTag BS.ByteString [Instruction]
   | Apply Instruction [Instruction]
@@ -70,6 +65,10 @@ data Instruction
   | NumOpBinary NumType NumOpBinary Instruction Instruction
   | NumOpUnary NumType NumOpUnary Instruction
   | NumOpConvert NumType NumType Instruction
+
+
+newtype LabelId =
+  LabelId Int
 
 
 data StructInfo =

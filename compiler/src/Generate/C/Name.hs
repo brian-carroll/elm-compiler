@@ -67,7 +67,7 @@ import qualified Elm.Package as Pkg
 import qualified Elm.String as ES
 import qualified Elm.Float as EF
 
-  
+
 -- NAME
 
 
