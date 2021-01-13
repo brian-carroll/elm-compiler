@@ -26,7 +26,7 @@ What would a bytecode for Elm look like?
 | Call      | load locals, jump                              |
 | TailCall  | load locals, jump                              |
 | If        | jumpif, jump                                   |
-| Let       | store local                         |
+| Let       | store local                                    |
 | Destruct  | heap load at offset                            |
 | Case      | jumps                                          |
 | Accessor  | load global                                    |
@@ -65,16 +65,19 @@ data ByteCode
   | CallKernel Int Int    -- num args, fn index
 ```
 
-## VM Pros
+## VM Advantages
+
 - stack tracing is now possible and in fact easy
 - the VM can have different implementations - Wasm, C, JS
 - could have one that's directly in Wasm
 
-## VM Cons
+## VM Disadvantages
+
 - There's not really any such thing as a function anymore
 - All of this might be bad for optimisation, especially compared to browser JITs
 
 ## Translating bytecode to Wasm / machine code
+
 - each bytecode written out in target language
 - dispatch is done at compile time
 - how does the stack work?
@@ -83,6 +86,7 @@ data ByteCode
 - no C functions
   - could have one big switch statement, where each case is an Elm function.
 - with C functions
+
   - better for inlining... although we can't really inline anything anyway since we have indirect calls and can't detect saturated calls.
 
 - custom stack!
@@ -92,8 +96,8 @@ data ByteCode
   - the C stack is only used to keep track of return addresses
 - During GC, there's still no way to clear registers
 
-
 Let's say we want optimisation within a function only. Can still beat Elm JS with that, because JS version of A2, A3 is unoptimisable
+
 ```c
 void* stack[10240];
 void* stack_idx;
@@ -110,9 +114,6 @@ size_t some_elm_func_eval() {
   // bytecode
 }
 ```
-
-
-
 
 # Json-like library for encoding/decoding Wasm, with code gen from types
 
