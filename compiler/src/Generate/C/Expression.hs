@@ -906,18 +906,23 @@ apply func value =
     _ ->
       Opt.Call func [value]
 
+
+
 -- TAILCALL
 
 
 generateTailCall :: N.Name -> [(N.Name, Opt.Expr)] -> State ExprState C.Expression
-generateTailCall name args =
+generateTailCall name explicitArgs =
   do
-    let elmArgExprs = map snd args
-    (cArgExprs, nArgs) <- generateChildren elmArgExprs
+    let elmArgExprs = map snd explicitArgs
+    (cArgExprs, nExplicitArgs) <- generateChildren elmArgExprs
     tmpNames <- State.foldM generateTailCallArg [] cArgExprs
 
-    generateTailCallGcAlloc nArgs
-    State.foldM generateTailCallAssign (nArgs - 1) tmpNames
+    freeVars <- gets _freeVars
+    let nClosureValues = nExplicitArgs + (Set.size freeVars)
+
+    generateTailCallGcAlloc nClosureValues
+    State.foldM generateTailCallAssign (nClosureValues - 1) tmpNames
     addBlockItem $ C.BlockStmt $ C.Goto CN.tceLabel
 
     return $ C.Var CN.nullPtr
@@ -932,7 +937,7 @@ generateTailCallArg tmpNames expr =
 
 
 generateTailCallGcAlloc :: Int -> State ExprState ()
-generateTailCallGcAlloc nArgs =
+generateTailCallGcAlloc nValues =
   addBlockItem $ C.BlockStmt $ C.Expr $ Just $
     C.Assign C.AssignOp
       (C.Unary C.DerefOp $ C.Var CN.gcTceData)
@@ -940,7 +945,7 @@ generateTailCallGcAlloc nArgs =
         (C.Var CN.canThrowMacro)
         [C.Call
           (C.Var CN.gcTceIteration)
-          [C.Const $ C.IntConst nArgs]
+          [C.Const $ C.IntConst nValues]
         ])
 
 
@@ -1009,7 +1014,7 @@ generateTailDefEval tailFnName wrapFnName argNames body =
     let wrapperBody = C.Call (C.Var CN.gcTceEval)
                         [ C.addrOf tailFnName
                         , C.addrOf wrapFnName
-                        , C.Const $ C.IntConst $ length argNames
+                        , C.Const $ C.IntConst $ (length argNames + length freeVars)
                         , C.Var CN.args
                         ]
     addExtDecl $ generateEvalFnDecl wrapFnName wrapperBody [] (Just []) False
