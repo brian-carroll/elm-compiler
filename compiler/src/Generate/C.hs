@@ -15,8 +15,6 @@ import qualified Data.Map as Map
 import qualified Data.Name as Name
 import Data.Set (Set)
 import qualified Data.Set as Set
-import qualified Data.Bits as Bits
-import qualified Data.Char as Char
 import qualified Data.Utf8 as Utf8
 
 import qualified Generate.C.Builder as CB
@@ -28,16 +26,9 @@ import qualified Generate.C.Kernel as CK
 import qualified Generate.C.Literals as CL
 
 import qualified Generate.JavaScript as JS
-import qualified Generate.JavaScript.Builder as JSB
-import qualified Generate.JavaScript.Name as JSN
-import qualified Generate.JavaScript.Functions as JsFunctions
 
 import qualified AST.Optimized as Opt
 import qualified Elm.ModuleName as ModuleName
-import qualified Elm.Package as Pkg
-import qualified Elm.String as ES
-
-import qualified Generate.Mode as Mode
 
 import Debug.Trace as Debug
 
@@ -65,9 +56,8 @@ generate :: Opt.GlobalGraph -> Mains -> (B.Builder, B.Builder)
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
     state = Map.foldrWithKey (addMain graph) emptyState mains
-    appTypes = extractJsWrapperConfig state
     cBuilder = buildC mains state
-    jsBuilder = buildJs appTypes (_jsState state) mains
+    jsBuilder = JsWrapper.generate (_literals state) (_jsState state) mains
   in
     (cBuilder, jsBuilder)
 
@@ -81,140 +71,6 @@ emptyState =
     , _revExtDecls = []
     , _jsState = JS.emptyState
     }
-
-
-{-----------------------------------------------------------
-
-    JAVASCRIPT FILE
-
------------------------------------------------------------}
-
-data JsWrapperConfig =
-  JsWrapperConfig
-    { appFields :: Set.Set Name.Name
-    , appFieldGroups :: [[Name.Name]]
-    , appCtors :: [Name.Name]
-    , appKernelVals :: [JSN.Name]
-    }
-
-
-buildJs :: JsWrapperConfig -> JS.State -> Mains -> B.Builder
-buildJs appEnums jsState mains =
-  "var " <> (JSN.toBuilder wasmWrapperName) <> ";\n"
-  <> "(function(scope){\n'use strict';"
-  <> JsWrapper.defineOnReady
-  <> JsWrapper.emscriptenPostRun (
-      JsFunctions.functions
-      <> JS.stateToBuilder jsState
-      <> jsInitWrapper appEnums
-      <> jsAssignMains mains
-      <> JS.toMainExports jsMode mains
-      <> JsWrapper.executeOnReadyCallback
-    )
-  <> "}(this));"
-
-
-jsMode :: Mode.Mode
-jsMode =
-  Mode.Dev Nothing
-
-
-wasmWrapperName :: JSN.Name
-wasmWrapperName =
-  JSN.fromLocal $ Name.fromChars "wasmWrapper"
-
-
-jsAssignMains :: Mains -> B.Builder
-jsAssignMains mains =
-  let
-    (_, builder) =
-      Map.foldrWithKey jsAssignMainsHelp (0, "") mains
-  in
-  builder
-
-
-jsAssignMainsHelp :: ModuleName.Canonical -> Opt.Main -> (Int, B.Builder) -> (Int, B.Builder)
-jsAssignMainsHelp moduleName _ (index, builder) =
-  let
-    globalName =
-      JSN.fromGlobal moduleName (Name.fromChars "main")
-    stmt =
-      JSB.Var globalName $
-      JSB.Index
-        (JSB.Access
-          (JSB.Ref wasmWrapperName)
-          (JSN.fromLocal $ Name.fromChars "mains"))
-        (JSB.Int index)
-  in
-  ( index + 1
-  , (JSB.stmtToBuilder stmt) <> builder
-  )
-
-
-extractJsWrapperConfig :: State -> JsWrapperConfig
-extractJsWrapperConfig state =
-  let
-    literals@(CL.Literals _ _ _ _ _ _ fieldGroups ctors kernelJs globalJs) =
-      _literals state
-  in
-  JsWrapperConfig
-    { appFields = CL.combineFieldLiterals literals
-    , appFieldGroups = Set.toList fieldGroups
-    , appCtors = Set.toList ctors
-    , appKernelVals = 
-      (map (\(home, name) -> JSN.fromKernel home name) (Set.toList kernelJs)) ++
-      (map (\(Opt.Global home name) -> JSN.fromGlobal home name) (Set.toList globalJs))
-    }
-
-
-jsInitWrapper :: JsWrapperConfig -> B.Builder
-jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) =
-  let
-    name =
-      JSN.fromLocal . Name.fromChars
-
-    wrapperImportObj =
-      JSB.Object $ map
-        (\n -> (n, JSB.Ref n))
-        JsWrapper.importsFromElm
-
-    fgStrings = map
-      (\fNames ->
-        JSB.String $
-          mconcat $ List.intersperse " " $
-          map Name.toBuilder fNames)
-      appFieldGroups
-
-    appTypes =
-      JSB.Object
-        [ ( name "ctors"
-          , JSB.Array $ map (JSB.String . Name.toBuilder) appCtors
-          )
-        , ( name "fields"
-          , JSB.Array $ map (JSB.String . Name.toBuilder) (Set.toList appFields)
-          )
-        , ( name "fieldGroups"
-          , JSB.Array fgStrings
-          )
-        ]
-
-    emscriptenModule =
-      JSB.Ref $ name JsWrapper.emscriptenModuleRef
-    
-    kernelRecord =
-      JSB.Object $ map
-        (\jsName -> (jsName, JSB.Ref jsName))
-        appKernelVals
-  in
-  JSB.stmtToBuilder $ JSB.ExprStmt $
-    JSB.Assign (JSB.LRef wasmWrapperName) $
-    JSB.Call (JSB.Ref $ name JsWrapper.wrapWasmElmApp) 
-      [ wrapperImportObj
-      , JSB.Access (JSB.Access emscriptenModule (name "HEAPU32")) (name "buffer")
-      , JSB.Access emscriptenModule (name "asm")
-      , appTypes
-      , kernelRecord
-      ] 
 
 
 {-----------------------------------------------------------
@@ -359,7 +215,7 @@ addJsFlagsDecoder graph state main =
   state {
     _jsState =
       Set.foldl'
-        (JS.addGlobal "" jsMode graph)
+        (JS.addGlobal "" JsWrapper.mode graph)
         (_jsState state)
         decoderGlobals
     }
@@ -414,7 +270,7 @@ addGlobalHelp debugIndentHere graph global state =
     Opt.Manager effectsType ->
       generateManager global effectsType $
       state { _jsState =
-        JS.addGlobal debugIndent jsMode graph (_jsState state) global
+        JS.addGlobal debugIndent JsWrapper.mode graph (_jsState state) global
       }
 
     Opt.Kernel chunks deps ->
@@ -428,7 +284,7 @@ addGlobalHelp debugIndentHere graph global state =
       in
       if CK.shouldGenJsCode home then
         depState { _jsState =
-          JS.addGlobal debugIndent jsMode graph (_jsState state) global
+          JS.addGlobal debugIndent JsWrapper.mode graph (_jsState state) global
         }
       else
         depState
@@ -443,14 +299,14 @@ addGlobalHelp debugIndentHere graph global state =
       addLiteral CL.insertGlobalJs global $
       addDeps deps $
       state { _jsState =
-        JS.addGlobal debugIndent jsMode graph (_jsState state) global
+        JS.addGlobal debugIndent JsWrapper.mode graph (_jsState state) global
       }
 
     Opt.PortOutgoing encoder deps ->
       addLiteral CL.insertGlobalJs global $
       addDeps deps $
       state { _jsState =
-        JS.addGlobal debugIndent jsMode graph (_jsState state) global
+        JS.addGlobal debugIndent JsWrapper.mode graph (_jsState state) global
       }
 
 

@@ -1,11 +1,7 @@
 {-# LANGUAGE OverloadedStrings, QuasiQuotes #-}
 module Generate.C.JsWrapper
-  ( emscriptenModuleRef
-  , emscriptenPostRun
-  , wrapWasmElmApp
-  , defineOnReady
-  , executeOnReadyCallback
-  , importsFromElm
+  ( generate
+  , mode
   )
   where
 
@@ -13,8 +9,44 @@ module Generate.C.JsWrapper
 import qualified Data.ByteString.Builder as B
 import Text.RawString.QQ (r)
 
+import qualified Data.List as List
+import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Data.Name as Name
-import qualified Generate.JavaScript.Name as JsName
+import qualified AST.Optimized as Opt
+import qualified Elm.ModuleName as ModuleName
+
+import qualified Generate.Mode as Mode
+import qualified Generate.C.Literals as CL
+import qualified Generate.JavaScript as JS
+import qualified Generate.JavaScript.Builder as JSB
+import qualified Generate.JavaScript.Name as JSN
+import qualified Generate.JavaScript.Functions as JsFunctions
+
+
+type Mains = Map.Map ModuleName.Canonical Opt.Main
+
+
+generate :: CL.Literals -> JS.State -> Mains -> B.Builder
+generate literals jsState mains =
+  "var " <> (JSN.toBuilder wasmWrapperName) <> ";\n"
+  <> "(function(scope){\n'use strict';"
+  <> defineOnReady
+  <> emscriptenPostRun (
+      JsFunctions.functions
+      <> JS.stateToBuilder jsState
+      <> initWrapper literals
+      <> assignMains mains
+      <> JS.toMainExports mode mains
+      <> executeOnReadyCallback
+    )
+  <> "}(this));"
+
+
+mode :: Mode.Mode
+mode =
+  Mode.Dev Nothing
+
 
 
 emscriptenModuleRef :: String
@@ -78,13 +110,104 @@ wrapWasmElmApp =
   "wrapWasmElmApp"
 
 
-importsFromElm :: [JsName.Name]
+importsFromElm :: [JSN.Name]
 importsFromElm =
-  [ JsName.fromKernel Name.list "Cons"
-  , JsName.fromKernel Name.list "Nil"
-  , JsName.fromKernel Name.utils "Tuple0"
-  , JsName.fromKernel Name.utils "Tuple2"
-  , JsName.fromKernel Name.utils "Tuple3"
-  , JsName.fromKernel Name.utils "chr"
-  ] ++ map JsName.makeF [2..9]
+  [ JSN.fromKernel Name.list "Cons"
+  , JSN.fromKernel Name.list "Nil"
+  , JSN.fromKernel Name.utils "Tuple0"
+  , JSN.fromKernel Name.utils "Tuple2"
+  , JSN.fromKernel Name.utils "Tuple3"
+  , JSN.fromKernel Name.utils "chr"
+  ] ++ map JSN.makeF [2..9]
 
+
+wasmWrapperName :: JSN.Name
+wasmWrapperName =
+  JSN.fromLocal $ Name.fromChars "wasmWrapper"
+
+
+assignMains :: Mains -> B.Builder
+assignMains mains =
+  let
+    (_, builder) =
+      Map.foldrWithKey assignMainsHelp (0, "") mains
+  in
+  builder
+
+
+assignMainsHelp :: ModuleName.Canonical -> Opt.Main -> (Int, B.Builder) -> (Int, B.Builder)
+assignMainsHelp moduleName _ (index, builder) =
+  let
+    globalName =
+      JSN.fromGlobal moduleName (Name.fromChars "main")
+    stmt =
+      JSB.Var globalName $
+      JSB.Index
+        (JSB.Access
+          (JSB.Ref wasmWrapperName)
+          (JSN.fromLocal $ Name.fromChars "mains"))
+        (JSB.Int index)
+  in
+  ( index + 1
+  , (JSB.stmtToBuilder stmt) <> builder
+  )
+
+
+initWrapper :: CL.Literals -> B.Builder
+initWrapper literals@(CL.Literals _ _ _ _ _ _ fieldGroups ctors kernelJs globalJs) =
+  let
+    appFields =
+      CL.combineFieldLiterals literals
+    appFieldGroups =
+      Set.toList fieldGroups
+    appCtors =
+      Set.toList ctors
+    appKernelVals = 
+      (map (\(home, name) -> JSN.fromKernel home name) (Set.toList kernelJs)) ++
+      (map (\(Opt.Global home name) -> JSN.fromGlobal home name) (Set.toList globalJs))
+
+    name =
+      JSN.fromLocal . Name.fromChars
+
+    wrapperImportObj =
+      JSB.Object $ map
+        (\n -> (n, JSB.Ref n))
+        importsFromElm
+
+    fgStrings = map
+      (\fNames ->
+        JSB.String $
+          mconcat $ List.intersperse " " $
+          map Name.toBuilder fNames)
+      appFieldGroups
+
+    appTypes =
+      JSB.Object
+        [ ( name "ctors"
+          , JSB.Array $ map (JSB.String . Name.toBuilder) appCtors
+          )
+        , ( name "fields"
+          , JSB.Array $ map (JSB.String . Name.toBuilder) (Set.toList appFields)
+          )
+        , ( name "fieldGroups"
+          , JSB.Array fgStrings
+          )
+        ]
+
+    emscriptenModule =
+      JSB.Ref $ name emscriptenModuleRef
+    
+    kernelRecord =
+      JSB.Object $ map
+        (\jsName -> (jsName, JSB.Ref jsName))
+        appKernelVals
+  in
+  JSB.stmtToBuilder $ JSB.ExprStmt $
+    JSB.Assign (JSB.LRef wasmWrapperName) $
+    JSB.Call (JSB.Ref $ name wrapWasmElmApp) 
+      [ wrapperImportObj
+      , JSB.Access (JSB.Access emscriptenModule (name "HEAPU32")) (name "buffer")
+      , JSB.Access emscriptenModule (name "asm")
+      , appTypes
+      , kernelRecord
+      ] 
