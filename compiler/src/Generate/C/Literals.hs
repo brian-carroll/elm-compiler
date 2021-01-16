@@ -126,7 +126,7 @@ insertGlobalJs value literals =
 
 generate :: Literals -> [C.ExternalDeclaration]
 generate literals =
-  generateEnums literals ++ generateStructs literals ++ [generateFieldGroupArray literals]
+  generateFieldGroupArray literals : generateStructs literals ++ generateEnums literals
 
 
 {-
