@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, QuasiQuotes #-}
-module Generate.C.JsWrappers
+module Generate.C.JsWrapper
   ( emscriptenModuleRef
   , emscriptenPostRun
   , wrapWasmElmApp

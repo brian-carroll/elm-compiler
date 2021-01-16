@@ -150,8 +150,9 @@ Executable elm
         Generate.C.Name
         Generate.C.AST
         Generate.C.Expression
-        Generate.C.JsWrappers
+        Generate.C.JsWrapper
         Generate.C.Kernel
+        Generate.C.Literals
         Generate.JavaScript
         Generate.JavaScript.Builder
         Generate.JavaScript.Expression

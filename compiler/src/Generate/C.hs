@@ -23,8 +23,9 @@ import qualified Generate.C.Builder as CB
 import qualified Generate.C.Name as CN
 import qualified Generate.C.Expression as CE
 import qualified Generate.C.AST as C
-import qualified Generate.C.JsWrappers as JsWrappers
-import qualified Generate.C.Kernel as CKernel
+import qualified Generate.C.JsWrapper as JsWrapper
+import qualified Generate.C.Kernel as CK
+import qualified Generate.C.Literals as CL
 
 import qualified Generate.JavaScript as JS
 import qualified Generate.JavaScript.Builder as JSB
@@ -53,7 +54,7 @@ type Mains = Map.Map ModuleName.Canonical Opt.Main
 data State =
   State
     { _seenGlobals :: Set.Set Opt.Global
-    , _sharedDefs :: Set.Set CE.SharedDef
+    , _literals :: CL.Literals
     , _revInitGlobals :: [Opt.Global]
     , _revExtDecls :: [C.ExternalDeclaration]
     , _jsState :: JS.State
@@ -75,7 +76,7 @@ emptyState :: State
 emptyState =
   State
     { _seenGlobals = Set.empty
-    , _sharedDefs = Set.singleton $ CE.SharedJsKernel "Json" "run"
+    , _literals = CL.insertKernelJs ("Json", "run") CL.empty
     , _revInitGlobals = []
     , _revExtDecls = []
     , _jsState = JS.emptyState
@@ -101,14 +102,14 @@ buildJs :: JsWrapperConfig -> JS.State -> Mains -> B.Builder
 buildJs appEnums jsState mains =
   "var " <> (JSN.toBuilder wasmWrapperName) <> ";\n"
   <> "(function(scope){\n'use strict';"
-  <> JsWrappers.defineOnReady
-  <> JsWrappers.emscriptenPostRun (
+  <> JsWrapper.defineOnReady
+  <> JsWrapper.emscriptenPostRun (
       JsFunctions.functions
       <> JS.stateToBuilder jsState
       <> jsInitWrapper appEnums
       <> jsAssignMains mains
       <> JS.toMainExports jsMode mains
-      <> JsWrappers.executeOnReadyCallback
+      <> JsWrapper.executeOnReadyCallback
     )
   <> "}(this));"
 
@@ -152,43 +153,18 @@ jsAssignMainsHelp moduleName _ (index, builder) =
 
 extractJsWrapperConfig :: State -> JsWrapperConfig
 extractJsWrapperConfig state =
-  foldr
-    extractJsWrapperConfigHelp
-    (JsWrapperConfig Set.empty [] [] [])
-    (_sharedDefs state)
-
-
-extractJsWrapperConfigHelp :: CE.SharedDef -> JsWrapperConfig -> JsWrapperConfig
-extractJsWrapperConfigHelp def appEnums =
-  case def of
-    CE.SharedJsKernel home name ->
-      appEnums
-        { appKernelVals = (JSN.fromKernel home name) : (appKernelVals appEnums)
-        }
-
-    CE.SharedJsGlobal (Opt.Global home name) ->
-      appEnums
-        { appKernelVals = (JSN.fromGlobal home name) : (appKernelVals appEnums)
-        }
-
-    CE.SharedFieldGroup fields ->
-      appEnums
-        { appFields = List.foldr Set.insert (appFields appEnums) fields
-        , appFieldGroups = fields : (appFieldGroups appEnums)
-        }
-
-    CE.SharedField field ->
-      appEnums
-        { appFields = Set.insert field (appFields appEnums)
-        }
-
-    CE.SharedCtor name ->
-      appEnums
-        { appCtors = name : (appCtors appEnums)
-        }
-
-    _ ->
-      appEnums
+  let
+    literals@(CL.Literals _ _ _ _ _ _ fieldGroups ctors kernelJs globalJs) =
+      _literals state
+  in
+  JsWrapperConfig
+    { appFields = CL.combineFieldLiterals literals
+    , appFieldGroups = Set.toList fieldGroups
+    , appCtors = Set.toList ctors
+    , appKernelVals = 
+      (map (\(home, name) -> JSN.fromKernel home name) (Set.toList kernelJs)) ++
+      (map (\(Opt.Global home name) -> JSN.fromGlobal home name) (Set.toList globalJs))
+    }
 
 
 jsInitWrapper :: JsWrapperConfig -> B.Builder
@@ -200,7 +176,7 @@ jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) 
     wrapperImportObj =
       JSB.Object $ map
         (\n -> (n, JSB.Ref n))
-        JsWrappers.importsFromElm
+        JsWrapper.importsFromElm
 
     fgStrings = map
       (\fNames ->
@@ -223,7 +199,7 @@ jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) 
         ]
 
     emscriptenModule =
-      JSB.Ref $ name JsWrappers.emscriptenModuleRef
+      JSB.Ref $ name JsWrapper.emscriptenModuleRef
     
     kernelRecord =
       JSB.Object $ map
@@ -232,7 +208,7 @@ jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) 
   in
   JSB.stmtToBuilder $ JSB.ExprStmt $
     JSB.Assign (JSB.LRef wasmWrapperName) $
-    JSB.Call (JSB.Ref $ name JsWrappers.wrapWasmElmApp) 
+    JSB.Call (JSB.Ref $ name JsWrapper.wrapWasmElmApp) 
       [ wrapperImportObj
       , JSB.Access (JSB.Access emscriptenModule (name "HEAPU32")) (name "buffer")
       , JSB.Access emscriptenModule (name "asm")
@@ -250,7 +226,7 @@ jsInitWrapper (JsWrapperConfig appFields appFieldGroups appCtors appKernelVals) 
 buildC :: Mains -> State -> B.Builder
 buildC mains state =
   prependExtDecls [C.IncludeExt CN.KernelH] $
-  prependSharedDefs (_sharedDefs state) $
+  prependExtDecls (CL.generate $ _literals state) $
   prependExtDecls (_revExtDecls state) $
   prependExtDecls [generateFunctionDebugNames (_revExtDecls state)] $
   prependExtDecls [generateMainsArray mains, C.BlankLineExt] $
@@ -270,91 +246,6 @@ prependExtDecls revExtDecls monolith =
 
 -----------------------------------------------------------}
 
-prependSharedDefs :: Set.Set CE.SharedDef -> B.Builder -> B.Builder
-prependSharedDefs defs builder =
-  let
-    (jsKernelNames, cCtorNames, elmFields, fieldGroups, decls) =
-      Set.foldr' iterateSharedDefs ([], [], Set.empty, [], []) defs
-    cFields =
-      map CN.fieldId $ Set.toList elmFields
-  in
-  prependExtDecls (generateEnum jsKernelNames ++ generateEnumDebug "jsValues" jsKernelNames) $
-  prependExtDecls (generateEnum cCtorNames ++ generateEnumDebug "ctors" cCtorNames) $
-  prependExtDecls (generateEnum cFields ++ generateEnumDebug "fields" cFields) $
-  prependExtDecls decls $
-  prependExtDecls [generateFieldGroupArray fieldGroups] $
-  builder
-
-
-iterateSharedDefs :: CE.SharedDef
-  -> ([CN.Name], [CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
-  -> ([CN.Name], [CN.Name], Set.Set Name.Name, [[Name.Name]], [C.ExternalDeclaration])
-iterateSharedDefs def acc@(jsKernelNames, ctorNames, fieldNames, fieldGroups, decls) =
-  let newDecls = (generateSharedDefItem def) ++ decls
-  in
-  case def of
-    CE.SharedJsKernel home name ->
-      ( (CN.jsKernelEval home name) : jsKernelNames
-      , ctorNames
-      , fieldNames
-      , fieldGroups
-      , newDecls
-      )
-    CE.SharedJsGlobal (Opt.Global home name) ->
-      ( (CN.jsGlobalEval home name) : jsKernelNames
-      , ctorNames
-      , fieldNames
-      , fieldGroups
-      , newDecls
-      )
-    CE.SharedFieldGroup fields ->
-      ( jsKernelNames
-      , ctorNames
-      , List.foldr Set.insert fieldNames fields
-      , fields : fieldGroups
-      , newDecls
-      )
-    CE.SharedField field ->
-      ( jsKernelNames
-      , ctorNames
-      , Set.insert field fieldNames
-      , fieldGroups
-      , newDecls
-      )
-    CE.SharedCtor name ->
-      ( jsKernelNames
-      , (CN.ctorId name) : ctorNames
-      , fieldNames
-      , fieldGroups
-      , newDecls
-      )
-    _ ->
-      ( jsKernelNames, ctorNames, fieldNames, fieldGroups, newDecls )
-
-
-generateEnum :: [CN.Name] -> [C.ExternalDeclaration]
-generateEnum names =
-  case names of
-    [] -> []
-    _ -> [C.DeclExt $ C.Decl [C.TypeSpec $ C.Enum names] Nothing Nothing]
-
-
-generateFieldGroupArray :: [[Name.Name]] -> C.ExternalDeclaration
-generateFieldGroupArray fieldGroups =
-  let
-    pointerArray = foldr
-      (\fields acc ->
-        ([], C.InitExpr $ C.Unary C.AddrOp $ C.Var $ CN.fieldGroup fields)
-        : acc
-      )
-      [([], C.InitExpr $ C.Var CN.nullPtr)]
-      fieldGroups
-  in
-  C.DeclExt $ C.Decl
-  [C.TypeSpec $ C.TypeDef CN.FieldGroup]
-  (Just $ C.Declr (Just CN.wrapperFieldGroups) [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
-  (Just $ C.InitExpr $ C.CompoundLit $ pointerArray)
-
 
 jsonRunIndexAssignment :: C.ExternalDeclaration
 jsonRunIndexAssignment =
@@ -362,141 +253,6 @@ jsonRunIndexAssignment =
     [C.TypeSpec C.SizeT]
     (Just $ C.Declr (Just CN.jsonRunEvalIndex) [])
     (Just $ C.InitExpr $ C.Var $ CN.jsKernelEval "Json" "run")
-
-
-generateSharedDefItem :: CE.SharedDef -> [C.ExternalDeclaration]
-generateSharedDefItem def =
-  case def of
-    CE.SharedInt value ->
-      [generateStructDef CN.ElmInt (CN.literalInt value)
-        [ ("header", CE.generateHeader CE.HEADER_INT)
-        , ("value", C.Const $ C.IntConst value)
-        ]
-        Nothing
-      ]
-
-    CE.SharedFloat value ->
-      [generateStructDef CN.ElmFloat (CN.literalFloat value)
-        [ ("header", CE.generateHeader CE.HEADER_FLOAT)
-        , ("value", C.Const $ C.FloatConst value)
-        ]
-        Nothing
-      ]
-
-    CE.SharedChr value ->
-      [generateStructDef CN.ElmChar (CN.literalChr value)
-        [("header", CE.generateHeader CE.HEADER_CHAR)]
-        (Just ("words16", generateUtf16 value))
-      ]
-
-    CE.SharedStr value ->
-      let words16 = generateUtf16 value
-      in
-      [generateStructDef CN.ElmString16 (CN.literalStr value)
-        [("header", CE.generateHeader $ CE.HEADER_STRING (length words16))]
-        (Just ("words16", words16))
-      ]
-  
-    CE.SharedAccessor name ->
-      [generateClosure (CN.accessor name)
-        (C.Unary C.AddrOp $ C.Var CN.utilsAccessEval)
-        2 [C.nameAsVoidPtr $ CN.fieldId name]
-      ]
-
-    CE.SharedFieldGroup names ->
-      [generateStructDef CN.FieldGroup (CN.fieldGroup names)
-        [ ("header", CE.generateHeader $ CE.HEADER_FIELDGROUP (length names))
-        , ("size", C.Const $ C.IntConst $ length names)
-        ]
-        (Just ("fields", map (C.Var . CN.fieldId) names))
-      ]
-
-    CE.SharedField _ ->
-      []
-
-    CE.SharedCtor _ ->
-      []
-
-    CE.SharedJsKernel home name ->
-      if CKernel.shouldGenStruct home name then
-        [generateClosure (CN.kernelValue home name)
-          (C.nameAsVoidPtr $ CN.jsKernelEval home name)
-          maxClosureArity
-          []
-        ]
-      else
-        []
-
-    CE.SharedJsGlobal (Opt.Global home name) ->
-      [generateClosure (CN.global home name)
-        (C.nameAsVoidPtr $ CN.jsGlobalEval home name)
-        maxClosureArity
-        []
-      ]
-
-
-generateUtf16 :: ES.String -> [C.Expression]
-generateUtf16 str =
-  map (C.Const . C.IntHexConst) $ concatMap encodeUtf16 (ES.toChars str)
-
-
-encodeUtf16 :: Char -> [Int]
-encodeUtf16 chr =
-  let
-    codepoint = Char.ord chr
-    (high, low) = quotRem (codepoint - 0x10000) 0x400
-  in
-  if codepoint < 0x10000 then
-    [codepoint]
-  else
-    [ high + 0xD800
-    , low + 0xDC00
-    ]
-
-
-maxClosureArity :: Int
-maxClosureArity =
-  0xffff
-
-
-generateClosure :: CN.Name -> C.Expression -> Int -> [C.Expression] -> C.ExternalDeclaration
-generateClosure name evalFnPtr maxValues values =
-  let nValues = length values
-  in
-  generateStructDef CN.Closure name
-    [ ("header", CE.generateHeader $ CE.HEADER_CLOSURE nValues)
-    , ("n_values", C.Const $ C.IntHexConst nValues)
-    , ("max_values", C.Const $ C.IntHexConst maxValues)
-    , ("evaluator", evalFnPtr)
-    ]
-    (if nValues > 0 then Just ("values", values) else Nothing)
-
-
-generateStructDef :: CN.KernelTypeDef
-  -> CN.Name 
-  -> [(B.Builder, C.Expression)]
-  -> Maybe (B.Builder, [C.Expression])
-  -> C.ExternalDeclaration
-generateStructDef structName varName fixedMembers flexibleMembers =
-  let
-    fixed = map
-      (\(memberBuilder, memberExpr) ->
-        ([C.MemberDesig memberBuilder], C.InitExpr $ memberExpr))
-      fixedMembers
-
-    flexible = maybe []
-      (\(memberBuilder, memberExprs) ->
-        [( [C.MemberDesig memberBuilder]
-         , C.InitExpr $ C.CompoundLit $
-            map (\expr -> ([], C.InitExpr expr)) memberExprs
-         )]
-      )
-      flexibleMembers
-  in
-  C.DeclExt $ C.Decl
-    [C.TypeSpec $ C.TypeDef structName]
-    (Just $ C.Declr (Just $ varName) [])
-    (Just $ C.InitExpr $ C.CompoundLit $ (fixed ++ flexible))
 
 
 {-----------------------------------------------------------
@@ -517,8 +273,6 @@ generateCMain revInitGlobals =
     returnFail =
       C.BlockStmt $ C.If (C.Var exitCode)
         (C.Return $ Just $ C.Var exitCode) Nothing
-    initKernelEvalIds =
-      map initKernelEvalId
     initCalls =
       List.foldl' generateInitCall [] revInitGlobals
     runGC =
@@ -562,24 +316,6 @@ generateMainsArrayHelp :: ModuleName.Canonical -> Opt.Main -> C.InitializerList 
 generateMainsArrayHelp moduleName _ arrayElements =
   ([], (C.InitExpr $ C.addrOf $ CN.globalInitPtr moduleName "main"))
   : arrayElements
-
-
-initKernelEvalId :: CE.SharedDef -> [C.CompoundBlockItem]
-initKernelEvalId def =
-  case def of
-    CE.SharedJsKernel home name ->
-      [C.BlockStmt $ C.Expr $ Just $ C.Assign C.AssignOp
-        (C.Index
-          (C.MemberDot
-            (C.Var $ CN.kernelValue home name)
-            (CN.fromBuilder "values"))
-          (C.Const $ C.IntConst 0)
-        )
-        (C.nameAsVoidPtr $ CN.jsKernelEval home name)
-      ]
-
-    _ ->
-      []
 
 
 generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
@@ -690,7 +426,7 @@ addGlobalHelp debugIndentHere graph global state =
           else
             addDeps deps state
       in
-      if CKernel.shouldGenJsCode home then
+      if CK.shouldGenJsCode home then
         depState { _jsState =
           JS.addGlobal debugIndent jsMode graph (_jsState state) global
         }
@@ -704,14 +440,14 @@ addGlobalHelp debugIndentHere graph global state =
       generateCtor global 1 state
 
     Opt.PortIncoming decoder deps ->
-      addShared (CE.SharedJsGlobal global) $
+      addLiteral CL.insertGlobalJs global $
       addDeps deps $
       state { _jsState =
         JS.addGlobal debugIndent jsMode graph (_jsState state) global
       }
 
     Opt.PortOutgoing encoder deps ->
-      addShared (CE.SharedJsGlobal global) $
+      addLiteral CL.insertGlobalJs global $
       addDeps deps $
       state { _jsState =
         JS.addGlobal debugIndent jsMode graph (_jsState state) global
@@ -723,12 +459,12 @@ addExtDecl extDecl state =
   state { _revExtDecls = extDecl : _revExtDecls state }
 
 
-addShared :: CE.SharedDef -> State -> State
-addShared sharedDef state =
-  state { _sharedDefs =
-    Set.insert sharedDef (_sharedDefs state) }
+addLiteral :: (a -> CL.Literals -> CL.Literals) -> a -> State -> State
+addLiteral insert value state =
+  state
+    { _literals = insert value (_literals state) }
 
-    
+
 {-----------------------------------------------------------
 
                 CYCLE
@@ -808,20 +544,20 @@ generateCycleTailDef home name args body state =
     closureName = CN.global home name
 
     initExprState =
-      CE.initState global (_revExtDecls state) (_sharedDefs state)
+      CE.initState global (_revExtDecls state) (_literals state)
 
-    (revExtDecls, sharedDefs) =
+    (revExtDecls, literals) =
       CE.globalDefsFromExprState $
       State.execState
         (CE.generateTailDefEval tailFnName wrapFnName args body)
         initExprState
 
     closure =
-      generateClosure closureName (C.addrOf wrapFnName) (length args) []
+      CK.generateClosure closureName (C.addrOf wrapFnName) (length args) []
   in
   state
     { _revExtDecls = closure : revExtDecls
-    , _sharedDefs = sharedDefs
+    , _literals = literals
     }
 
 
@@ -852,9 +588,9 @@ generateCycleVal home state (name, expr) =
       CE.initState
         global
         (declarePtr : defineAlias : _revExtDecls state)
-        (_sharedDefs state)
+        (_literals state)
 
-    (revExtDecls, sharedDefs) =
+    (revExtDecls, literals) =
       CE.globalDefsFromExprState $
       State.execState
         (CE.generateCycleFn ptrName funcName expr)
@@ -862,7 +598,7 @@ generateCycleVal home state (name, expr) =
   in
   state
     { _revExtDecls = revExtDecls
-    , _sharedDefs = sharedDefs
+    , _literals = literals
     , _revInitGlobals = global : (_revInitGlobals state)
     }
 
@@ -882,9 +618,9 @@ generateManager global@(Opt.Global home _) effectsType state =
     moduleNameStr = Utf8.Utf8 moduleNameBytes -- different phantom type
 
     makeClosure name =
-      generateClosure (CN.global home name)
+      CK.generateClosure (CN.global home name)
         (C.nameAsVoidPtr $ CN.jsKernelEval Name.platform "leaf")
-        maxClosureArity
+        CK.maxClosureArity
         [C.addrOf $ CN.literalStr moduleNameStr]
 
     closures =
@@ -894,12 +630,9 @@ generateManager global@(Opt.Global home _) effectsType state =
         Opt.Sub -> ["subscription"]
         Opt.Fx -> ["subscription", "command"]  
   in
-  addShared (CE.SharedStr moduleNameStr) $
-  addShared (CE.SharedJsKernel Name.platform "leaf") $
-    state
-      { _revExtDecls =
-          closures ++ (_revExtDecls state)
-      }
+  addLiteral CL.insertStr moduleNameStr $
+  addLiteral CL.insertKernelJs (Name.platform, "leaf") $
+    state { _revExtDecls = closures ++ (_revExtDecls state) }
 
 
 {-----------------------------------------------------------
@@ -922,7 +655,7 @@ addDef global@(Opt.Global home' name') expr state =
     Opt.Function args body ->
       let
         fname = CN.globalEvaluator home' name'
-        closure = generateClosure
+        closure = CK.generateClosure
           globalName
           (C.Unary C.AddrOp $ C.Var fname)
           (length args)
@@ -932,19 +665,19 @@ addDef global@(Opt.Global home' name') expr state =
       generatExtFunc global fname (Just args) body state
 
     Opt.Int value ->
-      addShared (CE.SharedInt value) $
+      addLiteral CL.insertInt value $
         defineAlias (CN.literalInt value) state
 
     Opt.Float value ->
-      addShared (CE.SharedFloat value) $
+      addLiteral CL.insertFloat value $
         defineAlias (CN.literalFloat value) state
   
     Opt.Chr value ->
-      addShared (CE.SharedChr value) $
+      addLiteral CL.insertChr value $
         defineAlias (CN.literalChr value) state
 
     Opt.Str value ->
-      addShared (CE.SharedStr value) $
+      addLiteral CL.insertStr value $
         defineAlias (CN.literalStr value) state
 
     Opt.Bool bool ->
@@ -954,8 +687,7 @@ addDef global@(Opt.Global home' name') expr state =
       defineAlias CN.unit state
 
     Opt.Accessor name ->
-      addShared (CE.SharedField name) $
-      addShared (CE.SharedAccessor name) $
+      addLiteral CL.insertFieldAccessor name $
         defineAlias (CN.accessor name) state
 
     Opt.List _        -> generateRuntimeInit CN.Cons global expr state
@@ -988,8 +720,8 @@ addDef global@(Opt.Global home' name') expr state =
 
     Opt.VarKernel home name ->
       defineAlias (CN.kernelValue home name) $
-      if CKernel.shouldGenJsEnumId home name then
-        addShared (CE.SharedJsKernel home name) state
+      if CK.shouldGenJsEnumId home name then
+        addLiteral CL.insertKernelJs (home, name) state
       else
         state
 
@@ -1025,9 +757,9 @@ generatExtFunc :: Opt.Global -> CN.Name -> Maybe [Name.Name] -> Opt.Expr -> Stat
 generatExtFunc global fname params body state =
   let
     initExprState =
-      CE.initState global (_revExtDecls state) (_sharedDefs state)
+      CE.initState global (_revExtDecls state) (_literals state)
 
-    (revExtDecls, sharedDefs) =
+    (revExtDecls, literals) =
       CE.globalDefsFromExprState $
       State.execState
         (CE.generateEvalFn fname params body False)
@@ -1035,7 +767,7 @@ generatExtFunc global fname params body state =
   in
   state
     { _revExtDecls = revExtDecls
-    , _sharedDefs = sharedDefs
+    , _literals = literals
     }
 
 
@@ -1054,18 +786,11 @@ generateCtor global@(Opt.Global home name) arity state =
     generateCtorFn global arity state
   else
     let
-      extDecl =
-        generateStructDef
-          CN.Custom
-          (CN.global home name)
-          [ ("header", CE.generateHeader $ CE.HEADER_CUSTOM 0)
-          , ("ctor", C.Var $ CN.ctorId name)
-          ]
-          Nothing
+      extDecl = CK.generateCustomStruct (CN.global home name) (CN.ctorId name)
     in
     state
       { _revExtDecls = extDecl : (_revExtDecls state)
-      , _sharedDefs = Set.insert (CE.SharedCtor name) (_sharedDefs state)
+      , _literals = CL.insertCtor name (_literals state)
       }  
 
 
@@ -1093,12 +818,12 @@ generateCtorFn (Opt.Global home name) arity state =
 
     closure :: C.ExternalDeclaration
     closure =
-      generateClosure (CN.global home name)
+      CK.generateClosure (CN.global home name)
         (C.addrOf fname) arity []
   in
   state
     { _revExtDecls = closure : evalFn : (_revExtDecls state)
-    , _sharedDefs = Set.insert (CE.SharedCtor name) (_sharedDefs state)
+    , _literals = CL.insertCtor name (_literals state)
     }
 
 
@@ -1191,39 +916,6 @@ exprName expr =
       C DEBUG
 
 -----------------------------------------------------------}
-
-
-generateEnumDebug :: B.Builder -> [CN.Name] -> [C.ExternalDeclaration]
-generateEnumDebug arraySuffix names =
-  let
-    arrayName :: B.Builder
-    arrayName = "Debug_" <> arraySuffix
-
-    strings :: C.InitializerList
-    strings =
-      map
-        (\name ->
-          ([], C.InitExpr $ C.Const $ C.StrConst (CN.toBuilder name)))
-        names
-    
-    array :: C.ExternalDeclaration
-    array =
-      C.DeclExt $ C.Decl
-        [C.TypeSpec C.Char]
-        (Just $ C.Declr (Just $ CN.fromBuilder arrayName)
-          [C.PtrDeclr [], C.ArrDeclr [] C.NoArrSize])
-        (Just $ C.InitExpr $ C.CompoundLit strings)
-
-    size :: C.ExternalDeclaration
-    size =
-      C.DeclExt $ C.Decl
-        [C.TypeSpec C.Int]
-        (Just $ C.Declr (Just $ CN.fromBuilder (arrayName <> "_size")) [])
-        (Just $ C.InitExpr $ C.Const $ C.IntConst $ length names)
-  in
-  [ size
-  , array
-  ]
 
 
 generateFunctionDebugNames :: [C.ExternalDeclaration] -> C.ExternalDeclaration

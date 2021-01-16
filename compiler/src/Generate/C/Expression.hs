@@ -1,9 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Generate.C.Expression
  ( generate
- , SharedDef(..)
- , HeaderMacro(..)
- , generateHeader
  , ExprState(..)
  , initState
  , generateEvalFn
@@ -29,6 +26,7 @@ import qualified Data.Name as N
 import qualified Generate.C.Name as CN
 import qualified Generate.C.AST as C
 import qualified Generate.C.Kernel as CKernel
+import qualified Generate.C.Literals as CL
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
@@ -44,21 +42,6 @@ import qualified Optimize.DecisionTree as DT
 import Debug.Trace as Debug
 
 
--- Globals in C but not in Elm AST or in JS
-data SharedDef
-  = SharedInt Int
-  | SharedFloat EF.Float
-  | SharedChr ES.String
-  | SharedStr ES.String
-  | SharedAccessor N.Name
-  | SharedFieldGroup [N.Name]
-  | SharedField N.Name
-  | SharedCtor N.Name
-  | SharedJsKernel N.Name N.Name
-  | SharedJsGlobal Opt.Global
-  deriving (Eq, Ord)
-
-
 -- STATE AND HELPERS
 
 
@@ -66,7 +49,7 @@ data ExprState =
   ExprState
     { _revBlockItems :: [C.CompoundBlockItem]
     , _revExtDecls :: [C.ExternalDeclaration]
-    , _sharedDefs :: Set SharedDef
+    , _literals :: CL.Literals
     , _localScope :: Set N.Name
     , _freeVars :: Set N.Name
     , _tmpVarIndex :: Int
@@ -74,12 +57,12 @@ data ExprState =
     }
 
 
-initState :: Opt.Global -> [C.ExternalDeclaration] -> Set SharedDef -> ExprState
-initState global revExtDecls sharedDefs =
+initState :: Opt.Global -> [C.ExternalDeclaration] -> CL.Literals -> ExprState
+initState global revExtDecls literals =
   ExprState
     { _revBlockItems = []
     , _revExtDecls = revExtDecls
-    , _sharedDefs = sharedDefs
+    , _literals = literals
     , _localScope = Set.empty
     , _freeVars = Set.empty
     , _tmpVarIndex = 0
@@ -87,10 +70,10 @@ initState global revExtDecls sharedDefs =
     }
 
 
-globalDefsFromExprState :: ExprState -> ([C.ExternalDeclaration], Set SharedDef)
+globalDefsFromExprState :: ExprState -> ([C.ExternalDeclaration], CL.Literals)
 globalDefsFromExprState state =
   ( _revExtDecls state
-  , _sharedDefs state
+  , _literals state
   )
 
 
@@ -99,18 +82,16 @@ todo comment =
   return $ C.CommentExpr comment
 
 
-addShared :: SharedDef -> State ExprState ()
-addShared shared =
-  State.modify (\state ->
-    state { _sharedDefs = Set.insert shared (_sharedDefs state) }
-  )
+addLiteral :: (a -> CL.Literals -> CL.Literals) -> a -> State ExprState ()
+addLiteral insert value =
+  State.modify (\state -> state { _literals = insert value (_literals state) })
 
 
-addSharedExpr :: SharedDef -> CN.Name -> State ExprState C.Expression
-addSharedExpr shared name =
+addLiteralRef :: (a -> CL.Literals -> CL.Literals) -> (a -> CN.Name) -> a -> State ExprState C.Expression
+addLiteralRef insert getName value =
   do
-    addShared shared
-    return $ C.addrOf name
+    addLiteral insert value
+    return $ C.addrOf $ getName value
 
 
 addBlockItem :: C.CompoundBlockItem -> State ExprState ()
@@ -193,16 +174,16 @@ generate expr =
       return $ C.addrOf $ if bool then CN.true else CN.false
 
     Opt.Chr char ->
-      addSharedExpr (SharedChr char) (CN.literalChr char)
+      addLiteralRef CL.insertChr CN.literalChr char
 
     Opt.Str string ->
-      addSharedExpr (SharedStr string) (CN.literalStr string)
+      addLiteralRef CL.insertStr CN.literalStr string
 
     Opt.Int int ->
-      addSharedExpr (SharedInt int) (CN.literalInt int)
+      addLiteralRef CL.insertInt CN.literalInt int
 
     Opt.Float float ->
-      addSharedExpr (SharedFloat float) (CN.literalFloat float)
+      addLiteralRef CL.insertFloat CN.literalFloat float
 
     Opt.VarLocal name ->
       do
@@ -227,7 +208,7 @@ generate expr =
     Opt.VarKernel home name ->
       do
         when (CKernel.shouldGenJsEnumId home name)
-          (addShared $ SharedJsKernel home name)
+          (addLiteral CL.insertKernelJs (home, name))
         return $ C.addrOf $ CN.kernelValue home name
 
     Opt.List entries ->
@@ -259,15 +240,11 @@ generate expr =
       generateCase label root decider jumps
 
     Opt.Accessor field ->
-      do
-        addShared (SharedField field)
-        addSharedExpr
-          (SharedAccessor field)
-          (CN.accessor field)
+      addLiteralRef CL.insertFieldAccessor CN.accessor field
 
     Opt.Access record field ->
       do
-        addShared (SharedField field)
+        addLiteral CL.insertFieldAccess field
         recordExpr <- generate record
         return $ C.Call
           (C.Var CN.utilsAccessEval)
@@ -492,7 +469,7 @@ generateRecord fields =
     fieldGroupName = CN.fieldGroup fieldNames
   in
   do
-    addShared (SharedFieldGroup fieldNames)
+    addLiteral CL.insertFieldGroup fieldNames
     (childExprs, nChildren) <- generateChildren children
     return $
       C.Call (C.Var $ CN.fromBuilder "NEW_RECORD")
@@ -684,7 +661,7 @@ generateTest value test =
   case test of
     DT.IsCtor _ name _ _ _ ->
       do
-        addShared (SharedCtor name)
+        addLiteral CL.insertCtor name
         return $ C.Binary C.EqOp
           value
           (C.Var $ CN.ctorId name)
@@ -700,7 +677,7 @@ generateTest value test =
 
     DT.IsChr char ->
       do
-        addShared (SharedChr char)
+        addLiteral CL.insertChr char
         return $ C.Binary C.EqOp
           (C.Call
             (C.Var $ CN.applyMacro 2)
@@ -712,7 +689,7 @@ generateTest value test =
 
     DT.IsStr string ->
       do
-        addShared (SharedStr string)
+        addLiteral CL.insertStr string
         return $ C.Binary C.EqOp
           (C.Call
             (C.Var $ CN.applyMacro 2)
@@ -1039,46 +1016,6 @@ generateTailDefEval tailFnName wrapFnName argNames body =
     return freeVars
 
 
-
--- C VALUE HEADERS
-
-
-data HeaderMacro
-  = HEADER_INT
-  | HEADER_FLOAT
-  | HEADER_CHAR
-  | HEADER_STRING Int
-  | HEADER_LIST
-  | HEADER_TUPLE2
-  | HEADER_TUPLE3
-  | HEADER_CUSTOM Int
-  | HEADER_RECORD Int
-  | HEADER_FIELDGROUP Int
-  | HEADER_CLOSURE Int
-
-
-generateHeader :: HeaderMacro -> C.Expression
-generateHeader header =
-  let
-    fixedSize macro =
-      C.Var $ CN.fromBuilder macro
-    varSize macro kids =
-      C.Call
-        (C.Var $ CN.fromBuilder macro)
-        [C.Const $ C.IntConst kids]
-  in
-  case header of
-    HEADER_INT -> fixedSize  "HEADER_INT"
-    HEADER_FLOAT -> fixedSize "HEADER_FLOAT"
-    HEADER_CHAR -> fixedSize "HEADER_CHAR"
-    HEADER_STRING n -> varSize "HEADER_STRING" n
-    HEADER_LIST -> fixedSize "HEADER_LIST"
-    HEADER_TUPLE2 -> fixedSize "HEADER_TUPLE2"
-    HEADER_TUPLE3 -> fixedSize "HEADER_TUPLE3"
-    HEADER_CUSTOM n -> varSize "HEADER_CUSTOM" n
-    HEADER_RECORD n -> varSize "HEADER_RECORD" n
-    HEADER_FIELDGROUP n -> varSize "HEADER_FIELDGROUP" n
-    HEADER_CLOSURE n -> varSize "HEADER_CLOSURE" n
 
 
 traceBuilder :: B.Builder -> a -> a
