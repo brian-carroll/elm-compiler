@@ -166,7 +166,7 @@ initWrapper literals@(CL.Literals _ _ _ _ _ _ fieldGroups ctors kernelJs globalJ
       (map (\(home, name) -> JSN.fromKernel home name) (Set.toList kernelJs)) ++
       (map (\(Opt.Global home name) -> JSN.fromGlobal home name) (Set.toList globalJs))
 
-    name =
+    makeName =
       JSN.fromLocal . Name.fromChars
 
     wrapperImportObj =
@@ -183,19 +183,19 @@ initWrapper literals@(CL.Literals _ _ _ _ _ _ fieldGroups ctors kernelJs globalJ
 
     appTypes =
       JSB.Object
-        [ ( name "ctors"
+        [ ( makeName "ctors"
           , JSB.Array $ map (JSB.String . Name.toBuilder) appCtors
           )
-        , ( name "fields"
+        , ( makeName "fields"
           , JSB.Array $ map (JSB.String . Name.toBuilder) (Set.toList appFields)
           )
-        , ( name "fieldGroups"
+        , ( makeName "fieldGroups"
           , JSB.Array fgStrings
           )
         ]
 
     emscriptenModule =
-      JSB.Ref $ name emscriptenModuleRef
+      JSB.Ref $ makeName emscriptenModuleRef
     
     kernelRecord =
       JSB.Object $ map
@@ -204,10 +204,10 @@ initWrapper literals@(CL.Literals _ _ _ _ _ _ fieldGroups ctors kernelJs globalJ
   in
   JSB.stmtToBuilder $ JSB.ExprStmt $
     JSB.Assign (JSB.LRef wasmWrapperName) $
-    JSB.Call (JSB.Ref $ name wrapWasmElmApp) 
+    JSB.Call (JSB.Ref $ makeName wrapWasmElmApp) 
       [ wrapperImportObj
-      , JSB.Access (JSB.Access emscriptenModule (name "HEAPU32")) (name "buffer")
-      , JSB.Access emscriptenModule (name "asm")
+      , JSB.Access (JSB.Access emscriptenModule (makeName "HEAPU32")) (makeName "buffer")
+      , JSB.Access emscriptenModule (makeName "asm")
       , appTypes
       , kernelRecord
       ] 
