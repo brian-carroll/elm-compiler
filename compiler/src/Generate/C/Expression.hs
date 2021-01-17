@@ -108,6 +108,11 @@ addBlockItems revItems =
     })
 
 
+addCommentLine :: B.Builder -> State ExprState ()
+addCommentLine comment =
+  addBlockItem $ C.BlockStmt $ C.CommentStatement comment
+
+
 addExtDecl :: C.ExternalDeclaration -> State ExprState ()
 addExtDecl extDecl =
   modify (\state ->
@@ -538,7 +543,7 @@ generateCase label root decider jumps =
   do
     updateScope root
     resultName <- getTmpVarName
-    addBlockItem $ C.BlockDecl $ C.declare resultName Nothing
+    addBlockItem $ C.declareVoidPtr resultName Nothing
     defaultStmt <- generateDecider resultName label root decider
     stmts <- foldr
               (goto resultName label)
@@ -579,7 +584,7 @@ generateDecider resultName label root decisionTree =
 
     Opt.FanOut path edges fallback ->
       do
-        let value = pathToCExpr root path
+        value <- generateTestPath root path
         testVal <- generateTestValue value $ fst (head edges)
         foldr
           (generateFanoutBranch resultName label root testVal)
@@ -603,7 +608,8 @@ generateTestChain :: N.Name -> (DT.Path, DT.Test) -> State ExprState [C.Expressi
 generateTestChain root (path, test) acc =
   do
     accExpr <- acc
-    testValue <- generateTestValue (pathToCExpr root path) test
+    pathExpr <- generateTestPath root path
+    testValue <- generateTestValue pathExpr test
     testExpr <- generateTest testValue test
     return $ testExpr : accExpr
 
@@ -612,30 +618,10 @@ generateTestValue :: C.Expression -> DT.Test -> State ExprState C.Expression
 generateTestValue value test =
   case test of
     DT.IsCtor _ _ _ _ _ ->
-      do
-        testValName <- getTmpVarName
-        addBlockItem $ C.BlockDecl $
-          C.Decl
-            [C.TypeSpec $ C.TypeDef CN.U32]
-            (Just $ C.Declr (Just testValName) [])
-            (Just $ C.InitExpr $
-              C.MemberArrow
-                (C.Parens $ C.castAsPtrTo (C.TypeDef CN.Custom) value)
-                (CN.fromBuilder "ctor"))
-        return $ C.Var testValName
+      castUsingTmpVar (C.TypeDef CN.Custom) value
 
     DT.IsInt _ ->
-      do
-        testValName <- getTmpVarName
-        addBlockItem $ C.BlockDecl $
-          C.Decl
-            [C.TypeSpec $ C.TypeDef CN.I32]
-            (Just $ C.Declr (Just testValName) [])
-            (Just $ C.InitExpr $
-              C.MemberArrow
-                (C.Parens $ C.castAsPtrTo (C.TypeDef CN.ElmInt) value)
-                (CN.fromBuilder "value"))
-        return $ C.Var testValName
+      castUsingTmpVar (C.TypeDef CN.ElmInt) value
 
     DT.IsBool _ ->
       return value
@@ -662,42 +648,47 @@ generateTest value test =
     DT.IsCtor _ name _ _ _ ->
       do
         addLiteral CL.insertCtor name
-        return $ C.Binary C.EqOp
-          value
-          (C.Var $ CN.ctorId name)
+        let actualExpr = C.MemberArrow value (CN.fromBuilder "ctor")
+        let expectedExpr = C.Var $ CN.ctorId name
+        let testExpr = C.Binary C.EqOp actualExpr expectedExpr
+        return $ C.Binary C.LandOp (nullCheck value) testExpr
 
     DT.IsBool bool ->
       return $ C.Binary C.EqOp value $ C.addrOf $
         if bool then CN.true else CN.false
 
     DT.IsInt int ->
-      return $ C.Binary C.EqOp
-        value
-        (C.Const $ C.IntConst int)
+      do
+        let actualExpr = C.MemberArrow value (CN.fromBuilder "value")
+        let expectedExpr = C.Const $ C.IntConst int
+        let testExpr = C.Binary C.EqOp actualExpr expectedExpr
+        return $ C.Binary C.LandOp (nullCheck value) testExpr
 
     DT.IsChr char ->
       do
         addLiteral CL.insertChr char
-        return $ C.Binary C.EqOp
-          (C.Call
-            (C.Var $ CN.applyMacro 2)
-            [ C.addrOf CN.utilsEqual
-            , value
-            , (C.addrOf $ CN.literalChr char)
-            ])
-          (C.addrOf CN.true)
+        let testExpr = C.Binary C.EqOp
+              (C.Call
+                (C.Var $ CN.applyMacro 2)
+                [ C.addrOf CN.utilsEqual
+                , value
+                , (C.addrOf $ CN.literalChr char)
+                ])
+              (C.addrOf CN.true)
+        return $ C.Binary C.LandOp (nullCheck value) testExpr
 
     DT.IsStr string ->
       do
         addLiteral CL.insertStr string
-        return $ C.Binary C.EqOp
-          (C.Call
-            (C.Var $ CN.applyMacro 2)
-            [ C.addrOf CN.utilsEqual
-            , value
-            , (C.addrOf $ CN.literalStr string)
-            ])
-          (C.addrOf CN.true)
+        let testExpr = C.Binary C.EqOp
+              (C.Call
+                (C.Var $ CN.applyMacro 2)
+                [ C.addrOf CN.utilsEqual
+                , value
+                , (C.addrOf $ CN.literalStr string)
+                ])
+              (C.addrOf CN.true)
+        return $ C.Binary C.LandOp (nullCheck value) testExpr
 
     DT.IsCons ->
       return $ C.Binary C.NeqOp value (C.addrOf CN.nil)
@@ -709,40 +700,73 @@ generateTest value test =
       error "COMPILER BUG - there should never be tests on a tuple"
 
 
-pathToCExpr :: N.Name -> DT.Path -> C.Expression
-pathToCExpr root path =
+generateTestPath :: N.Name -> DT.Path -> State ExprState C.Expression
+generateTestPath root path =
   case path of
     DT.IndexBuiltin index subPath ->
-      -- ((Tuple3*)(subPath))->a
-      C.MemberArrow
-        (C.Parens $
-          C.castAsPtrTo (C.TypeDef CN.Tuple3) $
-          C.Parens (pathToCExpr root subPath))
-        (CN.fromSmallIndex index)
-    
+      do  -- Tuple2, Tuple3 or Cons. All have the same shape.
+        subPathExpr <- generateTestPath root subPath
+        tupleVar <- castUsingTmpVar (C.TypeDef CN.Tuple3) subPathExpr  -- Tuple3 is the most general
+        let accessChildExpr = C.MemberArrow tupleVar (CN.fromSmallIndex index)
+        let guardExpr = nullCheck tupleVar -- will be NULL if an outer nested pattern didn't match
+        -- Don't need bounds check for builtins. Can only get different-sized variants for Custom.
+        let safeAccessExpr = C.Cond guardExpr accessChildExpr (C.Var CN.nullPtr)
+        childVarName <- getTmpVarName
+        addBlockItem $ C.declareVoidPtr childVarName (Just safeAccessExpr)
+        return (C.Var childVarName)
+
     DT.IndexCustom index subPath ->
-      -- ((Custom*)(subPath))->values[3]
-      C.Index
-        (C.MemberArrow
-          (C.Parens $
-            C.castAsPtrTo (C.TypeDef CN.Custom) $
-            C.Parens (pathToCExpr root subPath))
-          (CN.fromBuilder "values"))
-        (C.Const $ C.IntConst $ Index.toMachine index)
+      generateTestPathCustom root index subPath
 
     DT.Unbox subPath ->
-      -- ((Custom*)(subPath))->values[0]
-      C.Index
-        (C.MemberArrow
-          (C.Parens $
-            C.castAsPtrTo (C.TypeDef CN.Custom) $
-            C.Parens (pathToCExpr root subPath))
-          (CN.fromBuilder "values"))
-        (C.Const $ C.IntConst 0)
+      generateTestPathCustom root Index.first subPath
 
     DT.Empty ->
-      C.Var $ CN.local root
+      return $ C.Var $ CN.local root
 
+
+generateTestPathCustom :: N.Name -> Index.ZeroBased -> DT.Path -> State ExprState C.Expression
+generateTestPathCustom root index subPath =
+  do
+    subPathExpr <- generateTestPath root subPath
+    customVar <- castUsingTmpVar (C.TypeDef CN.Custom) subPathExpr
+    let indexInt = Index.toMachine index
+    let minSize = 2 + (indexInt + 1)
+    let accessChildExpr = C.Index
+          (C.MemberArrow customVar (CN.fromBuilder "values"))
+          (C.Const $ C.IntConst indexInt)
+    let guardExpr = nullAndBoundsCheck minSize customVar
+    let safeAccessExpr = C.Cond guardExpr accessChildExpr (C.Var CN.nullPtr)
+    childVarName <- getTmpVarName
+    addBlockItem $ C.declareVoidPtr childVarName (Just safeAccessExpr)
+    return (C.Var childVarName)
+
+
+castUsingTmpVar :: C.TypeSpecifier -> C.Expression -> State ExprState C.Expression
+castUsingTmpVar toType expr =
+  do
+    tmp <- getTmpVarName
+    addBlockItem $ C.definePtr toType tmp (C.castAsPtrTo toType expr)
+    return (C.Var tmp)
+
+
+structBoundsCheck :: Int -> C.Expression -> C.Expression
+structBoundsCheck minSize elmStructPtr =
+  let
+    header = C.MemberArrow elmStructPtr (CN.fromBuilder "header")
+    size = C.MemberDot header (CN.fromBuilder "size")
+  in
+  C.Binary C.GeOp size (C.Const $ C.IntConst minSize)
+
+
+nullCheck :: C.Expression -> C.Expression
+nullCheck expr =
+  C.Binary C.NeqOp expr (C.Var CN.nullPtr)
+
+
+nullAndBoundsCheck :: Int -> C.Expression -> C.Expression
+nullAndBoundsCheck minSize expr =
+  C.Parens $ C.Binary C.LandOp (nullCheck expr) (structBoundsCheck minSize expr)
 
 
 -- DESTRUCTURING
@@ -932,7 +956,7 @@ generateTailCallArg :: [CN.Name] -> C.Expression -> State ExprState [CN.Name]
 generateTailCallArg tmpNames expr =
   do
     tmp <- getTmpVarName
-    addBlockItem $ C.BlockDecl $ C.declare tmp $ Just expr
+    addBlockItem $ C.declareVoidPtr tmp $ Just expr
     return $ tmp : tmpNames
 
 

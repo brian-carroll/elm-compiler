@@ -357,7 +357,7 @@ applyMacro :: Int -> Name
 applyMacro n =
   Name $ "A" <> B.intDec n
 
- 
+
 -- C KERNEL TYPE DEFINITIONS
 
 data KernelTypeDef
