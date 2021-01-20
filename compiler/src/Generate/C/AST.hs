@@ -58,7 +58,7 @@ data Expression
   | CompoundLit InitializerList    -- initialiser list
   | StatExpr    Statement        -- ^ GNU C compound statement as expr
   | Parens      Expression       -- wrap an expr in parentheses
-  | CommentExpr B.Builder
+  | CommentExpr B.Builder Expression
 
 
 type InitializerList = [([PartDesignator], Initializer)]

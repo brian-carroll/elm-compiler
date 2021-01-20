@@ -130,7 +130,7 @@ fromExpr expression =
 
     Parens expr -> "(" <> (fromExpr expr) <> ")"
 
-    CommentExpr builder -> "/* " <> builder <> " */" 
+    CommentExpr builder expr -> "/* " <> builder <> " */" <> fromExpr expr
 
 
 fromBinop :: BinaryOp -> Expression -> Expression -> B.Builder

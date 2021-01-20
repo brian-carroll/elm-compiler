@@ -77,11 +77,6 @@ globalDefsFromExprState state =
   )
 
 
-todo :: B.Builder -> State ExprState C.Expression
-todo comment =
-  return $ C.CommentExpr comment
-
-
 addLiteral :: (a -> CL.Literals -> CL.Literals) -> a -> State ExprState ()
 addLiteral insert value =
   State.modify (\state -> state { _literals = insert value (_literals state) })
@@ -108,8 +103,8 @@ addBlockItems revItems =
     })
 
 
-addCommentLine :: B.Builder -> State ExprState ()
-addCommentLine comment =
+addCommentBlockItem :: B.Builder -> State ExprState ()
+addCommentBlockItem comment =
   addBlockItem $ C.BlockStmt $ C.CommentStatement comment
 
 
@@ -117,6 +112,11 @@ addExtDecl :: C.ExternalDeclaration -> State ExprState ()
 addExtDecl extDecl =
   modify (\state ->
     state { _revExtDecls = extDecl : (_revExtDecls state) })
+
+
+addCommentExtDecl :: B.Builder -> State ExprState ()
+addCommentExtDecl comment =
+  addExtDecl $ C.CommentExt comment
 
 
 addLocal :: N.Name -> State ExprState ()
@@ -281,8 +281,8 @@ generate expr =
     Opt.Tuple a b maybeC ->
       generateTuple a b maybeC
 
-    Opt.Shader src attributes uniforms ->
-      todo "Shader"
+    Opt.Shader _src _attributes _uniforms ->
+      return $ C.CommentExpr "TODO: implement Shaders!" (C.Var CN.nullPtr)
 
 
 generateChildren :: [Opt.Expr] -> State ExprState ([C.Expression], Int)
