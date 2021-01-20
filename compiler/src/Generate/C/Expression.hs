@@ -408,7 +408,7 @@ generateCycleFn ptrName funcName elmExpr =
     addBlockItem $ C.BlockStmt $ C.Expr $ Just $
       C.Assign C.AssignOp ptr expr
     blockItems <- gets _revBlockItems
-    addExtDecl $ generateEvalFnDecl funcName ptr blockItems (Just []) False
+    addExtDecl $ generateEvalFnDecl funcName ptr blockItems Nothing False
 
 
 generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> Maybe [N.Name] -> Bool -> C.ExternalDeclaration
