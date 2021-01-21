@@ -15,10 +15,15 @@ where
 import qualified Data.Set as Set
 import qualified Data.ByteString.Builder as B
 import qualified Data.Name as Name
+import qualified Data.Utf8 as Utf8
 
+import qualified Elm.Package as Pkg
 import qualified Elm.ModuleName as ModuleName
 import qualified Generate.C.AST as C
 import qualified Generate.C.Name as CN
+
+
+-- TARGET LANGUAGES: C & JS
 
 
 shouldGenJsCode :: ModuleName.Canonical -> Bool
@@ -27,9 +32,11 @@ shouldGenJsCode home
   | home == ModuleName.list   = False
   | home == ModuleName.string = False
   | home == ModuleName.char   = False
+  | home == testModule        = False
   | otherwise = True
 
 
+-- Generate JS kernel function IDs for each function?
 shouldGenJsEnumId :: Name.Name -> Name.Name -> Bool
 shouldGenJsEnumId home name
   | home == Name.fromChars "Json" = (name == Name.fromChars "run")
@@ -38,9 +45,11 @@ shouldGenJsEnumId home name
   | home == Name.list   = False
   | home == Name.string = False
   | home == Name.char   = False
+  | home == testKernel  = False
   | otherwise = True
 
 
+-- Generate C Closure structs for each function?
 shouldGenStruct :: Name.Name -> Name.Name -> Bool
 shouldGenStruct home name
   | home == Name.fromChars "Json" = False
@@ -49,7 +58,34 @@ shouldGenStruct home name
   | home == Name.list   = False
   | home == Name.string = False
   | home == Name.char   = False
+  | home == testKernel  = False
   | otherwise = True
+
+
+
+-- NON-CORE KERNEL MODULES
+
+
+pkgName :: [Char] -> [Char] -> Pkg.Name
+pkgName author project =
+  Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project)
+
+
+canonicalName :: Pkg.Name -> Name.Name -> ModuleName.Canonical
+canonicalName pkg mod =
+  ModuleName.Canonical pkg mod
+
+
+
+testKernel :: Name.Name
+testKernel = (Name.fromChars "Test")
+
+testModule :: ModuleName.Canonical
+testModule = canonicalName (pkgName "elm-explorations" "test") (Name.fromChars "Test")
+
+
+
+-- KERNEL DATA STRUCTURES
 
 
 maxClosureArity :: Int
