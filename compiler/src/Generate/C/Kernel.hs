@@ -32,6 +32,8 @@ shouldGenJsCode home
   | home == ModuleName.list   = False
   | home == ModuleName.string = False
   | home == ModuleName.char   = False
+  | home == bitwiseModule     = False
+  | home == jsArrayModule     = False
   | home == testModule        = False
   | otherwise = True
 
@@ -40,12 +42,14 @@ shouldGenJsCode home
 shouldGenJsEnumId :: Name.Name -> Name.Name -> Bool
 shouldGenJsEnumId home name
   | home == Name.fromChars "Json" = (name == Name.fromChars "run")
-  | home == Name.utils  = False
-  | home == Name.basics = False
-  | home == Name.list   = False
-  | home == Name.string = False
-  | home == Name.char   = False
-  | home == testKernel  = False
+  | home == Name.utils   = False
+  | home == Name.basics  = False
+  | home == Name.list    = False
+  | home == Name.string  = False
+  | home == Name.char    = False
+  | home == Name.bitwise = False
+  | home == Name.jsArray = False
+  | home == testKernel   = False
   | otherwise = True
 
 
@@ -53,17 +57,19 @@ shouldGenJsEnumId home name
 shouldGenStruct :: Name.Name -> Name.Name -> Bool
 shouldGenStruct home name
   | home == Name.fromChars "Json" = False
-  | home == Name.utils  = False
-  | home == Name.basics = False
-  | home == Name.list   = False
-  | home == Name.string = False
-  | home == Name.char   = False
-  | home == testKernel  = False
+  | home == Name.utils   = False
+  | home == Name.basics  = False
+  | home == Name.list    = False
+  | home == Name.string  = False
+  | home == Name.char    = False
+  | home == Name.bitwise = False
+  | home == Name.jsArray = False
+  | home == testKernel   = False
   | otherwise = True
 
 
 
--- NON-CORE KERNEL MODULES
+-- KERNEL MODULES
 
 
 pkgName :: [Char] -> [Char] -> Pkg.Name
@@ -71,18 +77,19 @@ pkgName author project =
   Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project)
 
 
-canonicalName :: Pkg.Name -> Name.Name -> ModuleName.Canonical
-canonicalName pkg mod =
-  ModuleName.Canonical pkg mod
+bitwiseModule :: ModuleName.Canonical
+bitwiseModule = ModuleName.Canonical Pkg.core Name.bitwise
 
+
+jsArrayModule :: ModuleName.Canonical
+jsArrayModule = ModuleName.Canonical Pkg.core Name.jsArray
 
 
 testKernel :: Name.Name
-testKernel = (Name.fromChars "Test")
+testKernel = Name.fromChars "Test"
 
 testModule :: ModuleName.Canonical
-testModule = canonicalName (pkgName "elm-explorations" "test") (Name.fromChars "Test")
-
+testModule = ModuleName.Canonical (pkgName "elm-explorations" "test") (Name.fromChars "Test")
 
 
 -- KERNEL DATA STRUCTURES
