@@ -296,8 +296,25 @@ generateChildrenHelp :: Opt.Expr
 generateChildrenHelp elmChildExpr acc =
   do
     (children, nChildren) <- acc
-    child <- generate elmChildExpr
-    return (child : children, nChildren + 1)
+    childExpr <- generate elmChildExpr
+    childVarExpr <- generateChildVar childExpr
+    return (childVarExpr : children, nChildren + 1)
+
+
+generateChildVar :: C.Expression -> State ExprState C.Expression
+generateChildVar childExpr =
+  case childExpr of
+    C.Var _ ->
+      return childExpr
+
+    C.Unary C.AddrOp (C.Var _) ->
+      return childExpr
+
+    _ ->
+      do -- every child expression gets its own temp var for easier debugging
+        childVarName <- getTmpVarName
+        addBlockItem $ C.declareVoidPtr childVarName (Just childExpr)
+        return (C.Var childVarName)
 
 
 generateExprAsBlock :: CN.Name -> Opt.Expr -> State ExprState [C.CompoundBlockItem]
