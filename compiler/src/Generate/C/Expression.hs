@@ -233,8 +233,16 @@ generate expr =
 
     Opt.Let def body ->
       do
+        letResultName <- getTmpVarName
+        addBlockItem $ C.declareVoidPtr letResultName Nothing
+        outerBlock <- startNewBlock
         generateDef def
-        generate body
+        cBodyExpr <- generate body
+        let assignment = C.Assign C.AssignOp (C.Var letResultName) cBodyExpr
+        addBlockItem $ C.BlockStmt $ C.Expr $ Just $ assignment
+        innerBlock <- resumeBlock outerBlock
+        addBlockItem $ C.BlockStmt $ C.Compound innerBlock
+        return $ C.Var letResultName
 
     Opt.Destruct (Opt.Destructor name path) body ->
       do
