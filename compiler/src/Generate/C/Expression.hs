@@ -27,6 +27,7 @@ import qualified Generate.C.Name as CN
 import qualified Generate.C.AST as C
 import qualified Generate.C.Kernel as CKernel
 import qualified Generate.C.Literals as CL
+import qualified Generate.C.Builder as CB
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
@@ -143,11 +144,11 @@ nextTmpVarIndex =
     return index
 
 
-getTmpVarName :: State ExprState CN.Name
-getTmpVarName =
+getTmpVarName :: B.Builder -> State ExprState CN.Name
+getTmpVarName prefix =
   do
     index <- nextTmpVarIndex
-    return $ CN.tmp index
+    return $ CN.tmp prefix index
 
 
 startNewBlock :: State ExprState [C.CompoundBlockItem]
@@ -233,7 +234,7 @@ generate expr =
 
     Opt.Let def body ->
       do
-        letResultName <- getTmpVarName
+        letResultName <- getTmpVarName "let"
         addBlockItem $ C.declareVoidPtr letResultName Nothing
         outerBlock <- startNewBlock
         generateDef def
@@ -320,7 +321,7 @@ generateChildVar childExpr =
 
     _ ->
       do -- every child expression gets its own temp var for easier debugging
-        childVarName <- getTmpVarName
+        childVarName <- getTmpVarName "tmp"
         addBlockItem $ C.declareVoidPtr childVarName (Just childExpr)
         return (C.Var childVarName)
 
@@ -343,7 +344,7 @@ generateExprAsBlock resultName expr =
 generateLocalFn :: [N.Name] -> Opt.Expr -> State ExprState C.Expression
 generateLocalFn params body =
   do    
-    closureName <- getTmpVarName
+    closureName <- getTmpVarName "f"
     generateNamedLocalFn closureName params body
     return $ C.Var closureName
 
@@ -533,7 +534,7 @@ generateTuple a b maybeC =
 generateIf :: [(Opt.Expr, Opt.Expr)] -> Opt.Expr -> State ExprState C.Expression
 generateIf branches finalElm =
   do
-    resultName <- getTmpVarName
+    resultName <- getTmpVarName "if"
     finalBlock <- generateExprAsBlock resultName finalElm
     ifStmt <- foldr
                 (generateIfBranch resultName)
@@ -567,7 +568,7 @@ generateCase :: N.Name -> N.Name -> Opt.Decider Opt.Choice -> [(Int, Opt.Expr)] 
 generateCase label root decider jumps =
   do
     updateScope root
-    resultName <- getTmpVarName
+    resultName <- getTmpVarName "case"
     addBlockItem $ C.declareVoidPtr resultName Nothing
     defaultStmt <- generateDecider resultName label root decider
     stmts <- foldr
@@ -736,7 +737,7 @@ generateTestPath root path =
         let guardExpr = nullCheck tupleVar -- will be NULL if an outer nested pattern didn't match
         -- Don't need bounds check for builtins. Can only get different-sized variants for Custom.
         let safeAccessExpr = C.Cond guardExpr accessChildExpr (C.Var CN.nullPtr)
-        childVarName <- getTmpVarName
+        childVarName <- getTmpVarName "path"
         addBlockItem $ C.declareVoidPtr childVarName (Just safeAccessExpr)
         return (C.Var childVarName)
 
@@ -762,7 +763,7 @@ generateTestPathCustom root index subPath =
           (C.Const $ C.IntConst indexInt)
     let guardExpr = nullAndBoundsCheck minSize customVar
     let safeAccessExpr = C.Cond guardExpr accessChildExpr (C.Var CN.nullPtr)
-    childVarName <- getTmpVarName
+    childVarName <- getTmpVarName "path"
     addBlockItem $ C.declareVoidPtr childVarName (Just safeAccessExpr)
     return (C.Var childVarName)
 
@@ -770,7 +771,8 @@ generateTestPathCustom root index subPath =
 castUsingTmpVar :: C.TypeSpecifier -> C.Expression -> State ExprState C.Expression
 castUsingTmpVar toType expr =
   do
-    tmp <- getTmpVarName
+    let prefix = "tmp" <> CB.fromTypeSpecifier toType
+    tmp <- getTmpVarName prefix
     addBlockItem $ C.definePtr toType tmp (C.castAsPtrTo toType expr)
     return (C.Var tmp)
 
@@ -980,7 +982,7 @@ generateTailCall name explicitArgs =
 generateTailCallArg :: [CN.Name] -> C.Expression -> State ExprState [CN.Name]
 generateTailCallArg tmpNames expr =
   do
-    tmp <- getTmpVarName
+    tmp <- getTmpVarName "tail"
     addBlockItem $ C.declareVoidPtr tmp $ Just expr
     return $ tmp : tmpNames
 

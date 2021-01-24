@@ -264,23 +264,20 @@ fromInitializer init =
 
 fromInitList :: InitializerList -> B.Builder
 fromInitList initList =
-  mconcat (
-    "{ "
-    : (map fromInitListItem initList)
-    ++ ["}"]
-  )
+  "{ "
+    <> (join ", " (map fromInitListItem initList))
+    <> " }"
 
 
 fromInitListItem :: ([PartDesignator], Initializer) -> B.Builder
 fromInitListItem (parts, init) =
   case parts of
     [] ->
-      (fromInitializer init) <> ", "
+      fromInitializer init
     _ ->
       (mconcat $ map fromPartDesignator parts)
       <> " = "
       <> fromInitializer init
-      <> ", "
 
 
 fromPartDesignator :: PartDesignator -> B.Builder

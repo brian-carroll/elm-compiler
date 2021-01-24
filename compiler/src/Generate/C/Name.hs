@@ -94,9 +94,9 @@ local name =
     Name $ "x_" <> Name.toBuilder name
 
 
-tmp :: Int -> Name
-tmp index =
-  Name $ "tmp" <> B.intDec index
+tmp :: B.Builder -> Int -> Name
+tmp prefix index =
+  Name $ prefix <> B.intDec index
 
 
 label :: Name.Name -> Int -> Name
