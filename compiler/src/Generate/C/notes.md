@@ -93,6 +93,60 @@ Testing:
 - global cycles
 
 
+```hs
+
+generateTailCallGc :: Int -> CN.Name -> CN.Name -> State ExprState ()
+generateTailCallGc nValues evalName tailArgsName =
+  addBlockItem $ C.BlockStmt $ C.Expr $ Just $
+    (C.Call
+      (C.Var $ CN.fromBuilder "GC_stack_tailcall")
+      [C.Call
+        (C.Var $ CN.fromBuilder "NEW_CLOSURE")
+        [ C.Const $ C.IntConst nValues
+        , C.Const $ C.IntConst nValues
+        , C.Var evalName
+        , C.Var tailArgsName
+        ]
+      ])
+
+```
+
+```c
+Closure g_elm_core_List_foldl; // pre-declare in case non-tail recursion
+void * eval_elm_core_List_foldl(void * args[], void * * gc_tce_data) {
+  void* local_args[3];
+  // free vars copied here, then don't change
+  local_args[0] = args[0];
+  local_args[1] = args[1];
+  local_args[2] = args[2];
+  tce_loop:
+  ;
+  void * x_func = args[0];
+  void * x_acc = args[1];
+  void * x_list = args[2];
+  void * case0;
+  do {
+      if (x_list == &Nil) {
+          case0 = x_acc;
+          break;
+      } else {
+          void * x_x = ((Tuple3 * )(x_list))->a;
+          void * x_xs = ((Tuple3 * )(x_list))->b;
+          void * tmp1 = A2(x_func, x_x, x_acc);
+          local_args[0] = x_func;
+          local_args[1] = tmp1;
+          local_args[2] = x_xs;
+          GC_stack_tailcall(NEW_CLOSURE(3, 3, eval_elm_core_List_foldl, local_args));
+          goto tce_loop;
+          case0 = NULL;
+          break;
+      };
+  } while (0);
+  return case0;
+}
+Closure g_elm_core_List_foldl = { .header = HEADER_CLOSURE(0), .n_values = 0x0, .max_values = 0x3, .evaluator = &eval_elm_core_List_foldl };
+
+```
 
 
 

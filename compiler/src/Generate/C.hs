@@ -5,7 +5,7 @@ module Generate.C
   where
 
 import Prelude hiding (cycle, print)
-import qualified Control.Monad.State as State
+import qualified Control.Monad.State as StateMonad
 
 import qualified Data.ByteString.Builder as B
 import Data.Monoid ((<>))
@@ -321,6 +321,21 @@ addLiteral insert value state =
     { _literals = insert value (_literals state) }
 
 
+-- Interface to Generate.C.Expression
+generateExpression :: Opt.Global -> StateMonad.State CE.ExprState a -> State -> State
+generateExpression global exprGenerator state =
+  let
+    (revExtDecls, literals) =
+      CE.globalDefsFromExprState $
+        StateMonad.execState exprGenerator $
+        CE.initState global (_revExtDecls state) (_literals state)
+  in
+  state
+    { _revExtDecls = revExtDecls
+    , _literals = literals
+    }
+
+
 {-----------------------------------------------------------
 
                 CYCLE
@@ -404,7 +419,7 @@ generateCycleTailDef home name args body state =
 
     (revExtDecls, literals) =
       CE.globalDefsFromExprState $
-      State.execState
+      StateMonad.execState
         (CE.generateTailDefEval tailFnName wrapFnName args body)
         initExprState
 
@@ -440,23 +455,13 @@ generateCycleVal home state (name, expr) =
       C.DefineExt globalName $ C.Parens $
       C.Unary C.DerefOp $ C.Var ptrName
 
-    initExprState =
-      CE.initState
-        global
-        (declarePtr : defineAlias : _revExtDecls state)
-        (_literals state)
-
-    (revExtDecls, literals) =
-      CE.globalDefsFromExprState $
-      State.execState
-        (CE.generateCycleFn ptrName funcName expr)
-        initExprState
+    exprGenerator = CE.generateCycleFn ptrName funcName expr
   in
-  state
-    { _revExtDecls = revExtDecls
-    , _literals = literals
-    , _revInitGlobals = global : (_revInitGlobals state)
-    }
+  generateExpression global exprGenerator $
+    state
+      { _revInitGlobals = global : (_revInitGlobals state)
+      , _revExtDecls = declarePtr : defineAlias : _revExtDecls state
+      }
 
 
 {-----------------------------------------------------------
@@ -509,16 +514,7 @@ addDef global@(Opt.Global home' name') expr state =
   in
   case expr of
     Opt.Function args body ->
-      let
-        fname = CN.globalEvaluator home' name'
-        closure = CK.generateClosure
-          globalName
-          (C.Unary C.AddrOp $ C.Var fname)
-          (length args)
-          []
-      in
-      addExtDecl closure $
-      generatExtFunc global fname (Just args) body state
+      generateGlobalFunction global args body state
 
     Opt.Int value ->
       addLiteral CL.insertInt value $
@@ -603,37 +599,40 @@ generateRuntimeInit structName global@(Opt.Global home' name') expr state =
       C.DefineExt (CN.global home' name') $
       C.Parens $ C.Unary C.DerefOp $ C.Var initPtrName
   in
-  generateInitFn global expr $
+  generateInitFunction global expr $
   addExtDecl declarePtr $
   addExtDecl defineGlobal $
     state
 
 
-generatExtFunc :: Opt.Global -> CN.Name -> Maybe [Name.Name] -> Opt.Expr -> State -> State
-generatExtFunc global fname params body state =
-  let
-    initExprState =
-      CE.initState global (_revExtDecls state) (_literals state)
-
-    (revExtDecls, literals) =
-      CE.globalDefsFromExprState $
-      State.execState
-        (CE.generateEvalFn fname params body False)
-        initExprState
-  in
-  state
-    { _revExtDecls = revExtDecls
-    , _literals = literals
-    }
-
-
-generateInitFn :: Opt.Global -> Opt.Expr -> State -> State
-generateInitFn global@(Opt.Global home name) body state =
+generateInitFunction :: Opt.Global -> Opt.Expr -> State -> State
+generateInitFunction global@(Opt.Global home name) body state =
   let
     fname = CN.globalInitFn home name
+    exprGenerator = CE.generateInitFunction fname body
+    evalFnState = generateExpression global exprGenerator state
   in
-  generatExtFunc global fname Nothing body $
-    state { _revInitGlobals = global : _revInitGlobals state }
+  evalFnState
+    { _revInitGlobals = global : _revInitGlobals evalFnState }
+
+
+generateGlobalFunction :: Opt.Global -> [Name.Name] -> Opt.Expr -> State -> State
+generateGlobalFunction global@(Opt.Global home name) args body state =
+  let
+    fname =
+      CN.globalEvaluator home name
+
+    closure =
+      CK.generateClosure
+        (CN.global home name)
+        (C.Unary C.AddrOp $ C.Var fname)
+        (length args)
+        []
+
+    exprGenerator = CE.generateEvalFunction fname args body False
+    evalFnState = generateExpression global exprGenerator state
+  in
+  addExtDecl closure evalFnState
 
 
 generateCtor :: Opt.Global -> Int -> State -> State
