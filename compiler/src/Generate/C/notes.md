@@ -1,3 +1,101 @@
+# Reorganise eval function generation
+
+- Calling the same stuff from lots of places and passing switches like isTailRec and having empty or full lists... bit of a mess
+- Break it up into little bits and reassemble them in a nicer way
+- Figure out which pieces I am trying to avoid rewriting
+
+generateEvalFnDecl
+  - options: maybeParams, isTailRec
+
+It creates the C function header, destructs the args and inserts the body
+We want to just pass it blockitems instead
+
+
+calls to generateEvalFnDecl
+- generateEvalFn
+- generateTailDefEval
+
+calls to generateEvalFn
+- C.generatExtFunc
+- generateNamedLocalFn
+- generateTailDefEval
+
+calls to generateNamedLocalFn
+- generateLocalFn (Opt.Function, anonymous lambda)
+- generateDef (Opt.Let)
+
+calls to generatExtFunc
+- addDef Opt.Function
+- generateInitFn
+
+calls to generateInitFn
+- generateRuntimeInit (addDef)
+
+calls to generateTailDefEval
+- generateDef (Opt.Let)
+
+
+
+
+
+
+So I have three types of C function
+- init
+- tailcall
+- normal eval
+
+In some different contexts
+- local anonymous
+- local named
+- global named
+
+The real semantic structure is
+  - initialise an Elm expression
+  - implement an Elm function
+    - naming
+      - global
+      - local
+        - named
+        - anon
+    - tail vs normal
+
+Approach:
+- Trace everything back to the AST
+- Start inlining everything and then split it up again
+
+
+
+
+
+
+Testing:
+- global
+
+- local
+- local (with free vars)
+- local (with nested scope free vars)
+
+- local anon
+- local anon (with free vars)
+
+- global tailcall
+- local tailcall
+- local tailcall (with free vars)
+
+- global non-tail self-call
+- local non-tail self-call
+- local non-tail self-call (with free vars)
+
+- global tail & non-tail self-call
+- local tail & non-tail self-call
+- local tail & non-tail self-call (with free vars)
+
+- global cycles
+
+
+
+
+
 # Byecode ideas
 
 What would a bytecode for Elm look like?
