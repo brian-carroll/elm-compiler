@@ -262,6 +262,15 @@ declareVoidPtr name mExpr =
     (fmap InitExpr mExpr)
 
 
+declareVoidPtrArray :: Name -> Int -> CompoundBlockItem
+declareVoidPtrArray name len =
+  BlockDecl $ Decl
+    [TypeSpec Void]
+    (Just $ Declr (Just name)
+      [PtrDeclr [], ArrDeclr [] (ArrSize (Const $ IntConst len))])
+    Nothing
+
+
 definePtr :: TypeSpecifier -> Name -> Expression -> CompoundBlockItem
 definePtr typespec name expr =
   BlockDecl $ Decl
@@ -276,3 +285,8 @@ defineNumber typespec name expr =
     [TypeSpec typespec]
     (Just $ Declr (Just name) [])
     (Just $ InitExpr expr)
+
+
+assignment :: Expression -> Expression -> CompoundBlockItem
+assignment lValue rValue =
+  BlockStmt $ Expr $ Just $ Assign AssignOp lValue rValue

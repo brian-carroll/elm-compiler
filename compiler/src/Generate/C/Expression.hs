@@ -5,7 +5,6 @@ module Generate.C.Expression
  , initState
  , generateEvalFunction
  , generateInitFunction
- , generateTailDefEval
  , generateCycleFn
  , globalDefsFromExprState
 )
@@ -56,11 +55,12 @@ data ExprState =
     , _freeVars :: Set N.Name
     , _tmpVarIndex :: Int
     , _parentGlobal :: Opt.Global
+    , _currentFuncName :: CN.Name
     }
 
 
-initState :: Opt.Global -> [C.ExternalDeclaration] -> CL.Literals -> ExprState
-initState global revExtDecls literals =
+initState :: Opt.Global -> CN.Name -> [C.ExternalDeclaration] -> CL.Literals -> ExprState
+initState global fname revExtDecls literals =
   ExprState
     { _revBlockItems = []
     , _revExtDecls = revExtDecls
@@ -69,6 +69,7 @@ initState global revExtDecls literals =
     , _freeVars = Set.empty
     , _tmpVarIndex = 0
     , _parentGlobal = global
+    , _currentFuncName = fname
     }
 
 
@@ -243,8 +244,7 @@ generate expr =
         outerBlock <- startNewBlock
         generateDef def
         cBodyExpr <- generate body
-        let assignment = C.Assign C.AssignOp (C.Var letResultName) cBodyExpr
-        addBlockItem $ C.BlockStmt $ C.Expr $ Just $ assignment
+        addBlockItem $ C.assignment (C.Var letResultName) cBodyExpr
         innerBlock <- resumeBlock outerBlock
         addBlockItem $ C.BlockStmt $ C.Compound innerBlock
         return $ C.Var letResultName
@@ -336,9 +336,7 @@ generateExprAsBlock resultName expr =
     outerBlock <- startNewBlock
     cExpr <- generate expr
     innerBlock <- resumeBlock outerBlock
-    return $
-      (C.BlockStmt $ C.Expr $ Just $ C.Assign C.AssignOp (C.Var resultName) cExpr)
-      : innerBlock
+    return $ C.assignment (C.Var resultName) cExpr : innerBlock
 
 
 
@@ -378,38 +376,39 @@ generateNewClosure varName evalName nParams nFree =
 
 generateFreeVarAssignment :: C.Expression -> (Int, N.Name) -> C.CompoundBlockItem
 generateFreeVarAssignment closureRef (index, freeVarName) =
-  C.BlockStmt $ C.Expr $ Just $
-    C.Assign C.AssignOp
-      (C.Index
-        (C.MemberArrow closureRef $ CN.fromBuilder "values")
-        (C.Const $ C.IntConst index))
-      (C.Var $ CN.local freeVarName)
+  C.assignment
+    (C.Index
+      (C.MemberArrow closureRef $ CN.fromBuilder "values")
+      (C.Const $ C.IntConst index))
+    (C.Var $ CN.local freeVarName)
 
 
 generateEvalFunction :: CN.Name -> [N.Name] -> Opt.Expr -> Bool -> State ExprState [N.Name]
 generateEvalFunction fname params body isTailRec =
   do
-    origState <- pushScope params
+    origState <- pushScope fname params
     returnExpr <- generate body
     bodyState <- get
     popScope origState bodyState
-    let freeVarList = Set.toList (_freeVars bodyState)
+    let freeVars = _freeVars bodyState
+    let freeVarList = Set.toList freeVars
     let declGenerator =
           if isTailRec
-          then generateTailFnDecl
+          then generateTailFnDecl (Set.size freeVars)
           else generateEvalFnDecl
     addExtDecl $ declGenerator fname returnExpr (_revBlockItems bodyState) (freeVarList ++ params)
     return freeVarList
 
 
-pushScope :: [N.Name] -> State ExprState ExprState
-pushScope params =
+pushScope :: CN.Name -> [N.Name] -> State ExprState ExprState
+pushScope fname params =
   do
     origState <- get
     put $ origState
       { _revBlockItems = []
       , _localScope = Set.fromList params
       , _freeVars = Set.empty
+      , _currentFuncName = fname
       }
     return origState
 
@@ -418,13 +417,14 @@ popScope :: ExprState -> ExprState -> State ExprState ()
 popScope outerScopeState innerScopeState =
   let
     -- Any free vars not found in outer scope must come from some scope further out.
-    -- These become free vars at all levels in-between, passed down as arguments in C.
+    -- These become free vars at all levels in between, passed down as arguments in C.
     unresolvedFreeVars =
       Set.difference (_freeVars innerScopeState) (_localScope outerScopeState)
   in
   put $ innerScopeState
     { _revBlockItems = _revBlockItems outerScopeState
     , _localScope = _localScope outerScopeState
+    , _currentFuncName = _currentFuncName outerScopeState
     , _freeVars = Set.union (_freeVars outerScopeState) unresolvedFreeVars
     }
 
@@ -433,33 +433,40 @@ generateEvalFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> [N.Nam
 generateEvalFnDecl fname returnExpr blockItems params =
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.Void]
-    (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr [C.argsArray]])
+    (generateEvalFnSignature fname)
     ((C.BlockStmt $ C.Return $ Just returnExpr)
       : blockItems
       ++ (generateDestructParams params))
 
 
-generateTailFnDecl :: CN.Name -> C.Expression -> [C.CompoundBlockItem] -> [N.Name] -> C.ExternalDeclaration
-generateTailFnDecl fname returnExpr blockItems params =
+generateTailFnDecl :: Int -> CN.Name -> C.Expression -> [C.CompoundBlockItem] -> [N.Name] -> C.ExternalDeclaration
+generateTailFnDecl nFree fname returnExpr blockItems params =
   let
-    paramDecls =
-      [ C.argsArray
-      , C.Decl
-          [C.TypeSpec C.Void]
-          (Just $ C.Declr
-            (Just CN.gcTceData)
-            [C.PtrDeclr [], C.PtrDeclr []])
-          Nothing
-      ]
+    label =
+      C.BlockStmt $ C.Label CN.tceLabel $ C.NullStatement
+
+    defineNumFreeVars =
+      C.defineNumber (C.TypeDef CN.U32) CN.nFree (C.Const $ C.IntConst nFree)
+
+    returnStmt =
+      C.BlockStmt $ C.Return $ Just returnExpr
+
+    revBody =
+      returnStmt
+      : blockItems
+      ++ [label]
+      ++ [defineNumFreeVars]
+      ++ (generateDestructParams params)
   in
   C.FDefExt $ C.FunDef
     [C.TypeSpec C.Void]
-    (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr paramDecls])
-    ( (C.BlockStmt $ C.Return $ Just returnExpr)
-      : blockItems
-      ++ (generateDestructParams params)
-      ++ [ C.BlockStmt $ C.Label CN.tceLabel $ C.NullStatement ]
-    )
+    (generateEvalFnSignature fname)
+    revBody
+
+
+generateEvalFnSignature :: CN.Name -> C.Declarator
+generateEvalFnSignature fname =
+  C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr [C.argsArray]]
 
 
 generateInitFunction :: CN.Name -> Opt.Expr -> State ExprState ()
@@ -476,7 +483,7 @@ generateCycleFn ptrName fname elmExpr =
     let ptr = C.Var ptrName
     addBlockItem $ C.BlockStmt $ C.If ptr (C.Return $ Just ptr) Nothing
     expr <- generate elmExpr
-    addBlockItem $ C.BlockStmt $ C.Expr $ Just $ C.Assign C.AssignOp ptr expr
+    addBlockItem $ C.assignment ptr expr
     blockItems <- gets _revBlockItems
     addExtDecl $ generateNoArgsFunction fname blockItems ptr
 
@@ -982,49 +989,24 @@ apply func value =
 generateTailCall :: N.Name -> [(N.Name, Opt.Expr)] -> State ExprState C.Expression
 generateTailCall name explicitArgs =
   do
-    let elmArgExprs = map snd explicitArgs
-    (cArgExprs, nExplicitArgs) <- generateChildren elmArgExprs
-    tmpNames <- State.foldM generateTailCallArg [] cArgExprs
-
-    freeVars <- gets _freeVars
-    let nClosureValues = nExplicitArgs + (Set.size freeVars)
-
-    generateTailCallGcAlloc nClosureValues
-    State.foldM generateTailCallAssign (nClosureValues - 1) tmpNames
-    addBlockItem $ C.BlockStmt $ C.Goto CN.tceLabel
-
+    let (elmArgNames, elmArgExprs) = unzip explicitArgs
+    (rValues, nExplicitArgs) <- generateChildren elmArgExprs
+    fname <- gets _currentFuncName
+    let lValues = map (C.Var . CN.local) elmArgNames
+    let assignments = zipWith C.assignment lValues rValues
+    let gcCall = C.BlockStmt $ C.Expr $ Just $ C.Call
+          (C.Var $ CN.fromBuilder "CAN_THROW")
+          [C.Call (C.Var $ CN.fromBuilder "GC_stack_tailcall")
+            [ C.Var fname
+            , C.Var CN.nFree
+            , C.Var CN.args
+            , C.Const $ C.IntConst nExplicitArgs
+            , C.pointerArray lValues
+            ]]
+    let goto = C.BlockStmt $ C.Goto CN.tceLabel
+    addBlockItems $ goto : gcCall : assignments
     return $ C.Var CN.nullPtr
 
-
-generateTailCallArg :: [CN.Name] -> C.Expression -> State ExprState [CN.Name]
-generateTailCallArg tmpNames expr =
-  do
-    tmp <- getTmpVarName "tail"
-    addBlockItem $ C.declareVoidPtr tmp $ Just expr
-    return $ tmp : tmpNames
-
-
-generateTailCallGcAlloc :: Int -> State ExprState ()
-generateTailCallGcAlloc nValues =
-  addBlockItem $ C.BlockStmt $ C.Expr $ Just $
-    C.Assign C.AssignOp
-      (C.Unary C.DerefOp $ C.Var CN.gcTceData)
-      (C.Call
-        (C.Var CN.canThrowMacro)
-        [C.Call
-          (C.Var CN.gcTceIteration)
-          [C.Const $ C.IntConst nValues]
-        ])
-
-
-generateTailCallAssign :: Int -> CN.Name -> State ExprState Int
-generateTailCallAssign argIdx tmpName =
-  do
-    addBlockItem $ C.BlockStmt $ C.Expr $ Just $
-      C.Assign C.AssignOp
-        (C.Index (C.Var CN.args) (C.Const $ C.IntConst argIdx))
-        (C.Var tmpName)
-    return (argIdx - 1)
 
 
 -- LET DEFINITION
@@ -1056,10 +1038,9 @@ generateDef def =
         addLocal name
         tmpIndex <- nextTmpVarIndex
         (Opt.Global gHome gName) <- gets _parentGlobal
-        let tailFnName = CN.localTailEvaluator gHome gName name
-        let wrapFnName = CN.localEvaluator gHome gName tmpIndex
+        let fname = CN.localEvaluator gHome gName tmpIndex
 
-        freeVars <- generateTailDefEval tailFnName wrapFnName argNames body
+        freeVars <- generateEvalFunction fname argNames body True
 
         addBlockItem $
           C.BlockDecl $ C.Decl
@@ -1070,39 +1051,9 @@ generateDef def =
             (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
               [ C.Const $ C.IntConst $ length freeVars
               , C.Const $ C.IntConst $ length freeVars + length argNames
-              , C.Unary C.AddrOp $ C.Var wrapFnName
+              , C.Var fname
               , C.pointerArray (map (C.Var . CN.local) freeVars)
               ])
-
-
-generateTailDefEval :: CN.Name -> CN.Name -> [N.Name] -> Opt.Expr -> State ExprState [N.Name]
-generateTailDefEval tailFnName wrapFnName argNames body =
-  do
-    freeVars <- generateEvalFunction tailFnName argNames body True
-    let max_values = length argNames + length freeVars
-    addExtDecl $ generateTailDefWrapperFn wrapFnName tailFnName max_values
-    return freeVars
-
-
-generateTailDefWrapperFn :: CN.Name -> CN.Name -> Int -> C.ExternalDeclaration
-generateTailDefWrapperFn wrapFnName tailFnName max_values =
-  C.FDefExt $ C.FunDef
-    [C.TypeSpec C.Void]
-    (C.Declr (Just wrapFnName) [C.PtrDeclr [], C.FunDeclr [C.argsArray]])
-    [C.BlockStmt $ C.Return $ Just $
-      C.Call (C.Var CN.gcTceEval)
-        [ C.addrOf tailFnName
-        , C.addrOf wrapFnName
-        , C.Const $ C.IntConst max_values
-        , C.Var CN.args
-        ]
-    ]
-
-
-
-
-
-
 
 
 

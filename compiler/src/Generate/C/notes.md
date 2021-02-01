@@ -111,14 +111,74 @@ generateTailCallGc nValues evalName tailArgsName =
 
 ```
 
+
+
+
 ```c
-Closure g_elm_core_List_foldl; // pre-declare in case non-tail recursion
-void * eval_elm_core_List_foldl(void * args[], void * * gc_tce_data) {
-  void* local_args[3];
-  // free vars copied here, then don't change
-  local_args[0] = args[0];
-  local_args[1] = args[1];
-  local_args[2] = args[2];
+void * eval_elm_core_List_foldl(void * args[]) {
+  void* x_stuff = args[0];
+  void * x_func = args[1];
+  void * x_acc = args[2];
+  void * x_list = args[3];
+  const u32 n_free = 1;
+
+  tce_loop:
+  ;
+  void * case0;
+  do {
+      if (x_list == &Nil) {
+          case0 = x_acc;
+          break;
+      } else {
+          void * x_x = ((Tuple3 * )(x_list))->a;
+          void * x_xs = ((Tuple3 * )(x_list))->b;
+          void * tmp1 = A2(x_func, x_x, x_acc);
+          x_acc = tmp1;
+          x_list = x_xs;
+          GC_stack_tailcall(eval_elm_core_List_foldl, n_free, args, 3, ((void*[]){
+            x_func, x_acc, x_list
+          }));
+          goto tce_loop;
+          case0 = NULL;
+          break;
+      };
+  } while (0);
+  return case0;
+}
+
+void GC_stack_tailcall(evaluator, n_free, free_vars, n_args, args) {
+  u32 n = n_free + n_args;
+  Closure* c = NEW_CLOSURE(n,n,evaluator,NULL);
+  for (u32 i=0; i < n_free; i++) {
+    c->values[i] = free_vars[i];    
+  }
+  for (u32 i=0; i < n_args; i++) {
+    c->values[n_free + i] = args[i];
+  }
+}
+
+```
+
+Adding current function to the ExprState
+Where do we enter into generateExpression? Can we init expr state with this info?
+- generateCycleFn: yep
+- generateInitFunction: yep
+- generateEvalFunction: yep
+
+
+```c
+void * eval_elm_core_List_foldl(void * init_args[]) {
+  const u32 n_free = 1;
+  const u32 n_args = 3;
+  void* free_vars[1];
+  void* args[3];
+  free_vars[0] = init_args[0];
+  args[0] = init_args[1];
+  args[1] = init_args[2];
+  args[2] = init_args[3];
+
+  void* x_stuff = free_vars[0];
+
   tce_loop:
   ;
   void * x_func = args[0];
@@ -133,10 +193,10 @@ void * eval_elm_core_List_foldl(void * args[], void * * gc_tce_data) {
           void * x_x = ((Tuple3 * )(x_list))->a;
           void * x_xs = ((Tuple3 * )(x_list))->b;
           void * tmp1 = A2(x_func, x_x, x_acc);
-          local_args[0] = x_func;
-          local_args[1] = tmp1;
-          local_args[2] = x_xs;
-          GC_stack_tailcall(NEW_CLOSURE(3, 3, eval_elm_core_List_foldl, local_args));
+          args[0] = x_func;
+          args[1] = tmp1;
+          args[2] = x_xs;
+          GC_stack_tailcall(eval_elm_core_List_foldl, n_free, free_vars, n_args, args);
           goto tce_loop;
           case0 = NULL;
           break;
@@ -144,8 +204,143 @@ void * eval_elm_core_List_foldl(void * args[], void * * gc_tce_data) {
   } while (0);
   return case0;
 }
-Closure g_elm_core_List_foldl = { .header = HEADER_CLOSURE(0), .n_values = 0x0, .max_values = 0x3, .evaluator = &eval_elm_core_List_foldl };
+```
 
+```c
+void * eval_elm_core_List_foldl(void * init_args[]) {
+  void* args[4];
+  args[0] = init_args[0];
+  args[1] = init_args[1];
+  args[2] = init_args[2];
+  args[3] = init_args[3];
+  void * x_some_free_var = args[0];
+  const u32 fv = 0;
+  tce_loop:
+  ;
+  void * x_func = args[fv+0];
+  void * x_acc = args[fv+1];
+  void * x_list = args[fv+2];
+  void * case0;
+  do {
+      if (x_list == &Nil) {
+          case0 = x_acc;
+          break;
+      } else {
+          void * x_x = ((Tuple3 * )(x_list))->a;
+          void * x_xs = ((Tuple3 * )(x_list))->b;
+          void * tmp1 = A2(x_func, x_x, x_acc);
+          args[fv+0] = x_func;
+          args[fv+1] = tmp1;
+          args[fv+2] = x_xs;
+          GC_stack_tailcall(NEW_CLOSURE(n_args, n_args, eval_elm_core_List_foldl, args));
+          goto tce_loop;
+          case0 = NULL;
+          break;
+      };
+  } while (0);
+  return case0;
+}
+```
+
+```c
+void * eval_elm_core_List_foldl(void * init_args[]) {
+  void* args_copy[3];
+  all_args[0] = init_args[0];
+  all_args[1] = init_args[1];
+  all_args[2] = init_args[2];
+  void** explicit_args = all_args + 0;
+  u32 n_args = 3;
+  void * x_some_free_var = all_args[0];
+  tce_loop:
+  ;
+  void * x_func = explicit_args[0];
+  void * x_acc = explicit_args[1];
+  void * x_list = explicit_args[2];
+  void * case0;
+  do {
+      if (x_list == &Nil) {
+          case0 = x_acc;
+          break;
+      } else {
+          void * x_x = ((Tuple3 * )(x_list))->a;
+          void * x_xs = ((Tuple3 * )(x_list))->b;
+          void * tmp1 = A2(x_func, x_x, x_acc);
+          explicit_args[0] = x_func;
+          explicit_args[1] = tmp1;
+          explicit_args[2] = x_xs;
+          GC_stack_tailcall(NEW_CLOSURE(n_args, n_args, eval_elm_core_List_foldl, all_args));
+          goto tce_loop;
+          case0 = NULL;
+          break;
+      };
+  } while (0);
+  return case0;
+}
+```
+
+```c
+void * eval_elm_core_List_foldl(void * args[]) {
+  void * x_func = args[0];
+  void * x_acc = args[1];
+  void * x_list = args[2];
+  u32 free_vars = 0;
+  u32 n_args = 3;
+
+  tce_loop:
+  ;
+  void * case0;
+  do {
+      if (x_list == &Nil) {
+          case0 = x_acc;
+          break;
+      } else {
+          void * x_x = ((Tuple3 * )(x_list))->a;
+          void * x_xs = ((Tuple3 * )(x_list))->b;
+          void * tmp1 = A2(x_func, x_x, x_acc);
+          x_func = x_func;
+          x_acc = tmp1;
+          x_list = x_xs;
+          GC_stack_tailcall(NEW_CLOSURE(3, 3, eval_elm_core_List_foldl,
+            ((void*[]){ x_func, x_acc, x_list })
+          ));
+          goto tce_loop;
+          case0 = NULL;
+          break;
+      };
+  } while (0);
+  return case0;
+}
+```
+
+```c
+#define tce_gc_elm_core_List_foldl NEW_CLOSURE(5, 5, eval_elm_core_List_foldl, ((void*[]){ x_free1, x_free2, x_func, x_acc, x_list }))
+
+void * eval_elm_core_List_foldl(void * args[]) {
+  void * x_func = args[0];
+  void * x_acc = args[1];
+  void * x_list = args[2];
+  tce_loop:
+  ;
+  void * case0;
+  do {
+      if (x_list == &Nil) {
+          case0 = x_acc;
+          break;
+      } else {
+          void * x_x = ((Tuple3 * )(x_list))->a;
+          void * x_xs = ((Tuple3 * )(x_list))->b;
+          void * tmp1 = A2(x_func, x_x, x_acc);
+          x_func = x_func;
+          x_acc = tmp1;
+          x_list = x_xs;
+          GC_stack_tailcall(tce_gc_elm_core_List_foldl);
+          goto tce_loop;
+          case0 = NULL;
+          break;
+      };
+  } while (0);
+  return case0;
+}
 ```
 
 

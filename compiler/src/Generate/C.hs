@@ -322,13 +322,13 @@ addLiteral insert value state =
 
 
 -- Interface to Generate.C.Expression
-generateExpression :: Opt.Global -> StateMonad.State CE.ExprState a -> State -> State
-generateExpression global exprGenerator state =
+generateExpression :: Opt.Global -> CN.Name -> StateMonad.State CE.ExprState a -> State -> State
+generateExpression global fname exprGenerator state =
   let
     (revExtDecls, literals) =
       CE.globalDefsFromExprState $
         StateMonad.execState exprGenerator $
-        CE.initState global (_revExtDecls state) (_literals state)
+        CE.initState global fname (_revExtDecls state) (_literals state)
   in
   state
     { _revExtDecls = revExtDecls
@@ -410,21 +410,20 @@ generateCycleTailDef :: ModuleName.Canonical -> Name.Name -> [Name.Name] -> Opt.
 generateCycleTailDef home name args body state =
   let
     global = Opt.Global home name
-    tailFnName = CN.globalTailEvaluator home name
-    wrapFnName = CN.globalEvaluator home name
+    fname = CN.globalEvaluator home name
     closureName = CN.global home name
 
     initExprState =
-      CE.initState global (_revExtDecls state) (_literals state)
+      CE.initState global fname (_revExtDecls state) (_literals state)
 
     (revExtDecls, literals) =
       CE.globalDefsFromExprState $
       StateMonad.execState
-        (CE.generateTailDefEval tailFnName wrapFnName args body)
+        (CE.generateEvalFunction fname args body True)
         initExprState
 
     closure =
-      CK.generateClosure closureName (C.addrOf wrapFnName) (length args) []
+      CK.generateClosure closureName (C.Var fname) (length args) []
   in
   state
     { _revExtDecls = closure : revExtDecls
@@ -457,7 +456,7 @@ generateCycleVal home state (name, expr) =
 
     exprGenerator = CE.generateCycleFn ptrName funcName expr
   in
-  generateExpression global exprGenerator $
+  generateExpression global funcName exprGenerator $
     state
       { _revInitGlobals = global : (_revInitGlobals state)
       , _revExtDecls = declarePtr : defineAlias : _revExtDecls state
@@ -610,7 +609,7 @@ generateInitFunction global@(Opt.Global home name) body state =
   let
     fname = CN.globalInitFn home name
     exprGenerator = CE.generateInitFunction fname body
-    evalFnState = generateExpression global exprGenerator state
+    evalFnState = generateExpression global fname exprGenerator state
   in
   evalFnState
     { _revInitGlobals = global : _revInitGlobals evalFnState }
@@ -630,7 +629,7 @@ generateGlobalFunction global@(Opt.Global home name) args body state =
         []
 
     exprGenerator = CE.generateEvalFunction fname args body False
-    evalFnState = generateExpression global exprGenerator state
+    evalFnState = generateExpression global fname exprGenerator state
   in
   addExtDecl closure evalFnState
 
