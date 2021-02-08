@@ -30,7 +30,7 @@ module Generate.C.Name
   , true
   , false
   , listCreate
-  , utilsInitGlobal
+  , gcInitRoot
   , utilsAccessEval
   , utilsUpdate
   , utilsEqual
@@ -40,7 +40,8 @@ module Generate.C.Name
   , wrapperFieldGroups
   , wrapperMains
   , tceLabel
-  , nFree
+  , tceStackFrame
+  , tceResume
   , KernelTypeDef(..)
   , HeaderFile(..)
   , args
@@ -264,9 +265,9 @@ listCreate =
   kernelValue Name.list (Name.fromChars "create")
 
 
-utilsInitGlobal :: Name
-utilsInitGlobal =
-  kernelValue Name.utils (Name.fromChars "initGlobal")
+gcInitRoot :: Name
+gcInitRoot =
+  Name "GC_init_root"
 
 
 utilsAccessEval :: Name
@@ -319,9 +320,14 @@ tceLabel =
   Name "tce_loop"
 
 
-nFree :: Name
-nFree =
-  Name "n_free"
+tceStackFrame :: Name
+tceStackFrame =
+  Name "gc_stack_frame"
+
+
+tceResume :: Name
+tceResume =
+  Name "gc_resume"
 
 
 applyMacro :: Int -> Name

@@ -178,7 +178,7 @@ generateInitCall :: [C.CompoundBlockItem] -> Opt.Global -> [C.CompoundBlockItem]
 generateInitCall acc (Opt.Global home name) =
   let
     initCall = C.BlockStmt $ C.Expr $ Just $
-      C.Call (C.Var CN.utilsInitGlobal)
+      C.Call (C.Var CN.gcInitRoot)
       [ C.Unary C.AddrOp $ C.Var $ CN.globalInitPtr home name
       , C.Unary C.AddrOp $ C.Var $ CN.globalInitFn home name
       ]

@@ -351,26 +351,28 @@ generateLocalFn closureName params body =
     let evalName = CN.localEvaluator gHome gName evalIndex
 
     freeVars <- generateEvalFunction evalName params body False
+    let nValues = length freeVars
+    let maxValues = nValues + length params
     addBlockItem $
-      generateNewClosure closureName evalName (length params) (length freeVars)
+      generateNewClosure closureName evalName nValues maxValues (C.Var CN.nullPtr)
 
     addBlockItems $ List.reverse $ map
       (generateFreeVarAssignment (C.Var closureName))
       (zip [0..] freeVars)
 
 
-generateNewClosure :: CN.Name -> CN.Name -> Int -> Int -> C.CompoundBlockItem
-generateNewClosure varName evalName nParams nFree =
+generateNewClosure :: CN.Name -> CN.Name -> Int -> Int -> C.Expression -> C.CompoundBlockItem
+generateNewClosure varName evalName nValues maxValues expr =
   C.BlockDecl $
     C.Decl
       [C.TypeSpec $ C.TypeDef CN.Closure]
       (Just $ C.Declr (Just varName) [C.PtrDeclr []])
       (Just $ C.InitExpr $
         C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
-          [ C.Const $ C.IntConst nFree
-          , C.Const $ C.IntConst $ nFree + nParams
-          , C.Unary C.AddrOp $ C.Var evalName
-          , C.Var CN.nullPtr
+          [ C.Const $ C.IntConst nValues
+          , C.Const $ C.IntConst maxValues
+          , C.Var evalName
+          , expr
           ])
 
 
@@ -445,8 +447,13 @@ generateTailFnDecl nFree fname returnExpr blockItems params =
     label =
       C.BlockStmt $ C.Label CN.tceLabel $ C.NullStatement
 
-    defineNumFreeVars =
-      C.defineNumber (C.TypeDef CN.U32) CN.nFree (C.Const $ C.IntConst nFree)
+    gcGetStackFrame =
+      C.defineNumber (C.TypeDef CN.U32) CN.tceStackFrame $
+        C.Call (C.Var $ CN.fromBuilder "GC_get_stack_frame") []
+
+    nArgsTotal = (nFree + length params)
+    gcClosure =
+      generateNewClosure CN.tceResume fname nArgsTotal nArgsTotal (C.Var CN.args)
 
     returnStmt =
       C.BlockStmt $ C.Return $ Just returnExpr
@@ -455,7 +462,8 @@ generateTailFnDecl nFree fname returnExpr blockItems params =
       returnStmt
       : blockItems
       ++ [label]
-      ++ [defineNumFreeVars]
+      ++ [gcClosure]
+      ++ [gcGetStackFrame]
       ++ (generateDestructParams params)
   in
   C.FDefExt $ C.FunDef
@@ -994,15 +1002,15 @@ generateTailCall name explicitArgs =
     fname <- gets _currentFuncName
     let lValues = map (C.Var . CN.local) elmArgNames
     let assignments = zipWith C.assignment lValues rValues
-    let gcCall = C.BlockStmt $ C.Expr $ Just $ C.Call
-          (C.Var $ CN.fromBuilder "CAN_THROW")
-          [C.Call (C.Var $ CN.fromBuilder "GC_stack_tailcall")
-            [ C.Var fname
-            , C.Var CN.nFree
-            , C.Var CN.args
-            , C.Const $ C.IntConst nExplicitArgs
-            , C.pointerArray lValues
-            ]]
+    let gcCall = C.assignment (C.Var CN.tceResume) $
+          C.Call
+            (C.Var $ CN.fromBuilder "CAN_THROW")
+            [C.Call (C.Var $ CN.fromBuilder "GC_stack_tailcall")
+              [ C.Var CN.tceStackFrame
+              , C.Var CN.tceResume
+              , C.Const $ C.IntConst nExplicitArgs
+              , C.pointerArray lValues
+              ]]
     let goto = C.BlockStmt $ C.Goto CN.tceLabel
     addBlockItems $ goto : gcCall : assignments
     return $ C.Var CN.nullPtr
