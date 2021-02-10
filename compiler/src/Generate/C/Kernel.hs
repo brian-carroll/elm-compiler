@@ -32,6 +32,7 @@ shouldGenJsCode home
   | home == ModuleName.list   = False
   | home == ModuleName.string = False
   | home == ModuleName.char   = False
+  | home == ModuleName.debug  = False
   | home == bitwiseModule     = False
   | home == jsArrayModule     = False
   | home == testModule        = False
@@ -49,6 +50,7 @@ shouldGenJsEnumId home name
   | home == Name.char    = False
   | home == Name.bitwise = False
   | home == Name.jsArray = False
+  | home == Name.debug   = False
   | home == testKernel   = False
   | otherwise = True
 
@@ -64,6 +66,7 @@ shouldGenStruct home name
   | home == Name.char    = False
   | home == Name.bitwise = False
   | home == Name.jsArray = False
+  | home == Name.debug   = False
   | home == testKernel   = False
   | otherwise = True
 
