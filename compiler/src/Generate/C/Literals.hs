@@ -336,7 +336,32 @@ generateGlobalJs (Opt.Global home name) =
 
 generateUtf16 :: ES.String -> [C.Expression]
 generateUtf16 str =
-  map (C.Const . C.IntHexConst) $ concatMap encodeUtf16 (ES.toChars str)
+  map (C.Const . C.IntHexConst) $
+    concatMap encodeUtf16 $
+    unescape $
+    ES.toChars str
+
+
+-- For JS target, String literals are left unescaped in cases
+-- where escapes are identical between Elm and JS source.
+-- But for C we need to unescape them
+unescape :: [Char] -> [Char]
+unescape str =
+  case str of
+    [] -> str
+    [_] -> str
+    c1 : c2 : rest ->
+      if c1 /= '\\' then
+        c1 : unescape (c2 : rest)
+      else
+        case c2 of
+          '\\' -> '\\' : unescape rest
+          '\'' -> '\'' : unescape rest
+          '"'  -> '"'  : unescape rest
+          'n'  -> '\n' : unescape rest
+          'r'  -> '\r' : unescape rest
+          't'  -> '\t' : unescape rest
+          _ -> c1 : unescape (c2 : rest)
 
 
 encodeUtf16 :: Char -> [Int]
