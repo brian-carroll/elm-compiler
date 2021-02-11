@@ -225,7 +225,7 @@ generate expr =
     Opt.Function args body ->
       do
         closureName <- getTmpVarName "f"
-        generateLocalFn closureName args body
+        generateLocalFn closureName args body False
         return $ C.Var closureName
 
     Opt.Call func args ->
@@ -343,14 +343,14 @@ generateExprAsBlock resultName expr =
 -- LOCAL FUNCTION
 
 
-generateLocalFn :: CN.Name -> [N.Name] -> Opt.Expr -> State ExprState ()
-generateLocalFn closureName params body =
+generateLocalFn :: CN.Name -> [N.Name] -> Opt.Expr -> Bool -> State ExprState ()
+generateLocalFn closureName params body isTailRec =
   do
     (Opt.Global gHome gName) <- gets _parentGlobal
     evalIndex <- nextTmpVarIndex
     let evalName = CN.localEvaluator gHome gName evalIndex
 
-    freeVars <- generateEvalFunction evalName params body False
+    freeVars <- generateEvalFunction evalName params body isTailRec
     let nValues = length freeVars
     let maxValues = nValues + length params
     addBlockItem $
@@ -1026,7 +1026,7 @@ generateDef def =
     Opt.Def name (Opt.Function args body) ->
       do
         addLocal name
-        generateLocalFn (CN.local name) args body
+        generateLocalFn (CN.local name) args body False
 
     Opt.Def name body ->
       do
@@ -1040,28 +1040,10 @@ generateDef def =
               [C.PtrDeclr []])
             (Just $ C.InitExpr bodyExpr)
 
-    Opt.TailDef name argNames body ->
+    Opt.TailDef name args body ->
       do
-        -- names
         addLocal name
-        tmpIndex <- nextTmpVarIndex
-        (Opt.Global gHome gName) <- gets _parentGlobal
-        let fname = CN.localEvaluator gHome gName tmpIndex
-
-        freeVars <- generateEvalFunction fname argNames body True
-
-        addBlockItem $
-          C.BlockDecl $ C.Decl
-            [C.TypeSpec C.Void]
-            (Just $ C.Declr
-              (Just $ CN.local name)
-              [C.PtrDeclr []])
-            (Just $ C.InitExpr $ C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
-              [ C.Const $ C.IntConst $ length freeVars
-              , C.Const $ C.IntConst $ length freeVars + length argNames
-              , C.Var fname
-              , C.pointerArray (map (C.Var . CN.local) freeVars)
-              ])
+        generateLocalFn (CN.local name) args body True
 
 
 
