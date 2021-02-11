@@ -342,9 +342,9 @@ generateUtf16 str =
     ES.toChars str
 
 
--- For JS target, String literals are left unescaped in cases
--- where escapes are identical between Elm and JS source.
--- But for C we need to unescape them
+-- The compiler keeps backslashes that were in the Elm source,
+-- since they're also neeeded in the JS output.
+-- But here we are outputting UTF-16 hex codes, not C string literals.
 unescape :: [Char] -> [Char]
 unescape str =
   case str of
