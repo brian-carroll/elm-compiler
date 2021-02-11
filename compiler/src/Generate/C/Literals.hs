@@ -59,7 +59,7 @@ empty =
     , litFieldAccess = Set.empty
     , litFieldAccessor = Set.empty
     , litFieldGroup = Set.empty
-    , litCtor = Set.empty
+    , litCtor = Set.fromList $ map N.fromChars ["LT", "EQ", "GT"]
     , litKernelJs = Set.empty
     , litGlobalJs = Set.empty
     }
