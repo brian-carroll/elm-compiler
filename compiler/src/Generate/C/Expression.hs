@@ -618,7 +618,7 @@ goto resultName label (index, branch) stmtsState =
     stmts <- stmtsState
     branchExpr <- generate branch
     let branchStmt = C.Expr $ Just $ C.Assign C.AssignOp (C.Var resultName) branchExpr
-    return $ (C.Label (CN.label label index) branchStmt) : stmts
+    return $ C.Break : (C.Label (CN.label label index) branchStmt) : stmts
 
 
 generateDecider :: CN.Name -> N.Name -> N.Name -> Opt.Decider Opt.Choice -> State ExprState C.Statement
