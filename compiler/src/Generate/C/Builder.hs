@@ -189,6 +189,9 @@ fromStatement indent statement =
     Expr maybeExpression -> 
       maybe "" fromExpr maybeExpression
 
+    Compound [BlockStmt (Compound revBlockItems)] ->
+      fromStatement indent $ Compound revBlockItems
+
     Compound revBlockItems ->
       let
         block =
@@ -199,6 +202,10 @@ fromStatement indent statement =
             revBlockItems
       in
       "{" <> block <> nIndent <> "}"
+
+    If condition thenStmt@(If _ _ _) maybeElseStmt ->
+      fromStatement indent $
+        If condition (Compound [BlockStmt thenStmt]) maybeElseStmt
 
     If condition thenStmt maybeElseStmt ->
       "if (" <> (fromExpr condition) <> ") "
