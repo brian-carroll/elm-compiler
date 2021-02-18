@@ -368,7 +368,7 @@ generateNewClosure varName evalName nValues maxValues expr =
       [C.TypeSpec $ C.TypeDef CN.Closure]
       (Just $ C.Declr (Just varName) [C.PtrDeclr []])
       (Just $ C.InitExpr $
-        C.Call (C.Var $ CN.fromBuilder "NEW_CLOSURE")
+        C.Call (C.Var $ CN.fromBuilder "newClosure")
           [ C.Const $ C.IntConst nValues
           , C.Const $ C.IntConst maxValues
           , C.Var evalName
@@ -535,7 +535,7 @@ generateRecord fields =
     addLiteral CL.insertFieldGroup fieldNames
     (childExprs, nChildren) <- generateChildren children
     return $
-      C.Call (C.Var $ CN.fromBuilder "NEW_RECORD")
+      C.Call (C.Var $ CN.fromBuilder "newRecord")
         [ C.Unary C.AddrOp $ C.Var fieldGroupName
         , C.Const $ C.IntConst nChildren
         , C.pointerArray childExprs
@@ -551,8 +551,8 @@ generateTuple a b maybeC =
   let
     (ctorName, children) =
       case maybeC of
-        Nothing -> ( "NEW_TUPLE2", [a,b] )
-        Just c -> ( "NEW_TUPLE3", [a,b,c] )
+        Nothing -> ( "newTuple2", [a,b] )
+        Just c -> ( "newTuple3", [a,b,c] )
   in
   do
     (childExprs, nChildren) <- generateChildren children
@@ -1003,14 +1003,12 @@ generateTailCall name explicitArgs =
     let lValues = map (C.Var . CN.local) elmArgNames
     let assignments = zipWith C.assignment lValues rValues
     let gcCall = C.assignment (C.Var CN.tceResume) $
-          C.Call
-            (C.Var $ CN.fromBuilder "CAN_THROW")
-            [C.Call (C.Var $ CN.fromBuilder "GC_stack_tailcall")
-              [ C.Var CN.tceStackFrame
-              , C.Var CN.tceResume
-              , C.Const $ C.IntConst nExplicitArgs
-              , C.pointerArray lValues
-              ]]
+          C.Call (C.Var $ CN.fromBuilder "GC_stack_tailcall")
+            [ C.Var CN.tceStackFrame
+            , C.Var CN.tceResume
+            , C.Const $ C.IntConst nExplicitArgs
+            , C.pointerArray lValues
+            ]
     let goto = C.BlockStmt $ C.Goto CN.tceLabel
     addBlockItems $ goto : gcCall : assignments
     return $ C.Var CN.nullPtr

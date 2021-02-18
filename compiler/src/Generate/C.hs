@@ -654,10 +654,10 @@ generateCtorFn (Opt.Global home name) arity state =
     fname =
       CN.globalEvaluator home name
 
-    ctorCustomCall :: C.Expression
-    ctorCustomCall =
+    ctorCall :: C.Expression
+    ctorCall =
       C.Call
-        (C.Var $ CN.fromBuilder "ctorCustom")
+        (C.Var $ CN.fromBuilder "newCustom")
         [ C.Var $ CN.ctorId name
         , C.Const $ C.IntConst arity
         , C.Var $ CN.fromBuilder "args"
@@ -668,7 +668,7 @@ generateCtorFn (Opt.Global home name) arity state =
       C.FDefExt $ C.FunDef
         [C.TypeSpec C.Void]
         (C.Declr (Just fname) [C.PtrDeclr [], C.FunDeclr [C.argsArray]])
-        [C.BlockStmt $ C.Return $ Just ctorCustomCall]
+        [C.BlockStmt $ C.Return $ Just ctorCall]
 
     closure :: C.ExternalDeclaration
     closure =
@@ -790,19 +790,15 @@ generateFunctionDebugNames allExtDecls =
         (Just $ C.Declr (Just paramName) [C.PtrDeclr []])
         Nothing
 
-    ifClause :: CN.Name -> C.Statement -> C.Statement
-    ifClause name elseStmt =
-      C.If
+    ifStmt :: CN.Name -> C.CompoundBlockItem
+    ifStmt name =
+      C.BlockStmt $ C.If
         (C.Binary C.EqOp (C.Var paramName) (C.Unary C.AddrOp $ C.Var name))
-        (C.Compound [C.BlockStmt $
-          C.Return $ Just $ C.Const $ C.StrConst $ CN.toBuilder name])
-        (Just elseStmt)
+        (C.Compound [C.BlockStmt $ C.Return $ Just $ C.Const $ C.StrConst $ CN.toBuilder name])
+        Nothing
 
-    bigIf :: C.Statement
-    bigIf =
-      foldr ifClause 
-        (C.Return $ Just $ C.Const $ C.StrConst "(?)")
-        evalNames
+    ifs = map ifStmt evalNames
+    catchall = C.BlockStmt $ C.Return $ Just $ C.Const $ C.StrConst "(?)"
   in
   C.FDefExt
     (C.FunDef
@@ -810,7 +806,7 @@ generateFunctionDebugNames allExtDecls =
       (C.Declr
         (Just $ CN.fromBuilder "Debug_evaluator_name")
         [C.PtrDeclr [], C.FunDeclr [paramDecl]])
-      [C.BlockStmt bigIf])
+      (catchall : ifs))
 
 
 nextEvalFuncName :: C.ExternalDeclaration -> [CN.Name] -> [CN.Name]

@@ -295,7 +295,9 @@ generateStr value =
   in
   CK.generateStructDef CN.ElmString16 (CN.literalStr value)
     [("header", CK.generateHeader $ CK.HEADER_STRING (length words16))]
-    (Just ("words16", words16))
+    (case words16 of
+      [] -> Nothing
+      _ -> Just ("words16", words16))
 
 
 generateAccessor :: N.Name -> C.ExternalDeclaration
@@ -311,7 +313,9 @@ generateFieldGroup names =
     [ ("header", CK.generateHeader $ CK.HEADER_FIELDGROUP (length names))
     , ("size", C.Const $ C.IntConst $ length names)
     ]
-    (Just ("fields", map (C.Var . CN.fieldId) names))
+    (case names of
+      [] -> Nothing
+      _ -> Just ("fields", map (C.Var . CN.fieldId) names))
 
 
 generateKernelJs :: (N.Name, N.Name) -> [C.ExternalDeclaration]

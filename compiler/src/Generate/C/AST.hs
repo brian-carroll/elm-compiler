@@ -218,12 +218,14 @@ arrayLiteral elemType elements =
 
 pointerArray :: [Expression] -> Expression
 pointerArray elements =
-  Parens $
-  Cast
-    (Decl [TypeSpec Void]
-      (Just $ Declr Nothing [PtrDeclr [], ArrDeclr [] NoArrSize]) Nothing)
-    (CompoundLit $
-      map (\elem -> ([], InitExpr elem)) elements)
+  if null elements then
+    Var CN.nullPtr
+  else
+    Parens $ Cast
+      (Decl [TypeSpec Void]
+        (Just $ Declr Nothing [PtrDeclr [], ArrDeclr [] NoArrSize]) Nothing)
+      (CompoundLit $
+        map (\elem -> ([], InitExpr elem)) elements)
 
 
 castAsPtrTo :: TypeSpecifier -> Expression -> Expression

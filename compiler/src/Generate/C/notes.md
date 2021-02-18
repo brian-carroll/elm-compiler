@@ -101,7 +101,7 @@ generateTailCallGc nValues evalName tailArgsName =
     (C.Call
       (C.Var $ CN.fromBuilder "GC_stack_tailcall")
       [C.Call
-        (C.Var $ CN.fromBuilder "NEW_CLOSURE")
+        (C.Var $ CN.fromBuilder "newClosure")
         [ C.Const $ C.IntConst nValues
         , C.Const $ C.IntConst nValues
         , C.Var evalName
@@ -148,7 +148,7 @@ void * eval_elm_core_List_foldl(void * args[]) {
 
 void GC_stack_tailcall(evaluator, n_free, free_vars, n_args, args) {
   u32 n = n_free + n_args;
-  Closure* c = NEW_CLOSURE(n,n,evaluator,NULL);
+  Closure* c = newClosure(n,n,evaluator,NULL);
   for (u32 i=0; i < n_free; i++) {
     c->values[i] = free_vars[i];    
   }
@@ -172,7 +172,7 @@ void * eval_elm_core_List_foldl(void * args[]) {
   void * x_acc = args[1];
   void * x_list = args[2];
   u32 gc_stack_frame = GC_get_stack_frame();
-  Closure* gc_resume = NEW_CLOSURE(3, 3, eval_elm_core_List_foldl, args);
+  Closure* gc_resume = newClosure(3, 3, eval_elm_core_List_foldl, args);
   tce_loop:
   ;
   void * case0;
