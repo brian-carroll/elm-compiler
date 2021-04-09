@@ -300,19 +300,19 @@ generate expr =
 
 generateChildren :: Bool -> [Opt.Expr] -> State ExprState ([C.Expression], Int)
 generateChildren forceTmpVar elmChildren =
-  foldr (generateChildrenHelp forceTmpVar) (pure ([], 0)) elmChildren
+  List.foldl' (generateChildrenHelp forceTmpVar) (pure ([], 0)) elmChildren
 
 
 generateChildrenHelp :: Bool
+  -> State ExprState ([C.Expression], Int)
   -> Opt.Expr
   -> State ExprState ([C.Expression], Int)
-  -> State ExprState ([C.Expression], Int)
-generateChildrenHelp forceTmpVar elmChildExpr acc =
+generateChildrenHelp forceTmpVar acc elmChildExpr =
   do
     (children, nChildren) <- acc
     childExpr <- generate elmChildExpr
     childVarExpr <- generateChildVar forceTmpVar childExpr
-    return (childVarExpr : children, nChildren + 1)
+    return (children ++ [childVarExpr], nChildren + 1)
 
 
 generateChildVar :: Bool -> C.Expression -> State ExprState C.Expression
