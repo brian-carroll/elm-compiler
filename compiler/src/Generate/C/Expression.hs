@@ -1009,7 +1009,7 @@ generateTailCall name explicitArgs =
     (rValues, nExplicitArgs) <- generateChildren True elmArgExprs
     fname <- gets _currentFuncName
     let lValues = map (C.Var . CN.local) elmArgNames
-    let assignments = zipWith C.assignment lValues rValues
+    let assignments = reverse $ zipWith C.assignment lValues rValues
     let gcCall = C.assignment (C.Var CN.tceResume) $
           C.Call (C.Var $ CN.fromBuilder "GC_stack_tailcall")
             [ C.Var CN.tceStackFrame
