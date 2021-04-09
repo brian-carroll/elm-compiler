@@ -274,7 +274,7 @@ generate expr =
     Opt.Update record fieldValueMap ->
       do
         cRecord <- generate record
-        (cValues, nUpdates) <- generateChildren (Map.elems fieldValueMap)
+        (cValues, nUpdates) <- generateChildren False (Map.elems fieldValueMap)
         let fieldNames = Map.keys fieldValueMap
         let cFields = map (C.Var . CN.fieldId) fieldNames
         return $ C.Call
@@ -298,36 +298,44 @@ generate expr =
       return $ C.CommentExpr "TODO: implement Shaders!" (C.Var CN.nullPtr)
 
 
-generateChildren :: [Opt.Expr] -> State ExprState ([C.Expression], Int)
-generateChildren elmChildren =
-  foldr generateChildrenHelp (pure ([], 0)) elmChildren
+generateChildren :: Bool -> [Opt.Expr] -> State ExprState ([C.Expression], Int)
+generateChildren forceTmpVar elmChildren =
+  foldr (generateChildrenHelp forceTmpVar) (pure ([], 0)) elmChildren
 
 
-generateChildrenHelp :: Opt.Expr
+generateChildrenHelp :: Bool
+  -> Opt.Expr
   -> State ExprState ([C.Expression], Int)
   -> State ExprState ([C.Expression], Int)
-generateChildrenHelp elmChildExpr acc =
+generateChildrenHelp forceTmpVar elmChildExpr acc =
   do
     (children, nChildren) <- acc
     childExpr <- generate elmChildExpr
-    childVarExpr <- generateChildVar childExpr
+    childVarExpr <- generateChildVar forceTmpVar childExpr
     return (childVarExpr : children, nChildren + 1)
 
 
-generateChildVar :: C.Expression -> State ExprState C.Expression
-generateChildVar childExpr =
-  case childExpr of
-    C.Var _ ->
-      return childExpr
-
-    C.Unary C.AddrOp (C.Var _) ->
-      return childExpr
-
-    _ ->
-      do -- every child expression gets its own temp var for easier debugging
+generateChildVar :: Bool -> C.Expression -> State ExprState C.Expression
+generateChildVar forceTmpVar childExpr =
+  let
+    tmpExpr =
+      do
         childVarName <- getTmpVarName "tmp"
         addBlockItem $ C.declareVoidPtr childVarName (Just childExpr)
         return (C.Var childVarName)
+  in
+  if forceTmpVar then
+    tmpExpr
+  else
+    case childExpr of
+      C.Var _ ->
+        return childExpr
+
+      C.Unary C.AddrOp (C.Var _) ->
+        return childExpr
+
+      _ ->
+        tmpExpr
 
 
 generateExprAsBlock :: CN.Name -> Opt.Expr -> State ExprState [C.CompoundBlockItem]
@@ -533,7 +541,7 @@ generateRecord fields =
   in
   do
     addLiteral CL.insertFieldGroup fieldNames
-    (childExprs, nChildren) <- generateChildren children
+    (childExprs, nChildren) <- generateChildren False children
     return $
       C.Call (C.Var $ CN.fromBuilder "newRecord")
         [ C.Unary C.AddrOp $ C.Var fieldGroupName
@@ -555,7 +563,7 @@ generateTuple a b maybeC =
         Just c -> ( "newTuple3", [a,b,c] )
   in
   do
-    (childExprs, nChildren) <- generateChildren children
+    (childExprs, nChildren) <- generateChildren False children
     return $ C.Call (C.Var $ CN.fromBuilder ctorName) childExprs
 
 
@@ -895,7 +903,7 @@ generateList entries =
     return $ C.addrOf $ CN.fromBuilder "Nil"
   else
     do
-      (cEntries, nEntries) <- generateChildren entries
+      (cEntries, nEntries) <- generateChildren False entries
       return $
         C.Call (C.Var CN.listCreate)
           [ C.Const $ C.IntConst nEntries
@@ -915,7 +923,7 @@ generateCall func args =
 
     _ ->
       do
-        (cArgs, nArgs) <- generateChildren args
+        (cArgs, nArgs) <- generateChildren False args
         funcExpr <- generate func
         return $ C.Call (C.Var $ CN.applyMacro nArgs)
                   (funcExpr : cArgs)
@@ -924,7 +932,7 @@ generateCall func args =
 generateGlobalCall :: ModuleName.Canonical -> N.Name -> [Opt.Expr] -> State ExprState C.Expression
 generateGlobalCall home name args =
   do
-    (cArgs, nArgs) <- generateChildren args
+    (cArgs, nArgs) <- generateChildren False args
     return $ C.Call
       (C.Var $ CN.applyMacro nArgs)
       ((C.addrOf $ CN.global home name) : cArgs)
@@ -933,7 +941,7 @@ generateGlobalCall home name args =
 generateKernelCall :: N.Name -> N.Name -> [Opt.Expr] -> State ExprState C.Expression
 generateKernelCall home name args =
   do
-    (cArgs, nArgs) <- generateChildren args
+    (cArgs, nArgs) <- generateChildren False args
     return $ C.Call
       (C.Var $ CN.applyMacro nArgs)
       ((C.addrOf $ CN.kernelValue home name) : cArgs)
@@ -998,7 +1006,7 @@ generateTailCall :: N.Name -> [(N.Name, Opt.Expr)] -> State ExprState C.Expressi
 generateTailCall name explicitArgs =
   do
     let (elmArgNames, elmArgExprs) = unzip explicitArgs
-    (rValues, nExplicitArgs) <- generateChildren elmArgExprs
+    (rValues, nExplicitArgs) <- generateChildren True elmArgExprs
     fname <- gets _currentFuncName
     let lValues = map (C.Var . CN.local) elmArgNames
     let assignments = zipWith C.assignment lValues rValues
