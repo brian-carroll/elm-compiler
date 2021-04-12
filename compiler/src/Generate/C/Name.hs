@@ -41,7 +41,6 @@ module Generate.C.Name
   , wrapperMains
   , tceLabel
   , tceStackFrame
-  , tceResume
   , KernelTypeDef(..)
   , HeaderFile(..)
   , args
@@ -323,11 +322,6 @@ tceLabel =
 tceStackFrame :: Name
 tceStackFrame =
   Name "gc_stack_frame"
-
-
-tceResume :: Name
-tceResume =
-  Name "gc_resume"
 
 
 applyMacro :: Int -> Name

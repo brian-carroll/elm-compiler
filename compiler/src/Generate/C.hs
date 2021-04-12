@@ -133,7 +133,7 @@ generateCMain revInitGlobals =
       List.foldl' generateInitCall [] revInitGlobals
     runGC =
       C.BlockStmt $ C.Expr $ Just $
-      C.Call (C.Var $ CN.fromBuilder "GC_collect_full")
+      C.Call (C.Var $ CN.fromBuilder "GC_collect_major")
       []
     returnSuccess =
       C.BlockStmt $ C.Return $ Just $ C.Const (C.IntConst 0)
