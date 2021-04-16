@@ -55,7 +55,6 @@ data ExprState =
     , _freeVars :: Set N.Name
     , _tmpVarIndex :: Int
     , _parentGlobal :: Opt.Global
-    , _currentFuncName :: CN.Name
     }
 
 
@@ -69,7 +68,6 @@ initState global fname revExtDecls literals =
     , _freeVars = Set.empty
     , _tmpVarIndex = 0
     , _parentGlobal = global
-    , _currentFuncName = fname
     }
 
 
@@ -418,7 +416,6 @@ pushScope fname params =
       { _revBlockItems = []
       , _localScope = Set.fromList params
       , _freeVars = Set.empty
-      , _currentFuncName = fname
       }
     return origState
 
@@ -434,7 +431,6 @@ popScope outerScopeState innerScopeState =
   put $ innerScopeState
     { _revBlockItems = _revBlockItems outerScopeState
     , _localScope = _localScope outerScopeState
-    , _currentFuncName = _currentFuncName outerScopeState
     , _freeVars = Set.union (_freeVars outerScopeState) unresolvedFreeVars
     }
 
@@ -1005,7 +1001,6 @@ generateTailCall name explicitArgs =
     let updatedArgs = filter isTailCallArgUpdated explicitArgs
     let (elmArgNames, elmArgExprs) = unzip updatedArgs
     (rValues, _) <- generateChildren True elmArgExprs
-    fname <- gets _currentFuncName
     let lValues = map (C.Var . CN.local) elmArgNames
     let assignments = reverse $ zipWith C.assignment lValues rValues
     let gcCall = C.BlockStmt $ C.Expr $ Just $ C.Call
@@ -1017,9 +1012,9 @@ generateTailCall name explicitArgs =
 
 
 isTailCallArgUpdated :: (N.Name, Opt.Expr) -> Bool
-isTailCallArgUpdated (name1, expr) =
+isTailCallArgUpdated (argName, expr) =
   case expr of
-    Opt.VarLocal name2 -> name1 /= name2
+    Opt.VarLocal varName -> varName /= argName
     _ -> True
 
 
