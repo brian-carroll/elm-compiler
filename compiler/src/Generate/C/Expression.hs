@@ -1002,8 +1002,9 @@ apply func value =
 generateTailCall :: N.Name -> [(N.Name, Opt.Expr)] -> State ExprState C.Expression
 generateTailCall name explicitArgs =
   do
-    let (elmArgNames, elmArgExprs) = unzip explicitArgs
-    (rValues, nExplicitArgs) <- generateChildren True elmArgExprs
+    let updatedArgs = filter isTailCallArgUpdated explicitArgs
+    let (elmArgNames, elmArgExprs) = unzip updatedArgs
+    (rValues, _) <- generateChildren True elmArgExprs
     fname <- gets _currentFuncName
     let lValues = map (C.Var . CN.local) elmArgNames
     let assignments = reverse $ zipWith C.assignment lValues rValues
@@ -1014,6 +1015,12 @@ generateTailCall name explicitArgs =
     addBlockItems $ goto : gcCall : assignments
     return $ C.Var CN.nullPtr
 
+
+isTailCallArgUpdated :: (N.Name, Opt.Expr) -> Bool
+isTailCallArgUpdated (name1, expr) =
+  case expr of
+    Opt.VarLocal name2 -> name1 /= name2
+    _ -> True
 
 
 -- LET DEFINITION
