@@ -40,7 +40,6 @@ module Generate.C.Name
   , wrapperFieldGroups
   , wrapperMains
   , tceLabel
-  , tceStackFrame
   , KernelTypeDef(..)
   , HeaderFile(..)
   , args
@@ -317,11 +316,6 @@ args =
 tceLabel :: Name
 tceLabel =
   Name "tce_loop"
-
-
-tceStackFrame :: Name
-tceStackFrame =
-  Name "gc_stack_frame"
 
 
 applyMacro :: Int -> Name

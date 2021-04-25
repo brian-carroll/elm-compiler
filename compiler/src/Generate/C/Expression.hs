@@ -451,10 +451,6 @@ generateTailFnDecl nFree fname returnExpr blockItems params =
     label =
       C.BlockStmt $ C.Label CN.tceLabel $ C.NullStatement
 
-    gcGetStackFrame =
-      C.defineNumber (C.TypeDef CN.U32) CN.tceStackFrame $
-        C.Call (C.Var $ CN.fromBuilder "GC_get_stack_frame") []
-
     nArgsTotal = (nFree + length params)
 
     returnStmt =
@@ -464,7 +460,6 @@ generateTailFnDecl nFree fname returnExpr blockItems params =
       returnStmt
       : blockItems
       ++ [label]
-      ++ [gcGetStackFrame]
       ++ (generateDestructParams params)
   in
   C.FDefExt $ C.FunDef
@@ -998,14 +993,21 @@ apply func value =
 generateTailCall :: N.Name -> [(N.Name, Opt.Expr)] -> State ExprState C.Expression
 generateTailCall name explicitArgs =
   do
-    let updatedArgs = filter isTailCallArgUpdated explicitArgs
-    let (elmArgNames, elmArgExprs) = unzip updatedArgs
-    (rValues, _) <- generateChildren True elmArgExprs
-    let lValues = map (C.Var . CN.local) elmArgNames
+    let (updatedArgs, passthruArgs) = List.partition isTailCallArgUpdated explicitArgs
+    let nArgs = length explicitArgs
+
+    let (updateNames, updateExprs) = unzip updatedArgs
+    (rValues, _) <- generateChildren True updateExprs
+    let lValues = map (C.Var . CN.local) updateNames
     let assignments = reverse $ zipWith C.assignment lValues rValues
+
+    let passthruExprs = map (C.Var . CN.local . fst) passthruArgs
     let gcCall = C.BlockStmt $ C.Expr $ Just $ C.Call
                   (C.Var $ CN.fromBuilder "GC_stack_tailcall")
-                  [C.Var CN.tceStackFrame]
+                  ( C.Const (C.IntConst nArgs)
+                    : passthruExprs
+                    ++ lValues)
+
     let goto = C.BlockStmt $ C.Goto CN.tceLabel
     addBlockItems $ goto : gcCall : assignments
     return $ C.Var CN.nullPtr
