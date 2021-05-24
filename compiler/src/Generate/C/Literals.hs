@@ -293,7 +293,7 @@ generateStr :: ES.String -> C.ExternalDeclaration
 generateStr value =
   let words16 = generateUtf16 value
   in
-  CK.generateStructDef CN.ElmString16 (CN.literalStr value)
+  CK.generateStructDef CN.ElmString (CN.literalStr value)
     [("header", CK.generateHeader $ CK.HEADER_STRING (length words16))]
     (case words16 of
       [] -> Nothing

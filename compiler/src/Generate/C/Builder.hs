@@ -327,7 +327,6 @@ fromTypeSpecifier typeSpec =
         ElmFloat -> "ElmFloat"
         ElmChar -> "ElmChar"
         ElmString -> "ElmString"
-        ElmString16 -> "ElmString16"
         Cons -> "Cons"
         Tuple2 -> "Tuple2"
         Tuple3 -> "Tuple3"

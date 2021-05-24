@@ -205,9 +205,8 @@ initWrapper literals@(CL.Literals _ _ _ _ _ _ fieldGroups ctors kernelJs globalJ
   JSB.stmtToBuilder $ JSB.ExprStmt $
     JSB.Assign (JSB.LRef wasmWrapperName) $
     JSB.Call (JSB.Ref $ makeName wrapWasmElmApp) 
-      [ wrapperImportObj
-      , JSB.Access (JSB.Access emscriptenModule (makeName "HEAPU32")) (makeName "buffer")
-      , JSB.Access emscriptenModule (makeName "asm")
+      [ emscriptenModule
+      , wrapperImportObj
       , appTypes
       , kernelRecord
       ] 
