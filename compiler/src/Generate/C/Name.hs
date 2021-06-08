@@ -44,6 +44,7 @@ module Generate.C.Name
   , HeaderFile(..)
   , args
   , applyMacro
+  , wasmIntercept
   )
   where
 
@@ -60,6 +61,7 @@ import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
 import qualified Elm.String as ES
 import qualified Elm.Float as EF
+import qualified AST.Optimized as Opt
 
   
 -- NAME
@@ -321,6 +323,15 @@ tceLabel =
 applyMacro :: Int -> Name
 applyMacro n =
   Name $ "A" <> B.intDec n
+
+
+wasmIntercept :: Opt.Global
+wasmIntercept =
+  Opt.Global
+    (ModuleName.Canonical
+      Pkg.dummyName
+      (Name.fromChars "WebAssembly"))
+    (Name.fromChars "intercept")
 
 
 -- C KERNEL TYPE DEFINITIONS

@@ -513,7 +513,10 @@ addDef global@(Opt.Global home' name') expr state =
   in
   case expr of
     Opt.Function args body ->
-      generateGlobalFunction global args body state
+      if global == CN.wasmIntercept then
+        state
+      else
+        generateGlobalFunction global args body state
 
     Opt.Int value ->
       addLiteral CL.insertInt value $
