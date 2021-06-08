@@ -911,10 +911,8 @@ generateCall func args =
 
     _ ->
       do
-        (cArgs, nArgs) <- generateChildren False args
-        funcExpr <- generate func
-        return $ C.Call (C.Var $ CN.applyMacro nArgs)
-                  (funcExpr : cArgs)
+        (childExprs, nChildren) <- generateChildren False (func : args)
+        return $ C.Call (C.Var $ CN.applyMacro (nChildren-1)) childExprs
 
 
 generateGlobalCall :: ModuleName.Canonical -> N.Name -> [Opt.Expr] -> State ExprState C.Expression
