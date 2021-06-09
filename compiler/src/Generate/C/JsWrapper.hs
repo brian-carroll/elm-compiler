@@ -29,53 +29,17 @@ type Mains = Map.Map ModuleName.Canonical Opt.Main
 
 generate :: CL.Literals -> JS.State -> Mains -> B.Builder
 generate literals jsState mains =
-  "var " <> (JSN.toBuilder wasmWrapperName) <> ";\n"
-  <> "(function(scope){\n'use strict';"
-  <> defineOnReady
-  <> emscriptenPostRun (
-      JsFunctions.functions
-      <> JS.stateToBuilder jsState
-      <> initWrapper literals
-      <> assignMains mains
-      <> JS.toMainExports mode mains
-      <> executeOnReadyCallback
-    )
-  <> "}(this));"
+    JsFunctions.functions
+    <> JS.stateToBuilder jsState
+    <> initWrapper literals
+    <> assignMains mains
+    <> JS.toMainExports mode mains
+    <> executeOnReadyCallback
 
 
 mode :: Mode.Mode
 mode =
   Mode.Dev Nothing
-
-
-
-emscriptenModuleRef :: String
-emscriptenModuleRef =
-  "scope['Module']"
-
-
-emscriptenPostRun :: B.Builder -> B.Builder
-emscriptenPostRun postRunJsCode =
-  let
-    emscripten = B.stringUtf8 emscriptenModuleRef
-  in
-  emscripten <> " = " <> emscripten <> " || {};\n"
-  <> emscripten <> ".postRun = function postRun() {\n"
-  <> postRunJsCode
-  <> "}\n"
-
-
-defineOnReady :: B.Builder
-defineOnReady = [r|
-
-var onReadyCallback;
-scope['Elm'] = {
-  onReady: function(callback) {
-    onReadyCallback = callback;
-  }
-};
-
-|]
 
 
 executeOnReadyCallback :: B.Builder
@@ -87,8 +51,7 @@ if (onReadyCallback) {
   throw new Error(`
     Elm.onReady has not been called.
     Elm Wasm apps are initialised differently. You have to initialize your app using a callback function.
-    I'll call that function when the WebAssembly |] <> "module" <> [r| is ready.
-    It's compiled asynchronously in the browser, so we have to do it this way.
+    I'll call that function when the browser has finished preparing your WebAssembly app.
     Your code could look something like this, for example:
        Elm.onReady(() => {
           var app = Elm.Main.init({
@@ -195,7 +158,7 @@ initWrapper literals@(CL.Literals _ _ _ _ _ _ fieldGroups ctors kernelJs globalJ
         ]
 
     emscriptenModule =
-      JSB.Ref $ makeName emscriptenModuleRef
+      JSB.Ref $ makeName "scope['Module']"
     
     kernelRecord =
       JSB.Object $ map

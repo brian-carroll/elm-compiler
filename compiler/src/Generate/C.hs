@@ -69,7 +69,7 @@ emptyState =
     , _literals = CL.insertKernelJs ("Json", "run") CL.empty
     , _revInitGlobals = []
     , _revExtDecls = []
-    , _jsState = JS.emptyState
+    , _jsState = JS.State [] [] CK.customJsKernels
     }
 
 

@@ -3,6 +3,7 @@ module Generate.C.Kernel
 ( shouldGenJsCode
 , shouldGenJsEnumId
 , shouldGenStruct
+, customJsKernels
 , maxClosureArity
 , generateClosure
 , generateStructDef
@@ -21,6 +22,7 @@ import qualified Elm.Package as Pkg
 import qualified Elm.ModuleName as ModuleName
 import qualified Generate.C.AST as C
 import qualified Generate.C.Name as CN
+import qualified AST.Optimized as Opt
 
 
 -- TARGET LANGUAGES: C & JS
@@ -28,14 +30,15 @@ import qualified Generate.C.Name as CN
 
 shouldGenJsCode :: ModuleName.Canonical -> Bool
 shouldGenJsCode home
-  | home == ModuleName.basics = False
-  | home == ModuleName.list   = False
-  | home == ModuleName.string = False
-  | home == ModuleName.char   = False
-  | home == ModuleName.debug  = False
-  | home == bitwiseModule     = False
-  | home == jsArrayModule     = False
-  | home == testModule        = False
+  | home == ModuleName.basics   = False
+  | home == ModuleName.list     = False
+  | home == ModuleName.string   = False
+  | home == ModuleName.char     = False
+  | home == ModuleName.debug    = False
+  | home == ModuleName.platform = False
+  | home == bitwiseModule       = False
+  | home == jsArrayModule       = False
+  | home == testModule          = False
   | otherwise = True
 
 
@@ -43,15 +46,17 @@ shouldGenJsCode home
 shouldGenJsEnumId :: Name.Name -> Name.Name -> Bool
 shouldGenJsEnumId home name
   | home == Name.fromChars "Json" = (name == Name.fromChars "run")
-  | home == Name.utils   = False
-  | home == Name.basics  = False
-  | home == Name.list    = False
-  | home == Name.string  = False
-  | home == Name.char    = False
-  | home == Name.bitwise = False
-  | home == Name.jsArray = False
-  | home == Name.debug   = False
-  | home == testKernel   = False
+  | home == Name.utils    = False
+  | home == Name.basics   = False
+  | home == Name.list     = False
+  | home == Name.string   = False
+  | home == Name.char     = False
+  | home == Name.bitwise  = False
+  | home == Name.jsArray  = False
+  | home == Name.debug    = False
+  | home == Name.platform = False
+  | home == scheduler     = False
+  | home == testKernel    = False
   | otherwise = True
 
 
@@ -59,17 +64,27 @@ shouldGenJsEnumId home name
 shouldGenStruct :: Name.Name -> Name.Name -> Bool
 shouldGenStruct home name
   | home == Name.fromChars "Json" = False
-  | home == Name.utils   = False
-  | home == Name.basics  = False
-  | home == Name.list    = False
-  | home == Name.string  = False
-  | home == Name.char    = False
-  | home == Name.bitwise = False
-  | home == Name.jsArray = False
-  | home == Name.debug   = False
-  | home == testKernel   = False
+  | home == Name.utils    = False
+  | home == Name.basics   = False
+  | home == Name.list     = False
+  | home == Name.string   = False
+  | home == Name.char     = False
+  | home == Name.bitwise  = False
+  | home == Name.jsArray  = False
+  | home == Name.debug    = False
+  | home == Name.platform = False
+  | home == scheduler     = False
+  | home == testKernel    = False
   | otherwise = True
 
+
+customJsKernels :: Set.Set Opt.Global
+customJsKernels =
+  Set.fromList $
+    map (\name -> Opt.Global (ModuleName.Canonical Pkg.kernel name) Name.dollar)
+    [ Name.platform
+    , scheduler
+    ]
 
 
 -- KERNEL MODULES
@@ -93,6 +108,10 @@ testKernel = Name.fromChars "Test"
 
 testModule :: ModuleName.Canonical
 testModule = ModuleName.Canonical (pkgName "elm-explorations" "test") (Name.fromChars "Test")
+
+
+scheduler :: Name.Name
+scheduler = Name.fromChars "Scheduler"
 
 
 -- KERNEL DATA STRUCTURES

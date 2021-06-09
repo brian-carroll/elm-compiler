@@ -3,8 +3,7 @@ module Generate.JavaScript
   ( generate
   , generateForRepl
   , generateForReplEndpoint
-  , State
-  , emptyState
+  , State(..)
   , stateToBuilder
   , addGlobal
   , toMainExports
