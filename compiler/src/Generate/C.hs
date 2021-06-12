@@ -87,7 +87,7 @@ buildC mains state =
   prependExtDecls [generateFunctionDebugNames (_revExtDecls state)] $
   prependExtDecls [generateMainsArray mains, C.BlankLineExt] $
   prependExtDecls [jsonRunIndexAssignment] $
-  prependExtDecls [generateCMain (_revInitGlobals state), C.BlankLineExt]
+  prependExtDecls [generateCMain state, C.BlankLineExt]
     ""
 
 
@@ -117,8 +117,8 @@ jsonRunIndexAssignment =
 
 -----------------------------------------------------------}
 
-generateCMain :: [Opt.Global] -> C.ExternalDeclaration
-generateCMain revInitGlobals =
+generateCMain :: State -> C.ExternalDeclaration
+generateCMain (State _ literals revInitGlobals _ _) =
   let
     exitCode =
       CN.fromBuilder "exit_code"
@@ -131,6 +131,8 @@ generateCMain revInitGlobals =
         (C.Return $ Just $ C.Var exitCode) Nothing
     initCalls =
       List.foldl' generateInitCall [] revInitGlobals
+    initEffectManagers =
+      CL.generateInitEffectManagers literals
     runGC =
       C.BlockStmt $ C.Expr $ Just $
       C.Call (C.Var $ CN.fromBuilder "GC_collect_major")
@@ -142,7 +144,8 @@ generateCMain revInitGlobals =
       , returnFail
       ] ++
       initCalls ++
-      [ runGC
+      [ initEffectManagers
+      , runGC
       , returnSuccess
       ]
   in
@@ -268,10 +271,7 @@ addGlobalHelp debugIndentHere graph global state =
       addDeps deps state
 
     Opt.Manager effectsType ->
-      generateManager global effectsType $
-      state { _jsState =
-        JS.addGlobal debugIndent JsWrapper.mode graph (_jsState state) global
-      }
+      generateManager debugIndent graph global effectsType state
 
     Opt.Kernel chunks deps ->
       let
@@ -469,30 +469,58 @@ generateCycleVal home state (name, expr) =
 
 -----------------------------------------------------------}
 
-generateManager :: Opt.Global -> Opt.EffectsType -> State -> State
-generateManager global@(Opt.Global home _) effectsType state =
+generateManager :: B.Builder -> Graph -> Opt.Global -> Opt.EffectsType -> State -> State
+generateManager debugIndent graph global@(Opt.Global home _) effectsType state =
   let
-    (ModuleName.Canonical _ moduleName) = home
+    (deps, args, leaves) =
+      generateManagerHelp home effectsType
 
-    (Utf8.Utf8 moduleNameBytes) = moduleName
-    moduleNameStr = Utf8.Utf8 moduleNameBytes -- different phantom type
-
-    makeClosure name =
-      CK.generateClosure (CN.global home name)
-        (C.nameAsVoidPtr $ CN.jsKernelEval Name.platform "leaf")
-        CK.maxClosureArity
-        [C.addrOf $ CN.literalStr moduleNameStr]
-
-    closures =
-      map makeClosure $
-      case effectsType of
-        Opt.Cmd -> ["command"]
-        Opt.Sub -> ["subscription"]
-        Opt.Fx -> ["subscription", "command"]  
+    createManager =
+      C.functionWithoutArgs (CN.createManagerFn home) [] $
+        C.Call (C.Var $ CN.fromBuilder "Platform_createManager") args
+    
+    depsState =
+      List.foldl' (addGlobal debugIndent graph) state deps
   in
-  addLiteral CL.insertStr moduleNameStr $
-  addLiteral CL.insertKernelJs (Name.platform, "leaf") $
-    state { _revExtDecls = closures ++ (_revExtDecls state) }
+  addLiteral CL.insertManager home $
+  foldr addExtDecl depsState (createManager : leaves)
+
+
+generateManagerHelp :: ModuleName.Canonical -> Opt.EffectsType -> ([Opt.Global], [C.Expression], [C.ExternalDeclaration])
+generateManagerHelp home effectsType =
+  let
+    dep name = Opt.Global home name
+    ref name = C.addrOf (CN.global home name)
+  in
+  case effectsType of
+    Opt.Cmd ->
+      ( [ dep "init", dep "onEffects", dep "onSelfMsg", dep "cmdMap" ]
+      , [ ref "init", ref "onEffects", ref "onSelfMsg", ref "cmdMap", C.Var CN.nullPtr ]
+      , [ generateLeaf home "command" ]
+      )
+
+    Opt.Sub ->
+      ( [ dep "init", dep "onEffects", dep "onSelfMsg", dep "subMap" ]
+      , [ ref "init", ref "onEffects", ref "onSelfMsg", C.Var CN.nullPtr, ref "subMap" ]
+      , [ generateLeaf home "subscription" ]
+      )
+
+    Opt.Fx ->
+      ( [ dep "init", dep "onEffects", dep "onSelfMsg", dep "cmdMap", dep "subMap" ]
+      , [ ref "init", ref "onEffects", ref "onSelfMsg", ref "cmdMap", ref "subMap" ]
+      , [ generateLeaf home "command"
+        , generateLeaf home "subscription"
+        ]
+      )
+
+
+generateLeaf :: ModuleName.Canonical -> Name.Name -> C.ExternalDeclaration
+generateLeaf home name =
+  CK.generateClosure
+    (CN.global home name)
+    (C.Var $ CN.fromBuilder "eval_Platform_leaf")
+    2
+    [C.nameAsVoidPtr $ CN.managerId home]
 
 
 {-----------------------------------------------------------

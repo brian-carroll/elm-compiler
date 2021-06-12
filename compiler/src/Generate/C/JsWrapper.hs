@@ -117,17 +117,17 @@ assignMainsHelp moduleName _ (index, builder) =
 
 
 initWrapper :: CL.Literals -> B.Builder
-initWrapper literals@(CL.Literals _ _ _ _ _ _ fieldGroups ctors kernelJs globalJs) =
+initWrapper literals =
   let
     appFields =
       CL.combineFieldLiterals literals
     appFieldGroups =
-      Set.toList fieldGroups
+      Set.toList $ CL.litFieldGroup literals
     appCtors =
-      Set.toList ctors
+      Set.toList $ CL.litCtor literals
     appKernelVals = 
-      (map (\(home, name) -> JSN.fromKernel home name) (Set.toList kernelJs)) ++
-      (map (\(Opt.Global home name) -> JSN.fromGlobal home name) (Set.toList globalJs))
+      (map (\(h, n) -> JSN.fromKernel h n) (Set.toList (CL.litKernelJs literals))) ++
+      (map (\(Opt.Global h n) -> JSN.fromGlobal h n) (Set.toList (CL.litGlobalJs literals)))
 
     makeName =
       JSN.fromLocal . Name.fromChars

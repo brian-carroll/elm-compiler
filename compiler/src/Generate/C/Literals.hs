@@ -13,7 +13,9 @@ module Generate.C.Literals
   , insertCtor
   , insertKernelJs
   , insertGlobalJs
+  , insertManager
   , combineFieldLiterals
+  , generateInitEffectManagers
   )
   where
 
@@ -23,6 +25,7 @@ import qualified Data.List as List
 import qualified Data.Set as Set
 
 import qualified Data.Name as N
+import qualified Elm.ModuleName as ModuleName
 import qualified AST.Optimized as Opt
 import qualified Elm.Float as EF
 import qualified Elm.String as ES
@@ -45,7 +48,8 @@ data Literals =
     , litFieldGroup :: Set.Set [N.Name]
     , litCtor :: Set.Set N.Name
     , litKernelJs :: Set.Set (N.Name, N.Name)
-    , litGlobalJs :: Set.Set Opt.Global -- JS kernel with Global name format
+    , litGlobalJs :: Set.Set Opt.Global -- JS kernel with Global name format (e.g. ports)
+    , litManager :: Set.Set ModuleName.Canonical
     }
 
 
@@ -62,6 +66,7 @@ empty =
     , litCtor = Set.fromList $ map N.fromChars ["LT", "EQ", "GT"]
     , litKernelJs = Set.empty
     , litGlobalJs = Set.empty
+    , litManager = Set.empty
     }
 
 
@@ -119,6 +124,11 @@ insertGlobalJs value literals =
   literals { litGlobalJs = Set.insert value (litGlobalJs literals) }
 
 
+insertManager :: ModuleName.Canonical -> Literals -> Literals
+insertManager value literals =
+  literals { litManager = Set.insert value (litManager literals) }
+
+
 
 {-
       CODE GEN
@@ -134,7 +144,7 @@ generate literals =
 -}
 
 generateFieldGroupArray :: Literals -> C.ExternalDeclaration
-generateFieldGroupArray (Literals _ _ _ _ _ _ fieldGroups _ _ _) =
+generateFieldGroupArray literals =
   let
     pointerArray = foldr
       (\fields acc ->
@@ -142,7 +152,7 @@ generateFieldGroupArray (Literals _ _ _ _ _ _ fieldGroups _ _ _) =
         : acc
       )
       [([], C.InitExpr $ C.Var CN.nullPtr)]
-      fieldGroups
+      (litFieldGroup literals)
   in
   C.DeclExt $ C.Decl
     [C.TypeSpec $ C.TypeDef CN.FieldGroup]
@@ -151,8 +161,12 @@ generateFieldGroupArray (Literals _ _ _ _ _ _ fieldGroups _ _ _) =
 
 
 combineFieldLiterals :: Literals -> Set.Set N.Name
-combineFieldLiterals (Literals _ _ _ _ access accessors fieldGroups _ _ _) =
+combineFieldLiterals literals =
   let
+    access = litFieldAccess literals
+    accessors = litFieldAccessor literals
+    fieldGroups = litFieldGroup literals
+
     insertGroup :: Set.Set N.Name -> [N.Name] -> Set.Set N.Name
     insertGroup acc fg =
       foldr Set.insert acc fg
@@ -165,10 +179,22 @@ combineFieldLiterals (Literals _ _ _ _ access accessors fieldGroups _ _ _) =
 -}
 
 generateEnums :: Literals -> [C.ExternalDeclaration]
-generateEnums literals@(Literals _ _ _ _ _ _ _ ctors kernelJs globalJs) =
+generateEnums literals =
+  let
+    ctors = litCtor literals
+    kernelJs = litKernelJs literals
+    globalJs = litGlobalJs literals
+    managers = litManager literals
+  in
   generateEnumKernelJs kernelJs globalJs
   ++ generateEnumCtors ctors
   ++ (generateEnumFields $ combineFieldLiterals literals)
+  ++ generateEnumManagers managers
+
+
+generateEnumManagers :: Set.Set ModuleName.Canonical -> [C.ExternalDeclaration]
+generateEnumManagers managers =
+  generateEnum $ map CN.managerId $ Set.toList managers
 
 
 generateEnumKernelJs :: Set.Set (N.Name, N.Name) -> Set.Set Opt.Global -> [C.ExternalDeclaration]
@@ -344,6 +370,24 @@ generateUtf16 str =
     concatMap encodeUtf16 $
     unescape $
     ES.toChars str
+
+
+generateInitEffectManagers :: Literals -> C.CompoundBlockItem
+generateInitEffectManagers literals =
+  let
+    managerNames = litManager literals
+
+    initManager moduleName =
+      C.Call (C.Var $ CN.createManagerFn moduleName) []
+
+    managerConfigs = map initManager $ Set.toList managerNames
+  in
+  C.BlockStmt $ C.Expr $ Just $ C.Call
+    (C.Var $ CN.fromBuilder "newCustom")
+    [ C.Const $ C.IntConst (-1)
+    , C.Const $ C.IntConst $ Set.size managerNames
+    , C.pointerArray managerConfigs
+    ]
 
 
 -- The compiler keeps backslashes that were in the Elm source,

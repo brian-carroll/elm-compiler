@@ -478,7 +478,7 @@ generateInitFunction fname body =
   do
     returnExpr <- generate body
     blockItems <- gets _revBlockItems
-    addExtDecl $ generateNoArgsFunction fname blockItems returnExpr
+    addExtDecl $ C.functionWithoutArgs fname blockItems returnExpr
 
 
 generateCycleFn :: CN.Name -> CN.Name -> Opt.Expr -> State ExprState ()
@@ -489,16 +489,7 @@ generateCycleFn ptrName fname elmExpr =
     expr <- generate elmExpr
     addBlockItem $ C.assignment ptr expr
     blockItems <- gets _revBlockItems
-    addExtDecl $ generateNoArgsFunction fname blockItems ptr
-
-
-generateNoArgsFunction :: CN.Name -> [C.CompoundBlockItem] -> C.Expression -> C.ExternalDeclaration
-generateNoArgsFunction name blockItems returnExpr =
-  C.FDefExt $ C.FunDef
-    [C.TypeSpec C.Void]
-    (C.Declr (Just name) [C.PtrDeclr [], C.FunDeclr []])
-    ((C.BlockStmt $ C.Return $ Just returnExpr)
-      : blockItems)
+    addExtDecl $ C.functionWithoutArgs fname blockItems ptr
 
 
 generateDestructParams :: [N.Name] -> [C.CompoundBlockItem]

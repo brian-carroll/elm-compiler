@@ -292,3 +292,11 @@ defineNumber typespec name expr =
 assignment :: Expression -> Expression -> CompoundBlockItem
 assignment lValue rValue =
   BlockStmt $ Expr $ Just $ Assign AssignOp lValue rValue
+
+
+functionWithoutArgs :: Name -> [CompoundBlockItem] -> Expression -> ExternalDeclaration
+functionWithoutArgs name blockItems returnExpr =
+  FDefExt $ FunDef
+    [TypeSpec Void]
+    (Declr (Just name) [PtrDeclr [], FunDeclr []])
+    ((BlockStmt $ Return $ Just returnExpr) : blockItems)

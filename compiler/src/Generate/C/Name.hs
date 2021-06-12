@@ -45,6 +45,8 @@ module Generate.C.Name
   , args
   , applyMacro
   , wasmIntercept
+  , managerId
+  , createManagerFn
   )
   where
 
@@ -190,6 +192,16 @@ literalChr s =
 accessor :: Name.Name -> Name
 accessor name =
   Name $ "access_" <> Name.toBuilder name
+
+
+managerId :: ModuleName.Canonical -> Name
+managerId (ModuleName.Canonical _ moduleName) =
+  Name $ "MANAGER_" <> (join $ splitUtf8 dot moduleName)
+
+
+createManagerFn :: ModuleName.Canonical -> Name
+createManagerFn (ModuleName.Canonical _ moduleName) =
+  Name $ "createManager_" <> (join $ splitUtf8 dot moduleName)
 
 
 -- INTERNAL UTILS
