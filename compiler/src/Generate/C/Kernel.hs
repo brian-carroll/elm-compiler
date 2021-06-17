@@ -3,7 +3,8 @@ module Generate.C.Kernel
 ( shouldGenJsCode
 , shouldGenJsEnumId
 , shouldGenStruct
-, customJsKernels
+, predefinedJsGlobals
+, predefinedJsGlobalDeps
 , maxClosureArity
 , generateClosure
 , generateStructDef
@@ -19,7 +20,7 @@ import qualified Data.Name as Name
 import qualified Data.Utf8 as Utf8
 
 import qualified Elm.Package as Pkg
-import qualified Elm.ModuleName as ModuleName
+import qualified Elm.ModuleName as M
 import qualified Generate.C.AST as C
 import qualified Generate.C.Name as CN
 import qualified AST.Optimized as Opt
@@ -28,17 +29,17 @@ import qualified AST.Optimized as Opt
 -- TARGET LANGUAGES: C & JS
 
 
-shouldGenJsCode :: ModuleName.Canonical -> Bool
+shouldGenJsCode :: M.Canonical -> Bool
 shouldGenJsCode home
-  | home == ModuleName.basics   = False
-  | home == ModuleName.list     = False
-  | home == ModuleName.string   = False
-  | home == ModuleName.char     = False
-  | home == ModuleName.debug    = False
-  | home == ModuleName.platform = False
-  | home == bitwiseModule       = False
-  | home == jsArrayModule       = False
-  | home == testModule          = False
+  | home == M.basics      = False
+  | home == M.list        = False
+  | home == M.string      = False
+  | home == M.char        = False
+  | home == M.debug       = False
+  | home == M.platform    = False
+  | home == bitwiseModule = False
+  | home == jsArrayModule = False
+  | home == testModule    = False
   | otherwise = True
 
 
@@ -55,8 +56,8 @@ shouldGenJsEnumId home name
   | home == Name.jsArray  = False
   | home == Name.debug    = False
   | home == Name.platform = False
-  | home == scheduler     = False
-  | home == testKernel    = False
+  | home == "Scheduler"   = False
+  | home == "Test"        = False
   | otherwise = True
 
 
@@ -73,18 +74,27 @@ shouldGenStruct home name
   | home == Name.jsArray  = False
   | home == Name.debug    = False
   | home == Name.platform = False
-  | home == scheduler     = False
-  | home == testKernel    = False
+  | home == "Scheduler"   = False
+  | home == "Test"        = False
   | otherwise = True
 
 
-customJsKernels :: Set.Set Opt.Global
-customJsKernels =
-  Set.fromList $
-    map (\name -> Opt.Global (ModuleName.Canonical Pkg.kernel name) Name.dollar)
-    [ Name.platform
-    , scheduler
-    ]
+predefinedJsGlobals :: [Opt.Global]
+predefinedJsGlobals =
+  [ Opt.Global (M.Canonical Pkg.kernel Name.platform) Name.dollar
+  , Opt.Global (M.Canonical Pkg.kernel "Scheduler") Name.dollar
+  , Opt.Global (M.Canonical Pkg.core Name.task) "$fx$"
+  ]
+
+
+-- TODO: figure out why this isn't working... or actually parse the custom kernel JS files
+predefinedJsGlobalDeps :: [Opt.Global]
+predefinedJsGlobalDeps =
+  []
+  -- [ Opt.Global (M.Canonical Pkg.kernel "Json") "run"
+  -- , Opt.Global (M.Canonical Pkg.kernel "Json") "wrap"
+  -- , Opt.Global (M.Canonical Pkg.core Name.result) "isOk"
+  -- ]
 
 
 -- KERNEL MODULES
@@ -95,23 +105,17 @@ pkgName author project =
   Pkg.Name (Utf8.fromChars author) (Utf8.fromChars project)
 
 
-bitwiseModule :: ModuleName.Canonical
-bitwiseModule = ModuleName.Canonical Pkg.core Name.bitwise
+bitwiseModule :: M.Canonical
+bitwiseModule = M.Canonical Pkg.core Name.bitwise
 
 
-jsArrayModule :: ModuleName.Canonical
-jsArrayModule = ModuleName.Canonical Pkg.core Name.jsArray
+jsArrayModule :: M.Canonical
+jsArrayModule = M.Canonical Pkg.core Name.jsArray
 
 
-testKernel :: Name.Name
-testKernel = Name.fromChars "Test"
+testModule :: M.Canonical
+testModule = M.Canonical (pkgName "elm-explorations" "test") "Test"
 
-testModule :: ModuleName.Canonical
-testModule = ModuleName.Canonical (pkgName "elm-explorations" "test") (Name.fromChars "Test")
-
-
-scheduler :: Name.Name
-scheduler = Name.fromChars "Scheduler"
 
 
 -- KERNEL DATA STRUCTURES

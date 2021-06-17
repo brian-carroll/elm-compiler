@@ -4,6 +4,9 @@ module Generate.JavaScript
   , generateForRepl
   , generateForReplEndpoint
   , State(..)
+  , emptyState
+  , insertSeenGlobal
+  , generateManagerWasm
   , stateToBuilder
   , addGlobal
   , toMainExports
@@ -253,6 +256,10 @@ prependBuilders :: [B.Builder] -> B.Builder -> B.Builder
 prependBuilders revBuilders monolith =
   List.foldl' (\m b -> b <> m) monolith revBuilders
 
+
+insertSeenGlobal :: State -> Opt.Global -> State
+insertSeenGlobal state@(State k b seen) global@(Opt.Global home name) =
+  State k b $ Set.insert global seen
 
 
 -- ADD DEPENDENCIES
@@ -597,7 +604,7 @@ generatePort mode (Opt.Global home name) makePort converter =
 
 
 generateManager :: B.Builder -> Mode.Mode -> Graph -> Opt.Global -> Opt.EffectsType -> State -> State
-generateManager debugIndent mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) _) effectsType state =
+generateManager debugIndent mode graph (Opt.Global home@(ModuleName.Canonical _ moduleName) name) effectsType state =
   let
     managerLVar =
       JS.LBracket
@@ -615,11 +622,21 @@ generateManager debugIndent mode graph (Opt.Global home@(ModuleName.Canonical _ 
     JS.Block (createManager : stmts)
 
 
+generateManagerWasm :: B.Builder -> Mode.Mode -> Graph -> Opt.Global -> Opt.EffectsType -> State -> State
+generateManagerWasm debugIndent mode graph global@(Opt.Global home@(ModuleName.Canonical _ moduleName) _) effectsType state =
+  let
+    (_, _, stmts) =
+      generateManagerHelp home effectsType
+  in
+  addStmt 
+    (insertSeenGlobal state global)
+    (JS.Block stmts)
+
+
 generateLeaf :: ModuleName.Canonical -> Name.Name -> JS.Stmt
 generateLeaf home@(ModuleName.Canonical _ moduleName) name =
   JS.Var (JsName.fromGlobal home name) $
     JS.Call leaf [ JS.String (Name.toBuilder moduleName) ]
-
 
 
 {-# NOINLINE leaf #-}

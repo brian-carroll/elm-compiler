@@ -136,7 +136,10 @@ insertManager value literals =
 
 generate :: Literals -> [C.ExternalDeclaration]
 generate literals =
-  generateFieldGroupArray literals : generateStructs literals ++ generateEnums literals
+  generateEffectManagersSize literals
+  : generateFieldGroupArray literals
+  : generateStructs literals
+  ++ generateEnums literals
 
 
 {-
@@ -372,7 +375,11 @@ generateUtf16 str =
     ES.toChars str
 
 
-generateInitEffectManagers :: Literals -> C.CompoundBlockItem
+{-
+      EFFECT MANAGERS
+-}
+
+generateInitEffectManagers :: Literals -> [C.CompoundBlockItem]
 generateInitEffectManagers literals =
   let
     managerNames = litManager literals
@@ -381,13 +388,33 @@ generateInitEffectManagers literals =
       C.Call (C.Var $ CN.createManagerFn moduleName) []
 
     managerConfigs = map initManager $ Set.toList managerNames
+
+    platformManagers = CN.fromBuilder "Platform_managerConfigs"
   in
-  C.BlockStmt $ C.Expr $ Just $ C.Call
-    (C.Var $ CN.fromBuilder "newCustom")
-    [ C.Const $ C.IntConst (-1)
-    , C.Const $ C.IntConst $ Set.size managerNames
-    , C.pointerArray managerConfigs
+  map (C.BlockStmt . C.Expr . Just)
+    [ C.Assign C.AssignOp (C.Var platformManagers) $
+        C.Call
+          (C.Var $ CN.fromBuilder "newCustom")
+          [ C.Const $ C.IntConst (-1)
+          , C.Const $ C.IntConst $ Set.size managerNames
+          , C.pointerArray managerConfigs
+          ]
+    , C.Call
+        (C.Var $ CN.fromBuilder "GC_register_root")
+        [ C.addrOf platformManagers ]
     ]
+
+
+generateEffectManagersSize :: Literals -> C.ExternalDeclaration
+generateEffectManagersSize literals =
+  let
+    name = CN.fromBuilder "Platform_managers_size"
+    expr = C.Const $ C.IntConst $ length $ litManager literals
+  in
+  C.DeclExt $ C.Decl
+    [C.TypeSpec (C.TypeDef CN.U32)]
+    (Just $ C.Declr (Just name) [])
+    (Just $ C.InitExpr expr)
 
 
 -- The compiler keeps backslashes that were in the Elm source,

@@ -1,3 +1,35 @@
+## TODO: Compiler support for platform/scheduler
+
+- [x] Pass managerNames in JsWrapper
+- [ ] Initialise compiler JS code gen with all of these functions AND figure out their dependencies!
+- [ ] Inject manager into JS state as if generated
+- [x] generate JS Platform_leaf calls
+
+
+
+My custom platform deps
+[ "worker"
+, "initialize"
+, "preload"
+, "sendToApp"
+, "sendToSelf"
+, "leaf"
+, "batch"
+, "map"
+, "export"
+]
+
+My custom scheduler has no deps
+
+what about imports to the standard Platform.js that I don't need?
+For custom js kernel modules, we pull them out of the graph and just replace the deps, and jump to the next step in code gen
+
+
+This would be a lot easier if we could actually just use the Elm import comments
+Make the compiler look in a different place for the kernel code
+
+
+
 # Reorganise eval function generation
 
 - Calling the same stuff from lots of places and passing switches like isTailRec and having empty or full lists... bit of a mess
@@ -5,70 +37,71 @@
 - Figure out which pieces I am trying to avoid rewriting
 
 generateEvalFnDecl
-  - options: maybeParams, isTailRec
+
+- options: maybeParams, isTailRec
 
 It creates the C function header, destructs the args and inserts the body
 We want to just pass it blockitems instead
 
-
 calls to generateEvalFnDecl
+
 - generateEvalFn
 - generateTailDefEval
 
 calls to generateEvalFn
+
 - C.generatExtFunc
 - generateNamedLocalFn
 - generateTailDefEval
 
 calls to generateNamedLocalFn
+
 - generateLocalFn (Opt.Function, anonymous lambda)
 - generateDef (Opt.Let)
 
 calls to generatExtFunc
+
 - addDef Opt.Function
 - generateInitFn
 
 calls to generateInitFn
+
 - generateRuntimeInit (addDef)
 
 calls to generateTailDefEval
+
 - generateDef (Opt.Let)
 
-
-
-
-
-
 So I have three types of C function
+
 - init
 - tailcall
 - normal eval
 
 In some different contexts
+
 - local anonymous
 - local named
 - global named
 
 The real semantic structure is
-  - initialise an Elm expression
-  - implement an Elm function
-    - naming
-      - global
-      - local
-        - named
-        - anon
-    - tail vs normal
+
+- initialise an Elm expression
+- implement an Elm function
+  - naming
+    - global
+    - local
+      - named
+      - anon
+  - tail vs normal
 
 Approach:
+
 - Trace everything back to the AST
 - Start inlining everything and then split it up again
 
-
-
-
-
-
 Testing:
+
 - global
 
 - local
@@ -92,7 +125,6 @@ Testing:
 
 - global cycles
 
-
 ```hs
 
 generateTailCallGc :: Int -> CN.Name -> CN.Name -> State ExprState ()
@@ -110,9 +142,6 @@ generateTailCallGc nValues evalName tailArgsName =
       ])
 
 ```
-
-
-
 
 ```c
 void * eval_elm_core_List_foldl(void * args[]) {
@@ -150,7 +179,7 @@ void GC_stack_tailcall(evaluator, n_free, free_vars, n_args, args) {
   u32 n = n_free + n_args;
   Closure* c = newClosure(n,n,evaluator,NULL);
   for (u32 i=0; i < n_free; i++) {
-    c->values[i] = free_vars[i];    
+    c->values[i] = free_vars[i];
   }
   for (u32 i=0; i < n_args; i++) {
     c->values[n_free + i] = args[i];
@@ -161,10 +190,10 @@ void GC_stack_tailcall(evaluator, n_free, free_vars, n_args, args) {
 
 Adding current function to the ExprState
 Where do we enter into generateExpression? Can we init expr state with this info?
+
 - generateCycleFn: yep
 - generateInitFunction: yep
 - generateEvalFunction: yep
-
 
 ```c
 void * eval_elm_core_List_foldl(void * args[]) {
@@ -197,8 +226,6 @@ void * eval_elm_core_List_foldl(void * args[]) {
   return case0;
 }
 ```
-
-
 
 # Byecode ideas
 

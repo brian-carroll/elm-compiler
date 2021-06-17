@@ -55,21 +55,26 @@ data State =
 generate :: Opt.GlobalGraph -> Mains -> (B.Builder, B.Builder)
 generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
-    state = Map.foldrWithKey (addMain graph) emptyState mains
+    state = Map.foldrWithKey (addMain graph) (initState graph) mains
     cBuilder = buildC mains state
     jsBuilder = JsWrapper.generate (_literals state) (_jsState state) mains
   in
     (cBuilder, jsBuilder)
 
 
-emptyState :: State
-emptyState =
+initState :: Graph -> State
+initState graph =
+  let
+    jsPredefState = List.foldl' JS.insertSeenGlobal JS.emptyState CK.predefinedJsGlobals
+    jsInitState = List.foldl' (JS.addGlobal "" JsWrapper.mode graph)
+                    jsPredefState CK.predefinedJsGlobalDeps
+  in
   State
     { _seenGlobals = Set.empty
     , _literals = CL.insertKernelJs ("Json", "run") CL.empty
     , _revInitGlobals = []
     , _revExtDecls = []
-    , _jsState = JS.State [] [] CK.customJsKernels
+    , _jsState = jsInitState
     }
 
 
@@ -144,8 +149,8 @@ generateCMain (State _ literals revInitGlobals _ _) =
       , returnFail
       ] ++
       initCalls ++
-      [ initEffectManagers
-      , runGC
+      initEffectManagers ++
+      [ runGC
       , returnSuccess
       ]
   in
@@ -478,9 +483,13 @@ generateManager debugIndent graph global@(Opt.Global home _) effectsType state =
     createManager =
       C.functionWithoutArgs (CN.createManagerFn home) [] $
         C.Call (C.Var $ CN.fromBuilder "Platform_createManager") args
-    
+
+    jsState = state { _jsState =
+               JS.generateManagerWasm debugIndent JsWrapper.mode graph
+                  global effectsType (_jsState state) }
+
     depsState =
-      List.foldl' (addGlobal debugIndent graph) state deps
+      List.foldl' (addGlobal debugIndent graph) jsState deps
   in
   addLiteral CL.insertManager home $
   foldr addExtDecl depsState (createManager : leaves)

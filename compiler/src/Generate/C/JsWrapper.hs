@@ -164,6 +164,11 @@ initWrapper literals =
       JSB.Object $ map
         (\jsName -> (jsName, JSB.Ref jsName))
         appKernelVals
+
+    managerNames =
+      JSB.Array $
+        map (\(ModuleName.Canonical _ moduleName) -> JSB.String $ Name.toBuilder moduleName) $
+        Set.toList $ CL.litManager literals
   in
   JSB.stmtToBuilder $ JSB.ExprStmt $
     JSB.Assign (JSB.LRef wasmWrapperName) $
@@ -172,4 +177,5 @@ initWrapper literals =
       , wrapperImportObj
       , appTypes
       , kernelRecord
+      , managerNames
       ] 
