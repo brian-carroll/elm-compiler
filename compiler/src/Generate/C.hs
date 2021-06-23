@@ -838,7 +838,9 @@ generateFunctionDebugNames allExtDecls =
         Nothing
 
     ifs = map ifStmt evalNames
-    catchall = C.BlockStmt $ C.Return $ Just $ C.Const $ C.StrConst "(?)"
+    catchall = C.BlockStmt $ C.Return $ Just $ C.Call
+                (C.Var $ CN.fromBuilder "Debug_evaluator_name_core")
+                [C.Var paramName]
   in
   C.FDefExt
     (C.FunDef
