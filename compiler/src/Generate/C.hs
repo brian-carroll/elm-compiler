@@ -48,6 +48,7 @@ data State =
     , _literals :: CL.Literals
     , _revInitGlobals :: [Opt.Global]
     , _revExtDecls :: [C.ExternalDeclaration]
+    , _revManagers :: [ModuleName.Canonical]
     , _jsState :: JS.State
     }
 
@@ -57,7 +58,8 @@ generate (Opt.GlobalGraph graph fieldFreqMap) mains =
   let
     state = Map.foldrWithKey (addMain graph) (initState graph) mains
     cBuilder = buildC mains state
-    jsBuilder = JsWrapper.generate (_literals state) (_jsState state) mains
+    jsBuilder = JsWrapper.generate (_literals state) (_revManagers state)
+                  (_jsState state) mains
   in
     (cBuilder, jsBuilder)
 
@@ -74,6 +76,7 @@ initState graph =
     , _literals = CL.insertKernelJs ("Json", "run") CL.empty
     , _revInitGlobals = []
     , _revExtDecls = []
+    , _revManagers = []
     , _jsState = jsInitState
     }
 
@@ -87,6 +90,7 @@ initState graph =
 buildC :: Mains -> State -> B.Builder
 buildC mains state =
   prependExtDecls [C.IncludeExt CN.KernelH] $
+  prependExtDecls (generateManagersEnum $ _revManagers state) $
   prependExtDecls (CL.generate $ _literals state) $
   prependExtDecls (_revExtDecls state) $
   prependExtDecls [generateFunctionDebugNames (_revExtDecls state)] $
@@ -123,7 +127,7 @@ jsonRunIndexAssignment =
 -----------------------------------------------------------}
 
 generateCMain :: State -> C.ExternalDeclaration
-generateCMain (State _ literals revInitGlobals _ _) =
+generateCMain (State _ literals revInitGlobals _ revManagers _) =
   let
     exitCode =
       CN.fromBuilder "exit_code"
@@ -137,7 +141,7 @@ generateCMain (State _ literals revInitGlobals _ _) =
     initCalls =
       List.foldl' generateInitCall [] revInitGlobals
     initEffectManagers =
-      CL.generateInitEffectManagers literals
+      generateInitEffectManagers revManagers
     runGC =
       C.BlockStmt $ C.Expr $ Just $
       C.Call (C.Var $ CN.fromBuilder "GC_collect_major")
@@ -484,15 +488,18 @@ generateManager debugIndent graph global@(Opt.Global home _) effectsType state =
       C.functionWithoutArgs (CN.createManagerFn home) [] $
         C.Call (C.Var $ CN.fromBuilder "Platform_createManager") args
 
-    jsState = state { _jsState =
-               JS.generateManagerWasm debugIndent JsWrapper.mode graph
-                  global effectsType (_jsState state) }
 
     depsState =
-      List.foldl' (addGlobal debugIndent graph) jsState deps
+      List.foldl' (addGlobal debugIndent graph) state deps
+
+    createState =
+      foldr addExtDecl depsState (createManager : leaves)
   in
-  addLiteral CL.insertManager home $
-  foldr addExtDecl depsState (createManager : leaves)
+  createState
+    { _revManagers = home : _revManagers state
+    , _jsState = JS.generateManagerWasm debugIndent JsWrapper.mode graph
+        global effectsType (_jsState state)
+    }
 
 
 generateManagerHelp :: ModuleName.Canonical -> Opt.EffectsType -> ([Opt.Global], [C.Expression], [C.ExternalDeclaration])
@@ -530,6 +537,50 @@ generateLeaf home name =
     (C.Var $ CN.fromBuilder "eval_Platform_leaf")
     2
     [C.nameAsVoidPtr $ CN.managerId home]
+
+
+generateManagersEnum :: [ModuleName.Canonical] -> [C.ExternalDeclaration]
+generateManagersEnum revManagers =
+  (generateEffectManagersSize $ length revManagers)
+  : (C.enum $ map CN.managerId $ reverse revManagers)
+
+
+generateEffectManagersSize :: Int -> C.ExternalDeclaration
+generateEffectManagersSize size =
+  let
+    name = CN.fromBuilder "Platform_managers_size"
+    expr = C.Const $ C.IntConst size
+  in
+  C.DeclExt $ C.Decl
+    [C.TypeSpec (C.TypeDef CN.U32)]
+    (Just $ C.Declr (Just name) [])
+    (Just $ C.InitExpr expr)
+
+
+generateInitEffectManagers :: [ModuleName.Canonical] -> [C.CompoundBlockItem]
+generateInitEffectManagers revManagers =
+  let
+    managers = reverse revManagers
+
+    initManager moduleName =
+      C.Call (C.Var $ CN.createManagerFn moduleName) []
+
+    managerConfigs = map initManager managers
+
+    platformManagers = CN.fromBuilder "Platform_managerConfigs"
+  in
+  map (C.BlockStmt . C.Expr . Just)
+    [ C.Assign C.AssignOp (C.Var platformManagers) $
+        C.Call
+          (C.Var $ CN.fromBuilder "newCustom")
+          [ C.Const $ C.IntConst (-1)
+          , C.Const $ C.IntConst $ length managers
+          , C.pointerArray managerConfigs
+          ]
+    , C.Call
+        (C.Var $ CN.fromBuilder "GC_register_root")
+        [ C.addrOf platformManagers ]
+    ]
 
 
 {-----------------------------------------------------------

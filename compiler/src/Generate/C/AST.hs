@@ -300,3 +300,12 @@ functionWithoutArgs name blockItems returnExpr =
     [TypeSpec Void]
     (Declr (Just name) [PtrDeclr [], FunDeclr []])
     ((BlockStmt $ Return $ Just returnExpr) : blockItems)
+
+
+enum :: [Name] -> [ExternalDeclaration]
+enum names =
+  case names of
+    [] ->
+      []
+    _ ->
+      [DeclExt $ Decl [TypeSpec $ Enum names] Nothing Nothing]

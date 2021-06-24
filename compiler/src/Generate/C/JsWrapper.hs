@@ -27,11 +27,11 @@ import qualified Generate.JavaScript.Functions as JsFunctions
 type Mains = Map.Map ModuleName.Canonical Opt.Main
 
 
-generate :: CL.Literals -> JS.State -> Mains -> B.Builder
-generate literals jsState mains =
+generate :: CL.Literals -> [ModuleName.Canonical] -> JS.State -> Mains -> B.Builder
+generate literals revManagers jsState mains =
     JsFunctions.functions
     <> JS.stateToBuilder jsState
-    <> initWrapper literals
+    <> initWrapper literals revManagers
     <> assignMains mains
     <> JS.toMainExports mode mains
     <> executeOnReadyCallback
@@ -116,8 +116,8 @@ assignMainsHelp moduleName _ (index, builder) =
   )
 
 
-initWrapper :: CL.Literals -> B.Builder
-initWrapper literals =
+initWrapper :: CL.Literals -> [ModuleName.Canonical] -> B.Builder
+initWrapper literals revManagers =
   let
     appFields =
       CL.combineFieldLiterals literals
@@ -168,7 +168,7 @@ initWrapper literals =
     managerNames =
       JSB.Array $
         map (\(ModuleName.Canonical _ moduleName) -> JSB.String $ Name.toBuilder moduleName) $
-        Set.toList $ CL.litManager literals
+        reverse revManagers
   in
   JSB.stmtToBuilder $ JSB.ExprStmt $
     JSB.Assign (JSB.LRef wasmWrapperName) $

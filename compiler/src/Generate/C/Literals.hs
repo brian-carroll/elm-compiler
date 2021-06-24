@@ -13,9 +13,7 @@ module Generate.C.Literals
   , insertCtor
   , insertKernelJs
   , insertGlobalJs
-  , insertManager
   , combineFieldLiterals
-  , generateInitEffectManagers
   )
   where
 
@@ -49,7 +47,6 @@ data Literals =
     , litCtor :: Set.Set N.Name
     , litKernelJs :: Set.Set (N.Name, N.Name)
     , litGlobalJs :: Set.Set Opt.Global -- JS kernel with Global name format (e.g. ports)
-    , litManager :: Set.Set ModuleName.Canonical
     }
 
 
@@ -66,7 +63,6 @@ empty =
     , litCtor = Set.fromList $ map N.fromChars ["LT", "EQ", "GT"]
     , litKernelJs = Set.empty
     , litGlobalJs = Set.empty
-    , litManager = Set.empty
     }
 
 
@@ -124,20 +120,13 @@ insertGlobalJs value literals =
   literals { litGlobalJs = Set.insert value (litGlobalJs literals) }
 
 
-insertManager :: ModuleName.Canonical -> Literals -> Literals
-insertManager value literals =
-  literals { litManager = Set.insert value (litManager literals) }
-
-
-
 {-
       CODE GEN
 -}
 
 generate :: Literals -> [C.ExternalDeclaration]
 generate literals =
-  generateEffectManagersSize literals
-  : generateFieldGroupArray literals
+  generateFieldGroupArray literals
   : generateStructs literals
   ++ generateEnums literals
 
@@ -187,17 +176,10 @@ generateEnums literals =
     ctors = litCtor literals
     kernelJs = litKernelJs literals
     globalJs = litGlobalJs literals
-    managers = litManager literals
   in
   generateEnumKernelJs kernelJs globalJs
   ++ generateEnumCtors ctors
   ++ (generateEnumFields $ combineFieldLiterals literals)
-  ++ generateEnumManagers managers
-
-
-generateEnumManagers :: Set.Set ModuleName.Canonical -> [C.ExternalDeclaration]
-generateEnumManagers managers =
-  generateEnum $ map CN.managerId $ Set.toList managers
 
 
 generateEnumKernelJs :: Set.Set (N.Name, N.Name) -> Set.Set Opt.Global -> [C.ExternalDeclaration]
@@ -207,7 +189,7 @@ generateEnumKernelJs kernelJs globalJs =
       (map (\(home, name) -> CN.jsKernelEval home name) (Set.toList kernelJs)) ++
       (map (\(Opt.Global home name) -> CN.jsGlobalEval home name) (Set.toList globalJs))
   in
-  generateEnum names ++ generateEnumDebugInfo "jsValues" names
+  C.enum names ++ generateEnumDebugInfo "jsValues" names
 
 
 generateEnumCtors :: Set.Set N.Name -> [C.ExternalDeclaration]
@@ -216,7 +198,7 @@ generateEnumCtors ctors =
     names =
       map CN.ctorId $ Set.toList ctors
   in
-  generateEnum names ++ generateEnumDebugInfo "ctors" names
+  C.enum names ++ generateEnumDebugInfo "ctors" names
 
 
 generateEnumFields :: Set.Set N.Name -> [C.ExternalDeclaration]
@@ -225,16 +207,7 @@ generateEnumFields fields =
     names =
       map CN.fieldId $ Set.toList fields
   in
-  generateEnum names ++ generateEnumDebugInfo "fields" names
-
-
-generateEnum :: [CN.Name] -> [C.ExternalDeclaration]
-generateEnum names =
-  case names of
-    [] ->
-      []
-    _ ->
-      [C.DeclExt $ C.Decl [C.TypeSpec $ C.Enum names] Nothing Nothing]
+  C.enum names ++ generateEnumDebugInfo "fields" names
 
 
 
@@ -373,48 +346,6 @@ generateUtf16 str =
     concatMap encodeUtf16 $
     unescape $
     ES.toChars str
-
-
-{-
-      EFFECT MANAGERS
--}
-
-generateInitEffectManagers :: Literals -> [C.CompoundBlockItem]
-generateInitEffectManagers literals =
-  let
-    managerNames = litManager literals
-
-    initManager moduleName =
-      C.Call (C.Var $ CN.createManagerFn moduleName) []
-
-    managerConfigs = map initManager $ Set.toList managerNames
-
-    platformManagers = CN.fromBuilder "Platform_managerConfigs"
-  in
-  map (C.BlockStmt . C.Expr . Just)
-    [ C.Assign C.AssignOp (C.Var platformManagers) $
-        C.Call
-          (C.Var $ CN.fromBuilder "newCustom")
-          [ C.Const $ C.IntConst (-1)
-          , C.Const $ C.IntConst $ Set.size managerNames
-          , C.pointerArray managerConfigs
-          ]
-    , C.Call
-        (C.Var $ CN.fromBuilder "GC_register_root")
-        [ C.addrOf platformManagers ]
-    ]
-
-
-generateEffectManagersSize :: Literals -> C.ExternalDeclaration
-generateEffectManagersSize literals =
-  let
-    name = CN.fromBuilder "Platform_managers_size"
-    expr = C.Const $ C.IntConst $ length $ litManager literals
-  in
-  C.DeclExt $ C.Decl
-    [C.TypeSpec (C.TypeDef CN.U32)]
-    (Just $ C.Declr (Just name) [])
-    (Just $ C.InitExpr expr)
 
 
 -- The compiler keeps backslashes that were in the Elm source,
